@@ -2,7 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { documentService, DeleteResolutionPayload } from '@/services/documentService'
-import { DocumentFormData, DocumentType } from '@/models/document'
+import { DocumentFormData, DocumentType, calculateDocumentTotal } from '@/models/document'
+import { DocumentPaymentSummary } from '@/models/transaction'
+import { transactionService } from '@/services/transactionService'
 import { toast } from 'sonner'
 
 const KEY = 'documents'
@@ -60,7 +62,8 @@ export function useDeleteDocument() {
       qc.invalidateQueries({ queryKey: [KEY] })
       toast.success('Document deleted')
     },
-    // Suppress default error — 409 handled by caller (resolution dialog)
+    // Suppress error here — 409 conflict handled by caller
+    // Caller checks error.response.status === 409 and opens resolution dialog
     onError: () => {},
   })
 }
@@ -78,5 +81,27 @@ export function useDeleteDocumentWithResolution() {
       toast.success('Document deleted')
     },
     onError: () => toast.error('Failed to delete document'),
+  })
+}
+
+// ── Document payment summary ───────────────────────────────────────────────────
+// Used in payment form — shows total, paid, remaining for a document
+// Only enabled when documentId is provided
+export function useDocumentPaymentSummary(
+  documentId: number | null | undefined
+) {
+  const { data: document } = useDocument(documentId ?? 0)
+
+  return useQuery({
+    queryKey: ['document-payment-summary', documentId],
+    queryFn: async (): Promise<DocumentPaymentSummary> => {
+      const total = document ? calculateDocumentTotal(document) : 0
+      return transactionService.getDocumentPaymentSummary(
+        documentId!,
+        total
+      )
+    },
+    enabled: !!documentId && !!document,
+    staleTime: 1000 * 30, // 30 seconds — recalculates often
   })
 }

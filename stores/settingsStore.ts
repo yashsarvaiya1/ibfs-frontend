@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 export interface AppSettings {
+  // Document feature flags — controls Quick Action menu visibility
   inventory_enabled: boolean
   po_enabled: boolean
   pi_enabled: boolean
@@ -11,6 +12,7 @@ export interface AppSettings {
   credit_note_enabled: boolean
   debit_note_enabled: boolean
   vouchers_enabled: boolean
+  // Preferences
   theme: 'light' | 'dark'
   date_format: 'DD/MM/YYYY' | 'MM/DD/YYYY'
   currency: 'INR'

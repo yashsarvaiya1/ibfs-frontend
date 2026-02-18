@@ -34,5 +34,10 @@ export interface ContactFormData {
 export const getContactDisplayName = (contact: Contact): string =>
   contact.company_name || contact.contact_name || `Contact #${contact.id}`
 
+export const getContactInitial = (contact: Contact): string => {
+  const name = contact.company_name || contact.contact_name || '?'
+  return name.charAt(0).toUpperCase()
+}
+
 export const isCompanyContact = (contact: Contact): boolean =>
   !!contact.company_name

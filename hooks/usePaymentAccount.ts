@@ -22,10 +22,25 @@ export function usePaymentAccount(id: number) {
   })
 }
 
+// Account statement — payment + contra transactions only
+// Used in /payment-accounts/[id] page
+export function useAccountStatement(
+  id: number,
+  params?: { page?: number; date_from?: string; date_to?: string }
+) {
+  return useQuery({
+    queryKey: [KEY, 'statement', id, params],
+    queryFn: () =>
+      paymentAccountService.getStatement(id, params).then((r) => r.data),
+    enabled: !!id,
+  })
+}
+
 export function useCreatePaymentAccount() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: PaymentAccountFormData) => paymentAccountService.create(data),
+    mutationFn: (data: PaymentAccountFormData) =>
+      paymentAccountService.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] })
       toast.success('Account created')
@@ -37,10 +52,16 @@ export function useCreatePaymentAccount() {
 export function useUpdatePaymentAccount() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<PaymentAccountFormData> }) =>
-      paymentAccountService.update(id, data),
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: number
+      data: Partial<PaymentAccountFormData>
+    }) => paymentAccountService.update(id, data),
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: [KEY] })
+      qc.invalidateQueries({ queryKey: [KEY, id] })
       toast.success('Account updated')
     },
     onError: () => toast.error('Failed to update account'),

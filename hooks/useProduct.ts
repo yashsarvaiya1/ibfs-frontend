@@ -7,10 +7,10 @@ import { toast } from 'sonner'
 
 const KEY = 'products'
 
-export function useProducts(page = 1) {
+export function useProducts(params?: { page?: number; search?: string }) {
   return useQuery({
-    queryKey: [KEY, page],
-    queryFn: () => productService.list({ page }).then((r) => r.data),
+    queryKey: [KEY, params],
+    queryFn: () => productService.list(params).then((r) => r.data),
   })
 }
 
@@ -39,8 +39,9 @@ export function useUpdateProduct() {
   return useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<ProductFormData> }) =>
       productService.update(id, data),
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: [KEY] })
+      qc.invalidateQueries({ queryKey: [KEY, id] })
       toast.success('Product updated')
     },
     onError: () => toast.error('Failed to update product'),

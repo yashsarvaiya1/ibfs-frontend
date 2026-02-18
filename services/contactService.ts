@@ -7,7 +7,7 @@ import { PaginatedResponse } from '@/models/pagination'
 const BASE = '/contacts'
 
 export const contactService = {
-  list: (params?: { page?: number; include_inactive?: boolean }) =>
+  list: (params?: { page?: number; include_inactive?: boolean; search?: string }) =>
     api.get<PaginatedResponse<Contact>>(`${BASE}/`, { params }),
 
   get: (id: number) =>
@@ -19,6 +19,7 @@ export const contactService = {
   update: (id: number, data: Partial<ContactFormData>) =>
     api.patch<Contact>(`${BASE}/${id}/`, data),
 
+  // Soft delete on backend — sets is_active=false
   delete: (id: number) =>
     api.delete(`${BASE}/${id}/`),
 }

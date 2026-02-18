@@ -7,10 +7,10 @@ import { toast } from 'sonner'
 
 const KEY = 'contacts'
 
-export function useContacts(page = 1) {
+export function useContacts(params?: { page?: number; search?: string }) {
   return useQuery({
-    queryKey: [KEY, page],
-    queryFn: () => contactService.list({ page }).then((r) => r.data),
+    queryKey: [KEY, params],
+    queryFn: () => contactService.list(params).then((r) => r.data),
   })
 }
 
@@ -39,8 +39,9 @@ export function useUpdateContact() {
   return useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<ContactFormData> }) =>
       contactService.update(id, data),
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: [KEY] })
+      qc.invalidateQueries({ queryKey: [KEY, id] })
       toast.success('Contact updated')
     },
     onError: () => toast.error('Failed to update contact'),

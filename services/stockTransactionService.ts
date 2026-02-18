@@ -7,8 +7,11 @@ import { PaginatedResponse } from '@/models/pagination'
 const BASE = '/inventory/stock-transactions'
 
 export const stockTransactionService = {
-  list: (params?: { page?: number; product?: number; document?: number }) =>
-    api.get<PaginatedResponse<StockTransaction>>(`${BASE}/`, { params }),
+  list: (params?: {
+    page?: number
+    product?: number
+    document?: number
+  }) => api.get<PaginatedResponse<StockTransaction>>(`${BASE}/`, { params }),
 
   get: (id: number) =>
     api.get<StockTransaction>(`${BASE}/${id}/`),
@@ -19,6 +22,7 @@ export const stockTransactionService = {
   update: (id: number, data: Partial<StockTransactionFormData>) =>
     api.patch<StockTransaction>(`${BASE}/${id}/`, data),
 
+  // Calls model delete() → auto-reverses product.current_stock
   delete: (id: number) =>
     api.delete(`${BASE}/${id}/`),
 }

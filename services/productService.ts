@@ -7,7 +7,7 @@ import { PaginatedResponse } from '@/models/pagination'
 const BASE = '/inventory/products'
 
 export const productService = {
-  list: (params?: { page?: number; include_inactive?: boolean }) =>
+  list: (params?: { page?: number; include_inactive?: boolean; search?: string }) =>
     api.get<PaginatedResponse<Product>>(`${BASE}/`, { params }),
 
   get: (id: number) =>
@@ -19,6 +19,7 @@ export const productService = {
   update: (id: number, data: Partial<ProductFormData>) =>
     api.patch<Product>(`${BASE}/${id}/`, data),
 
+  // Soft delete on backend — sets is_active=false
   delete: (id: number) =>
     api.delete(`${BASE}/${id}/`),
 }

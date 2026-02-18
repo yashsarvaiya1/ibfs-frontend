@@ -3,19 +3,28 @@
 import api from '@/lib/axios'
 import { Document, DocumentFormData, DocumentType } from '@/models/document'
 import { FinancialTransaction } from '@/models/transaction'
-import { StockTransaction } from '@/models/stockTransaction'
 import { PaginatedResponse } from '@/models/pagination'
 
 const BASE = '/accounting/documents'
 
+// Only stock_transaction_actions needed now
+// Payment transactions are always kept (never reverted)
 export interface DeleteResolutionPayload {
-  payment_transaction_actions: Record<string, 'revert' | 'keep'>
   stock_transaction_actions: Record<string, 'revert' | 'keep'>
 }
 
-export interface LinkedEntriesResponse {
-  payment_transactions: FinancialTransaction[]
-  stock_transactions: StockTransaction[]
+// Returned by backend on 409 — shows what stock entries exist
+export interface DeleteConflictResponse {
+  error: string
+  detail: string
+  has_stock_transactions: boolean
+  stock_transactions: Array<{
+    id: number
+    product_id: number
+    quantity: string
+    transaction_date: string
+    notes: string | null
+  }>
 }
 
 export const documentService = {
@@ -35,11 +44,20 @@ export const documentService = {
   update: (id: number, data: Partial<DocumentFormData>) =>
     api.patch<Document>(`${BASE}/${id}/`, data),
 
-  // Returns 409 if linked entries exist → show resolution dialog
+  // Returns 204 on success
+  // Returns 409 with stock_transactions list if stock entries exist
+  // → caller must use deleteWithResolution instead
   delete: (id: number) =>
     api.delete(`${BASE}/${id}/`),
 
-  // Full deletion with user choices for each linked entry
+  // Full deletion with user choices per stock transaction
   deleteWithResolution: (id: number, payload: DeleteResolutionPayload) =>
     api.post(`${BASE}/${id}/delete_with_resolution/`, payload),
+
+  // Fetch payment transactions for a document
+  // Used to calculate total paid + remaining amount
+  getPaymentTransactions: (id: number) =>
+    api.get<PaginatedResponse<FinancialTransaction>>(`/accounting/transactions/`, {
+      params: { document: id, type: 'payment' },
+    }),
 }

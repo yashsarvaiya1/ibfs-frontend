@@ -12,7 +12,7 @@ interface AuthState {
   checkSession: () => boolean
 }
 
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 export const useAuthStore = create<AuthState>()(
   persist(
