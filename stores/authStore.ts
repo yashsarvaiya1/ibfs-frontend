@@ -1,5 +1,3 @@
-// stores/authStore.ts
-
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
@@ -7,12 +5,14 @@ interface AuthState {
   isAuthenticated: boolean
   username: string | null
   loginDate: number | null
+  _hasHydrated: boolean
+  setHasHydrated: (val: boolean) => void
   login: (username: string, password: string) => void
   logout: () => void
   checkSession: () => boolean
 }
 
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -20,6 +20,9 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       username: null,
       loginDate: null,
+      _hasHydrated: false,
+
+      setHasHydrated: (val) => set({ _hasHydrated: val }),
 
       login: (username, password) => {
         const encoded = btoa(`${username}:${password}`)
@@ -45,6 +48,9 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'ibfs_auth',
       storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

@@ -1,24 +1,30 @@
-// hooks/useProduct.ts
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productService } from '@/services/productService'
 import { ProductFormData } from '@/models/product'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 
 const KEY = 'products'
 
 export function useProducts(params?: { page?: number; search?: string }) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
     queryKey: [KEY, params],
     queryFn: () => productService.list(params).then((r) => r.data),
+    enabled: hasHydrated && isAuthenticated,
   })
 }
 
 export function useProduct(id: number) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
     queryKey: [KEY, id],
     queryFn: () => productService.get(id).then((r) => r.data),
-    enabled: !!id,
+    enabled: !!id && hasHydrated && isAuthenticated,
   })
 }
 

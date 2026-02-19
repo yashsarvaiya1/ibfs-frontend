@@ -1,7 +1,8 @@
-export default function LoginPage() {
-  return (
-    <div>
-      <h1>Login</h1>
-    </div>
-  )
+// app/(auth)/login/page.tsx
+
+import { LoginPage } from '@/components/login/LoginPage'
+
+export default function Login() {
+  return <LoginPage />
 }
+    

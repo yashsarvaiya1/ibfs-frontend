@@ -10,7 +10,7 @@ export interface PaginatedResponse<T> {
 // Helper to get total pages from a paginated response
 export const getTotalPages = <T>(
   data: PaginatedResponse<T>,
-  pageSize = 50
+  pageSize = 20
 ): number => Math.ceil(data.count / pageSize)
 
 // Helper to check if more pages exist

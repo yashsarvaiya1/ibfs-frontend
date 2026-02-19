@@ -1,7 +1,7 @@
-export default function DashboardPage() {
-  return (
-    <div>
-      <h1>Dashboard</h1>
-    </div>
-  )
+// app/(dashboard)/page.tsx
+
+import { DashboardPage } from '@/components/dashboard/DashboardPage'
+
+export default function Dashboard() {
+  return <DashboardPage />
 }

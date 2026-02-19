@@ -1,24 +1,30 @@
-// hooks/useContact.ts
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { contactService } from '@/services/contactService'
+import { useAuthStore } from '@/stores/authStore'
 import { ContactFormData } from '@/models/contact'
 import { toast } from 'sonner'
 
 const KEY = 'contacts'
 
 export function useContacts(params?: { page?: number; search?: string }) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
     queryKey: [KEY, params],
     queryFn: () => contactService.list(params).then((r) => r.data),
+    enabled: hasHydrated && isAuthenticated,
   })
 }
 
 export function useContact(id: number) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
     queryKey: [KEY, id],
     queryFn: () => contactService.get(id).then((r) => r.data),
-    enabled: !!id,
+    enabled: !!id && hasHydrated && isAuthenticated,
   })
 }
 

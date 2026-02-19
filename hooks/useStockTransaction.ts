@@ -1,8 +1,7 @@
-// hooks/useStockTransaction.ts
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { stockTransactionService } from '@/services/stockTransactionService'
 import { StockTransactionFormData } from '@/models/stockTransaction'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 
 const KEY = 'stock-transactions'
@@ -12,19 +11,24 @@ export function useStockTransactions(params?: {
   product?: number
   document?: number
 }) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
     queryKey: [KEY, params],
     queryFn: () => stockTransactionService.list(params).then((r) => r.data),
-    enabled: !!params?.product || params?.product === undefined,
+    enabled: hasHydrated && isAuthenticated,
   })
 }
 
-// Single stock transaction — used in detail/edit views
 export function useStockTransaction(id: number) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
     queryKey: [KEY, id],
     queryFn: () => stockTransactionService.get(id).then((r) => r.data),
-    enabled: !!id,
+    enabled: !!id && hasHydrated && isAuthenticated,
   })
 }
 
@@ -36,7 +40,6 @@ export function useCreateStockTransaction() {
     onSuccess: (_, data) => {
       qc.invalidateQueries({ queryKey: [KEY] })
       qc.invalidateQueries({ queryKey: ['products'] })
-      // Invalidate specific product if known
       if (data.product) {
         qc.invalidateQueries({ queryKey: ['products', data.product] })
       }
@@ -49,13 +52,8 @@ export function useCreateStockTransaction() {
 export function useUpdateStockTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: number
-      data: Partial<StockTransactionFormData>
-    }) => stockTransactionService.update(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Partial<StockTransactionFormData> }) =>
+      stockTransactionService.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] })
       qc.invalidateQueries({ queryKey: ['products'] })

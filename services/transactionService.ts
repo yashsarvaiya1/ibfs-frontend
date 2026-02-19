@@ -1,5 +1,3 @@
-// services/transactionService.ts
-
 import api from '@/lib/axios'
 import {
   FinancialTransaction,
@@ -32,8 +30,8 @@ export const transactionService = {
 
   // ── Payment with optional Interest ──────────────────────────────────────────
   // If interest provided:
-  //   Step 1 → Create Interest document
-  //   Step 2 → Create payment txn (base + interest amount)
+  //   Step 1 → Create Interest document (linked via reference to original doc)
+  //   Step 2 → Create payment txn (base + interest amount combined)
   // If no interest → plain payment transaction
   createWithInterest: async (payload: CreatePaymentWithInterestPayload) => {
     const baseAmount = parseFloat(payload.payment_amount)
@@ -44,6 +42,7 @@ export const transactionService = {
         document_type: 'interest',
         contact: payload.contact,
         document_date: payload.interest.document_date,
+        reference: payload.document ?? null,  // links to original Bill/Invoice
         line_items: [
           {
             name: payload.interest.description,
@@ -75,6 +74,7 @@ export const transactionService = {
 
   // ── Document payment summary ─────────────────────────────────────────────────
   // Calculates total paid and remaining for a document
+  // Fetches all payments in one shot (page_size=1000) to avoid pagination truncation
   getDocumentPaymentSummary: async (
     documentId: number,
     documentTotal: number
@@ -85,6 +85,7 @@ export const transactionService = {
         params: {
           document: documentId,
           type: 'payment',
+          page_size: 1000,
         },
       }
     )

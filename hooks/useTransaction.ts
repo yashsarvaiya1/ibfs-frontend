@@ -7,22 +7,30 @@ import {
   TransactionFilters,
   CreatePaymentWithInterestPayload,
 } from '@/models/transaction'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 
 const KEY = 'transactions'
 
 export function useTransactions(params?: TransactionFilters) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
-    queryKey: [KEY, params],
+    queryKey: [KEY, 'list', params],        // ← 'list' namespace
     queryFn: () => transactionService.list(params).then((r) => r.data),
+    enabled: hasHydrated && isAuthenticated,
   })
 }
 
 export function useTransaction(id: number) {
+  const hasHydrated = useAuthStore((s) => s._hasHydrated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
   return useQuery({
-    queryKey: [KEY, id],
+    queryKey: [KEY, 'detail', id],          // ← 'detail' namespace
     queryFn: () => transactionService.get(id).then((r) => r.data),
-    enabled: !!id,
+    enabled: !!id && hasHydrated && isAuthenticated,
   })
 }
 
@@ -41,9 +49,6 @@ export function useCreateTransaction() {
   })
 }
 
-// ── Payment with optional Interest ────────────────────────────────────────────
-// Used in payment form from both Contact Detail and Quick Action
-// If interest provided → creates Interest document first, then payment txn
 export function useCreatePaymentWithInterest() {
   const qc = useQueryClient()
   return useMutation({
@@ -63,16 +68,11 @@ export function useCreatePaymentWithInterest() {
 export function useUpdateTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: number
-      data: Partial<FinancialTransactionFormData>
-    }) => transactionService.update(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Partial<FinancialTransactionFormData> }) =>
+      transactionService.update(id, data),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: [KEY] })
-      qc.invalidateQueries({ queryKey: [KEY, id] })
+      qc.invalidateQueries({ queryKey: [KEY, 'detail', id] })
       qc.invalidateQueries({ queryKey: ['payment-accounts'] })
       qc.invalidateQueries({ queryKey: ['contacts'] })
       toast.success('Transaction updated')
