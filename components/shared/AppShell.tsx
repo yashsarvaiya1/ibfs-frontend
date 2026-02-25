@@ -1,3 +1,4 @@
+// components/shared/AppShell.tsx
 'use client'
 
 import { useEffect } from 'react'
@@ -6,7 +7,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { BottomNav } from '@/components/shared/BottomNav'
 import { Header } from '@/components/shared/Header'
 import { QuickActionSheet } from '@/components/shared/QuickActionSheet'
-import { PaymentSheet } from '../transactions/PaymentSheet'
+import { TransactionSheet } from '@/components/shared/TransactionSheet'
+import { DocCreateSheet } from '@/components/shared/DocCreateSheet'
 
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
 
@@ -34,16 +36,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!isSessionValid) return null
 
   return (
-    // KEY FIX: h-screen instead of min-h-screen — gives flex children a real height to fill
     <div className="flex flex-col h-screen bg-background">
       <Header />
-      {/* overflow-y-auto here so each page scrolls inside the shell, not the window */}
       <main className="flex-1 overflow-y-auto pb-16">
         {children}
       </main>
       <BottomNav />
       <QuickActionSheet />
-      <PaymentSheet />
+      <TransactionSheet />
+      <DocCreateSheet />
     </div>
   )
 }

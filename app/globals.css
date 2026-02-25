@@ -124,3 +124,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* globals.css — add at the bottom */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

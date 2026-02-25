@@ -1,67 +1,79 @@
 // stores/uiStore.ts
-
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+import { DocumentType } from '@/models/document'
 
-// Pre-selected context for transaction sheet
-// Set before opening the sheet — cleared after closing
-export interface TransactionSheetContext {
-  contactId?: number        // pre-selected contact
-  documentId?: number       // pre-selected document (e.g. opened from Bill detail)
-  paymentAccountId?: number // pre-selected account
-}
-
-interface UIState {
-  // Sidebar
-  sidebarOpen: boolean
-  setSidebarOpen: (open: boolean) => void
-  toggleSidebar: () => void
-
-  // Quick action sheet (FAB bottom center)
-  quickActionOpen: boolean
-  setQuickActionOpen: (open: boolean) => void
-
-  // Transaction sheet context
-  // Allows any page to pre-fill the payment form before opening it
-  transactionSheetOpen: boolean
-  transactionSheetContext: TransactionSheetContext
-  openTransactionSheet: (context?: TransactionSheetContext) => void
-  closeTransactionSheet: () => void
-
-  // Page title — set by each page on mount
+interface UIStore {
+  // Page title for Header
   pageTitle: string
   setPageTitle: (title: string) => void
+
+  // Quick Action Sheet
+  quickActionOpen: boolean
+  setQuickActionOpen: (v: boolean) => void
+
+  // Transaction Sheet (Send/Receive — opened from contact page or quick action)
+  transactionSheetOpen: boolean
+  transactionSheetMode: 'send' | 'receive' | null
+  transactionSheetContactId: number | null
+  openTransactionSheet: (opts: { mode?: 'send' | 'receive'; contactId?: number }) => void
+  closeTransactionSheet: () => void
+
+  // Document Create Sheet
+  docCreateSheetOpen: boolean
+  docCreateType: DocumentType | null
+  docCreateContactId: number | null
+  openDocCreateSheet: (type: DocumentType, contactId?: number) => void
+  closeDocCreateSheet: () => void
+
+  // Move Stock Sheet
+  moveStockSheetOpen: boolean
+  moveStockDocumentId: number | null
+  openMoveStockSheet: (documentId: number) => void
+  closeMoveStockSheet: () => void
+
+  // Delete Document Sheet
+  deleteDocSheetOpen: boolean
+  deleteDocId: number | null
+  openDeleteDocSheet: (id: number) => void
+  closeDeleteDocSheet: () => void
 }
 
-export const useUIStore = create<UIState>()(
-  persist(
-    (set) => ({
-      // Sidebar
-      sidebarOpen: false,
-      setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+export const useUIStore = create<UIStore>((set) => ({
+  pageTitle: 'Home',
+  setPageTitle: (title) => set({ pageTitle: title }),
 
-      // Quick action
-      quickActionOpen: false,
-      setQuickActionOpen: (open) => set({ quickActionOpen: open }),
+  quickActionOpen: false,
+  setQuickActionOpen: (v) => set({ quickActionOpen: v }),
 
-      // Transaction sheet
-      transactionSheetOpen: false,
-      transactionSheetContext: {},
-      openTransactionSheet: (context = {}) =>
-        set({ transactionSheetOpen: true, transactionSheetContext: context }),
-      closeTransactionSheet: () =>
-        set({ transactionSheetOpen: false, transactionSheetContext: {} }),
-
-      // Page title
-      pageTitle: 'Dashboard',
-      setPageTitle: (title) => set({ pageTitle: title }),
+  transactionSheetOpen: false,
+  transactionSheetMode: null,
+  transactionSheetContactId: null,
+  openTransactionSheet: ({ mode, contactId }) =>
+    set({
+      transactionSheetOpen: true,
+      transactionSheetMode: mode ?? 'send',
+      transactionSheetContactId: contactId ?? null,
     }),
-    {
-      name: 'ibfs_ui',
-      storage: createJSONStorage(() => localStorage),
-      // Only persist sidebarOpen — everything else resets on load
-      partialize: (state) => ({ sidebarOpen: state.sidebarOpen }),
-    }
-  )
-)
+  closeTransactionSheet: () =>
+    set({ transactionSheetOpen: false, transactionSheetMode: null, transactionSheetContactId: null }),
+
+  docCreateSheetOpen: false,
+  docCreateType: null,
+  docCreateContactId: null,
+  openDocCreateSheet: (type, contactId) =>
+    set({ docCreateSheetOpen: true, docCreateType: type, docCreateContactId: contactId ?? null }),
+  closeDocCreateSheet: () =>
+    set({ docCreateSheetOpen: false, docCreateType: null, docCreateContactId: null }),
+
+  moveStockSheetOpen: false,
+  moveStockDocumentId: null,
+  openMoveStockSheet: (documentId) =>
+    set({ moveStockSheetOpen: true, moveStockDocumentId: documentId }),
+  closeMoveStockSheet: () =>
+    set({ moveStockSheetOpen: false, moveStockDocumentId: null }),
+
+  deleteDocSheetOpen: false,
+  deleteDocId: null,
+  openDeleteDocSheet: (id) => set({ deleteDocSheetOpen: true, deleteDocId: id }),
+  closeDeleteDocSheet: () => set({ deleteDocSheetOpen: false, deleteDocId: null }),
+}))

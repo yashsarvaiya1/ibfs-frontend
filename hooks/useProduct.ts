@@ -1,67 +1,75 @@
+// hooks/useProducts.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productService } from '@/services/productService'
-import { ProductFormData } from '@/models/product'
-import { useAuthStore } from '@/stores/authStore'
-import { toast } from 'sonner'
+import { ProductCreate, ProductUpdate, AdjustStockPayload } from '@/models/product'
 
-const KEY = 'products'
+export const PRODUCTS_KEY = ['products']
+export const productKey = (id: number) => ['products', id]
+export const pendingMovesKey = (id: number) => ['products', id, 'pending_moves']
 
-export function useProducts(params?: { page?: number; search?: string }) {
-  const hasHydrated = useAuthStore((s) => s._hasHydrated)
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-
+export function useProducts(params?: { search?: string; is_active?: boolean; low_stock?: boolean; page?: number }) {
   return useQuery({
-    queryKey: [KEY, params],
-    queryFn: () => productService.list(params).then((r) => r.data),
-    enabled: hasHydrated && isAuthenticated,
+    queryKey: [...PRODUCTS_KEY, params],
+    queryFn: () => productService.list(params),
   })
 }
 
 export function useProduct(id: number) {
-  const hasHydrated = useAuthStore((s) => s._hasHydrated)
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-
   return useQuery({
-    queryKey: [KEY, id],
-    queryFn: () => productService.get(id).then((r) => r.data),
-    enabled: !!id && hasHydrated && isAuthenticated,
+    queryKey: productKey(id),
+    queryFn: () => productService.get(id),
+    enabled: !!id,
+  })
+}
+
+export function usePendingMoves(id: number) {
+  return useQuery({
+    queryKey: pendingMovesKey(id),
+    queryFn: () => productService.pendingMoves(id),
+    enabled: !!id,
   })
 }
 
 export function useCreateProduct() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: ProductFormData) => productService.create(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] })
-      toast.success('Product created')
-    },
-    onError: () => toast.error('Failed to create product'),
+    mutationFn: (data: ProductCreate) => productService.create(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PRODUCTS_KEY }),
   })
 }
 
-export function useUpdateProduct() {
+export function useUpdateProduct(id: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<ProductFormData> }) =>
-      productService.update(id, data),
-    onSuccess: (_, { id }) => {
-      qc.invalidateQueries({ queryKey: [KEY] })
-      qc.invalidateQueries({ queryKey: [KEY, id] })
-      toast.success('Product updated')
+    mutationFn: (data: ProductUpdate) => productService.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: productKey(id) })
+      qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
     },
-    onError: () => toast.error('Failed to update product'),
   })
 }
 
-export function useDeleteProduct() {
+export function useAdjustStock(id: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => productService.delete(id),
+    mutationFn: (data: AdjustStockPayload) => productService.adjustStock(id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] })
-      toast.success('Product deleted')
+      qc.invalidateQueries({ queryKey: productKey(id) })
+      qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
+      qc.invalidateQueries({ queryKey: pendingMovesKey(id) })
     },
-    onError: () => toast.error('Failed to delete product'),
+  })
+}
+
+export function useMoveStockFromProduct(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { document_id: number; quantity: number; date?: string }) =>
+      productService.moveStockFromProduct(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: productKey(id) })
+      qc.invalidateQueries({ queryKey: pendingMovesKey(id) })
+      qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
+    },
   })
 }

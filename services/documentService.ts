@@ -1,63 +1,37 @@
 // services/documentService.ts
-
 import api from '@/lib/axios'
-import { Document, DocumentFormData, DocumentType } from '@/models/document'
-import { FinancialTransaction } from '@/models/transaction'
+import {
+  Document, DocumentCreate, DocumentListItem,
+  RecordPaymentPayload, MoveStockPayload,
+  StockPreviewItem, DeleteStrategy
+} from '@/models/document'
 import { PaginatedResponse } from '@/models/pagination'
 
-const BASE = '/accounting/documents'
-
-// Only stock_transaction_actions needed now
-// Payment transactions are always kept (never reverted)
-export interface DeleteResolutionPayload {
-  stock_transaction_actions: Record<string, 'revert' | 'keep'>
-}
-
-// Returned by backend on 409 — shows what stock entries exist
-export interface DeleteConflictResponse {
-  error: string
-  detail: string
-  has_stock_transactions: boolean
-  stock_transactions: Array<{
-    id: number
-    product_id: number
-    quantity: string
-    transaction_date: string
-    notes: string | null
-  }>
-}
-
 export const documentService = {
-  list: (params?: {
-    page?: number
-    type?: DocumentType
-    contact?: number
-    include_inactive?: boolean
-  }) => api.get<PaginatedResponse<Document>>(`${BASE}/`, { params }),
+  list: (params?: { type?: string; contact?: number; page?: number; search?: string }) =>
+    api.get<PaginatedResponse<DocumentListItem>>('/documents/', { params }).then(r => r.data),
 
   get: (id: number) =>
-    api.get<Document>(`${BASE}/${id}/`),
+    api.get<Document>(`/documents/${id}/`).then(r => r.data),
 
-  create: (data: DocumentFormData) =>
-    api.post<Document>(`${BASE}/`, data),
+  create: (data: DocumentCreate) =>
+    api.post<Document>('/documents/', data).then(r => r.data),
 
-  update: (id: number, data: Partial<DocumentFormData>) =>
-    api.patch<Document>(`${BASE}/${id}/`, data),
+  update: (id: number, data: Partial<DocumentCreate>) =>
+    api.patch<Document>(`/documents/${id}/`, data).then(r => r.data),
 
-  // Returns 204 on success
-  // Returns 409 with stock_transactions list if stock entries exist
-  // → caller must use deleteWithResolution instead
-  delete: (id: number) =>
-    api.delete(`${BASE}/${id}/`),
+  recordPayment: (id: number, data: RecordPaymentPayload) =>
+    api.post(`/documents/${id}/record_payment/`, data).then(r => r.data),
 
-  // Full deletion with user choices per stock transaction
-  deleteWithResolution: (id: number, payload: DeleteResolutionPayload) =>
-    api.post(`${BASE}/${id}/delete_with_resolution/`, payload),
+  moveStock: (id: number, data: MoveStockPayload) =>
+    api.post(`/documents/${id}/move_stock/`, data).then(r => r.data),
 
-  // Fetch payment transactions for a document
-  // Used to calculate total paid + remaining amount
-  getPaymentTransactions: (id: number) =>
-    api.get<PaginatedResponse<FinancialTransaction>>(`/accounting/transactions/`, {
-      params: { document: id, type: 'payment' },
-    }),
+  stockPreview: (id: number) =>
+    api.get<StockPreviewItem[]>(`/documents/${id}/stock_preview/`).then(r => r.data),
+
+  addDetails: (id: number, data: { line_items: import('@/models/document').LineItem[] }) =>
+    api.post<Document>(`/documents/${id}/add_details/`, data).then(r => r.data),
+
+  deleteDocument: (id: number, strategy: DeleteStrategy) =>
+    api.post(`/documents/${id}/delete_document/`, { strategy }).then(r => r.data),
 }

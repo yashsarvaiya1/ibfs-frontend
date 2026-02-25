@@ -5,33 +5,44 @@ export interface Product {
   name: string
   description: string | null
   image_url: string | null
-  rate: string | null               // default selling/purchase rate
-  current_stock: string             // signed decimal string
-  minimum_stock: string | null      // low stock threshold
+  rate: string
+  current_stock: string
+  min_stock: string
   hsn_code: string | null
-  unit: string | null               // kg, pcs, liters, etc.
+  unit: string
   is_active: boolean
   created_at: string
   updated_at: string
 }
 
-export interface ProductFormData {
+export interface ProductListItem {
+  id: number
   name: string
-  description?: string
-  image_url?: string
+  rate: string
+  current_stock: string
+  min_stock: string
+  hsn_code: string | null
+  unit: string
+  is_active: boolean
+}
+
+export type ProductCreate = Omit<Product, 'id' | 'created_at' | 'updated_at'>
+export type ProductUpdate = Partial<ProductCreate>
+
+export interface AdjustStockPayload {
+  quantity: string
   rate?: string
-  current_stock?: string
-  minimum_stock?: string
-  hsn_code?: string
-  unit?: string
+  notes?: string
+  date?: string
 }
 
-export const isLowStock = (product: Product): boolean => {
-  if (!product.minimum_stock) return false
-  return parseFloat(product.current_stock) < parseFloat(product.minimum_stock)
-}
-
-export const formatStock = (product: Product): string => {
-  const qty = parseFloat(product.current_stock)
-  return `${qty} ${product.unit || 'units'}`
+export interface PendingMove {
+  document_id: number
+  doc_id: string
+  doc_type: string
+  contact: string | null
+  date: string
+  record_qty: string
+  moved_qty: string
+  remaining_qty: string
 }

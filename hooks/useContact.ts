@@ -1,67 +1,75 @@
+// hooks/useContacts.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { contactService } from '@/services/contactService'
-import { useAuthStore } from '@/stores/authStore'
-import { ContactFormData } from '@/models/contact'
-import { toast } from 'sonner'
+import { ContactCreate, ContactUpdate } from '@/models/contact'
+import { SendReceivePayload } from '@/models/transaction'
 
-const KEY = 'contacts'
+export const CONTACTS_KEY = ['contacts']
+export const contactKey = (id: number) => ['contacts', id]
+export const ledgerKey = (id: number) => ['contacts', id, 'ledger']
 
-export function useContacts(params?: { page?: number; search?: string }) {
-  const hasHydrated = useAuthStore((s) => s._hasHydrated)
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-
+export function useContacts(params?: { search?: string; is_active?: boolean; page?: number }) {
   return useQuery({
-    queryKey: [KEY, params],
-    queryFn: () => contactService.list(params).then((r) => r.data),
-    enabled: hasHydrated && isAuthenticated,
+    queryKey: [...CONTACTS_KEY, params],
+    queryFn: () => contactService.list(params),
   })
 }
 
 export function useContact(id: number) {
-  const hasHydrated = useAuthStore((s) => s._hasHydrated)
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-
   return useQuery({
-    queryKey: [KEY, id],
-    queryFn: () => contactService.get(id).then((r) => r.data),
-    enabled: !!id && hasHydrated && isAuthenticated,
+    queryKey: contactKey(id),
+    queryFn: () => contactService.get(id),
+    enabled: !!id,
+  })
+}
+
+export function useContactLedger(id: number) {
+  return useQuery({
+    queryKey: ledgerKey(id),
+    queryFn: () => contactService.ledger(id),
+    enabled: !!id,
   })
 }
 
 export function useCreateContact() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: ContactFormData) => contactService.create(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] })
-      toast.success('Contact created')
-    },
-    onError: () => toast.error('Failed to create contact'),
+    mutationFn: (data: ContactCreate) => contactService.create(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: CONTACTS_KEY }),
   })
 }
 
-export function useUpdateContact() {
+export function useUpdateContact(id: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<ContactFormData> }) =>
-      contactService.update(id, data),
-    onSuccess: (_, { id }) => {
-      qc.invalidateQueries({ queryKey: [KEY] })
-      qc.invalidateQueries({ queryKey: [KEY, id] })
-      toast.success('Contact updated')
+    mutationFn: (data: ContactUpdate) => contactService.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: contactKey(id) })
+      qc.invalidateQueries({ queryKey: CONTACTS_KEY })
     },
-    onError: () => toast.error('Failed to update contact'),
   })
 }
 
-export function useDeleteContact() {
+export function useSend(contactId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => contactService.delete(id),
+    mutationFn: (data: SendReceivePayload) => contactService.send(contactId, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [KEY] })
-      toast.success('Contact deleted')
+      qc.invalidateQueries({ queryKey: ledgerKey(contactId) })
+      qc.invalidateQueries({ queryKey: contactKey(contactId) })
+      qc.invalidateQueries({ queryKey: ['accounts'] })
     },
-    onError: () => toast.error('Failed to delete contact'),
+  })
+}
+
+export function useReceive(contactId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: SendReceivePayload) => contactService.receive(contactId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ledgerKey(contactId) })
+      qc.invalidateQueries({ queryKey: contactKey(contactId) })
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+    },
   })
 }

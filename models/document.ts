@@ -1,17 +1,11 @@
 // models/document.ts
 
 export type DocumentType =
-  | 'bill'
-  | 'invoice'
-  | 'po'
-  | 'pi'
-  | 'challan'
-  | 'quotation'
-  | 'cn'
-  | 'dn'
-  | 'cash_voucher'
-  | 'income_voucher'
-  | 'interest'
+  | 'bill' | 'invoice'
+  | 'po' | 'pi' | 'quotation'
+  | 'challan' | 'cn' | 'dn'
+  | 'cash_payment_voucher' | 'cash_receipt_voucher'
+  | 'interest' | 'expense'
 
 export interface LineItem {
   name: string
@@ -34,104 +28,89 @@ export interface Tax {
 
 export interface Document {
   id: number
-  document_type: DocumentType
-  document_number: string | null
+  type: DocumentType
+  doc_id: string
   contact: number | null
   consignee: number | null
+  reference: number | null
   line_items: LineItem[]
+  total_amount: string | null
   discount: string
   charges: Charge[]
   taxes: Tax[]
-  document_date: string | null
+  date: string
   due_date: string | null
   payment_terms: string | null
-  reference: number | null
-  header_image_url: string | null
-  signature_image_url: string | null
   attachment_urls: string[]
   notes: string | null
   is_active: boolean
   created_at: string
   updated_at: string
+  // nested (detail view only)
+  transactions?: import('./transaction').FinancialTransaction[]
 }
 
-export interface DocumentFormData {
-  document_type: DocumentType
-  document_number?: string
-  contact?: number | null
-  consignee?: number | null
+export interface DocumentListItem {
+  id: number
+  type: DocumentType
+  doc_id: string
+  contact: number | null
+  date: string
+  total_amount: string | null
+  is_active: boolean
+}
+
+export type DocumentCreate = {
+  type: DocumentType
+  contact?: number
+  consignee?: number
+  reference?: number
   line_items?: LineItem[]
-  discount?: string
+  total_amount?: string | number
+  discount?: number
   charges?: Charge[]
   taxes?: Tax[]
-  document_date?: string
+  date: string
   due_date?: string
   payment_terms?: string
-  reference?: number | null
-  header_image_url?: string
-  signature_image_url?: string
   attachment_urls?: string[]
+  notes?: string
+  payment_account?: number       // for auto_transaction
+}
+
+export interface RecordPaymentPayload {
+  amount: string
+  payment_account: number
+  date?: string
   notes?: string
 }
 
-export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
-  bill:           'Bill',
-  invoice:        'Invoice',
-  po:             'Purchase Order',
-  pi:             'Proforma Invoice',
-  challan:        'Challan',
-  quotation:      'Quotation',
-  cn:             'Credit Note',
-  dn:             'Debit Note',
-  cash_voucher:   'Cash Voucher',
-  income_voucher: 'Income Voucher',
-  interest:       'Interest',
+export interface MoveStockPayload {
+  items: { product_id: number; quantity: number }[]
+  date?: string
 }
 
-// Types that auto-create a record transaction on backend
-export const RECORD_CREATING_TYPES: DocumentType[] = [
-  'bill', 'invoice', 'cn', 'dn', 'cash_voucher', 'income_voucher', 'interest',
-]
-
-// Types that affect stock (only if product_id in line items)
-export const STOCK_AFFECTING_TYPES: DocumentType[] = [
-  'bill', 'invoice', 'cn', 'dn',
-]
-
-// Types that never create any financial transaction
-export const NON_FINANCIAL_TYPES: DocumentType[] = [
-  'po', 'pi', 'quotation', 'challan',
-]
-
-// Types where rate/amount column is shown in line items
-export const RATE_SHOWING_TYPES: DocumentType[] = [
-  'bill', 'invoice', 'po', 'pi', 'quotation',
-  'cn', 'dn', 'cash_voucher', 'income_voucher', 'interest',
-]
-
-// Payment sign convention per document type
-// Positive = money IN to us | Negative = money OUT from us
-export const PAYMENT_SIGN: Partial<Record<DocumentType, 1 | -1>> = {
-  bill:           -1,  // we pay out
-  invoice:         1,  // we receive
-  cn:              1,  // we receive refund
-  dn:             -1,  // we send refund
-  cash_voucher:   -1,  // expense out
-  income_voucher:  1,  // income in
-  interest:        1,  // we receive interest (default, user can toggle)
+export interface StockPreviewItem {
+  product_id: number
+  product_name: string
+  record_qty: string
+  moved_qty: string
+  remaining_qty: string
 }
 
-// Calculate document grand total from line items + charges + taxes - discount
-export const calculateDocumentTotal = (doc: Pick<Document, 'line_items' | 'charges' | 'taxes' | 'discount'>): number => {
-  const subtotal = (doc.line_items || []).reduce(
-    (sum, item) => sum + (item.amount ?? 0), 0
-  )
-  const totalCharges = (doc.charges || []).reduce(
-    (sum, c) => sum + (c.amount ?? 0), 0
-  )
-  const totalTax = (doc.taxes || []).reduce(
-    (sum, t) => sum + (subtotal * (t.percentage ?? 0)) / 100, 0
-  )
-  const discount = parseFloat(doc.discount || '0')
-  return subtotal + totalCharges + totalTax - discount
+export type DeleteStrategy = 'revert' | 'manual' | 'orphan'
+
+export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
+  bill: 'Bill',
+  invoice: 'Invoice',
+  po: 'Purchase Order',
+  pi: 'Proforma Invoice',
+  quotation: 'Quotation',
+  challan: 'Challan',
+  cn: 'Credit Note',
+  dn: 'Debit Note',
+  cash_payment_voucher: 'Cash Payment Voucher',
+  cash_receipt_voucher: 'Cash Receipt Voucher',
+  interest: 'Interest',
+  expense: 'Expense',
 }
