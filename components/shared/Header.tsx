@@ -48,7 +48,7 @@ export function Header() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full flex-shrink-0">
+            <Button variant="ghost" size="icon" className="rounded-full shrink-0">
               <User className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>

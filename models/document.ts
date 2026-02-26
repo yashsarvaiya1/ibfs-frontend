@@ -7,6 +7,8 @@ export type DocumentType =
   | 'cash_payment_voucher' | 'cash_receipt_voucher'
   | 'interest' | 'expense'
 
+export type StockStatus = 'na' | 'pending' | 'partial' | 'done'
+
 export interface LineItem {
   name: string
   hsn?: string
@@ -31,8 +33,10 @@ export interface Document {
   type: DocumentType
   doc_id: string
   contact: number | null
+  contact_name: string | null     // denormalized from backend
   consignee: number | null
   reference: number | null
+  reference_doc_id: string | null // denormalized from backend
   line_items: LineItem[]
   total_amount: string | null
   discount: string
@@ -55,9 +59,11 @@ export interface DocumentListItem {
   type: DocumentType
   doc_id: string
   contact: number | null
+  contact_name: string | null     // fix for bug #18
   date: string
   total_amount: string | null
   is_active: boolean
+  stock_status: StockStatus       // fix for bug #13
 }
 
 export type DocumentCreate = {
@@ -75,7 +81,13 @@ export type DocumentCreate = {
   payment_terms?: string
   attachment_urls?: string[]
   notes?: string
-  payment_account?: number       // for auto_transaction
+  payment_account?: number        // for auto_transaction
+}
+
+export interface InterestLine {
+  name: string
+  amount: number
+  type: 'charge' | 'discount'
 }
 
 export interface RecordPaymentPayload {
@@ -83,6 +95,7 @@ export interface RecordPaymentPayload {
   payment_account: number
   date?: string
   notes?: string
+  interest_lines?: InterestLine[] // fix: was missing
 }
 
 export interface MoveStockPayload {
@@ -93,9 +106,11 @@ export interface MoveStockPayload {
 export interface StockPreviewItem {
   product_id: number
   product_name: string
+  unit: string                    // fix: was missing
   record_qty: string
   moved_qty: string
   remaining_qty: string
+  is_complete: boolean            // fix: was missing
 }
 
 export type DeleteStrategy = 'revert' | 'manual' | 'orphan'
@@ -114,3 +129,15 @@ export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   interest: 'Interest',
   expense: 'Expense',
 }
+
+// Document types that never have f.txns — used for UI guards (bug #10)
+export const NO_FTXN_DOC_TYPES: DocumentType[] = [
+  'challan', 'quotation', 'po', 'pi', 'expense', 'interest',
+]
+
+// Document types that never have s.txns — used for UI guards
+export const NO_STXN_DOC_TYPES: DocumentType[] = [
+  'quotation', 'po', 'pi',
+  'expense', 'interest',
+  'cash_payment_voucher', 'cash_receipt_voucher',
+]

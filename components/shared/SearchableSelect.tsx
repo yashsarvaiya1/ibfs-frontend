@@ -1,48 +1,38 @@
-// components/shared/SearchableSelect.tsx
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, Check, X, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SearchableSelectOption {
-  value: string           // always string — convert before passing
-  label: string           // primary display text
-  sublabel?: string       // secondary line (e.g. phone, balance)
-  badge?: string          // small badge on the right
+  value:        string
+  label:        string
+  sublabel?:    string
+  badge?:       string
   badgeVariant?: 'default' | 'secondary' | 'destructive' | 'outline'
-  meta?: string           // extra right-side text (e.g. amount)
-  disabled?: boolean
+  meta?:        string
+  disabled?:    boolean
 }
 
 interface SearchableSelectProps {
-  // Data
-  options: SearchableSelectOption[]
-  value: string           // currently selected value ('' = none)
-  onChange: (value: string) => void
-
-  // Display
-  placeholder?: string
-  label?: string          // shown inside trigger as prefix when selected
-  emptyText?: string      // shown when no results found
-  clearable?: boolean     // show X to clear selection
-
-  // Sheet
-  title?: string          // sheet header title
+  options:           SearchableSelectOption[]
+  value:             string
+  onChange:          (value: string) => void
+  placeholder?:      string
+  label?:            string
+  emptyText?:        string
+  clearable?:        boolean
+  title?:            string
   searchPlaceholder?: string
-
-  // Style
-  className?: string
+  className?:        string
   triggerClassName?: string
-  disabled?: boolean
-  error?: boolean
+  disabled?:         boolean
+  error?:            boolean
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -51,30 +41,25 @@ export function SearchableSelect({
   options,
   value,
   onChange,
-  placeholder = 'Select...',
+  placeholder       = 'Select...',
   label,
-  emptyText = 'No results found',
-  clearable = false,
+  emptyText         = 'No results found',
+  clearable         = false,
   title,
   searchPlaceholder = 'Search...',
   className,
   triggerClassName,
-  disabled = false,
-  error = false,
+  disabled          = false,
+  error             = false,
 }: SearchableSelectProps) {
-  const [open,   setOpen]   = useState(false)
-  const [query,  setQuery]  = useState('')
-  const inputRef            = useRef<HTMLInputElement>(null)
+  const [open,  setOpen]  = useState(false)
+  const [query, setQuery] = useState('')
 
   const selected = options.find(o => o.value === value)
 
-  // Focus search input when sheet opens
+  // Clear search when sheet closes
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 100)
-    } else {
-      setQuery('')
-    }
+    if (!open) setQuery('')
   }, [open])
 
   const filtered = query.trim()
@@ -101,7 +86,8 @@ export function SearchableSelect({
 
   return (
     <div className={cn('w-full', className)}>
-      {/* ── Trigger ────────────────────────────────────────────────────── */}
+
+      {/* ── Trigger ──────────────────────────────────────────────────────── */}
       <button
         type="button"
         disabled={disabled}
@@ -112,9 +98,7 @@ export function SearchableSelect({
           'bg-background transition-colors text-left',
           'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
           disabled && 'opacity-50 cursor-not-allowed',
-          error
-            ? 'border-destructive'
-            : 'border-input hover:border-ring',
+          error ? 'border-destructive' : 'border-input hover:border-ring',
           triggerClassName
         )}
       >
@@ -158,7 +142,7 @@ export function SearchableSelect({
         </div>
       </button>
 
-      {/* ── Sheet ──────────────────────────────────────────────────────── */}
+      {/* ── Sheet ────────────────────────────────────────────────────────── */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="bottom"
@@ -170,11 +154,11 @@ export function SearchableSelect({
               {title ?? placeholder}
             </SheetTitle>
 
-            {/* Search */}
+            {/* Search — autoFocus avoids needing forwardRef on Input */}
             <div className="relative mt-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
-                ref={inputRef}
+                autoFocus
                 placeholder={searchPlaceholder}
                 value={query}
                 onChange={e => setQuery(e.target.value)}
@@ -182,6 +166,7 @@ export function SearchableSelect({
               />
               {query && (
                 <button
+                  type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2"
                   onClick={() => setQuery('')}
                 >
@@ -192,7 +177,10 @@ export function SearchableSelect({
           </SheetHeader>
 
           {/* Options list */}
-          <div className="overflow-y-auto pb-10" style={{ maxHeight: 'calc(85vh - 130px)' }}>
+          <div
+            className="overflow-y-auto pb-10"
+            style={{ maxHeight: 'calc(85vh - 130px)' }}
+          >
             {filtered.length === 0 ? (
               <div className="text-center py-10 text-sm text-muted-foreground">
                 {emptyText}
@@ -219,11 +207,11 @@ export function SearchableSelect({
                       {/* Check indicator */}
                       <div className={cn(
                         'w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors',
-                        isSelected
-                          ? 'bg-primary border-primary'
-                          : 'border-border'
+                        isSelected ? 'bg-primary border-primary' : 'border-border'
                       )}>
-                        {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                        {isSelected && (
+                          <Check className="h-3 w-3 text-primary-foreground" />
+                        )}
                       </div>
 
                       {/* Label + sublabel */}

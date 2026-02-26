@@ -21,7 +21,7 @@ export interface ProductListItem {
   rate: string
   current_stock: string
   min_stock: string
-  hsn_code: string | null
+  hsn_code: string | null         // now included from backend fix
   unit: string
   is_active: boolean
 }

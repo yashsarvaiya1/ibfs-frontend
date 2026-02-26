@@ -4,7 +4,12 @@ import { StockTransaction, AdjustStockGlobalPayload } from '@/models/stock-trans
 import { PaginatedResponse } from '@/models/pagination'
 
 export const stockService = {
-  list: (params?: { product?: number; document?: number; type?: string; page?: number }) =>
+  list: (params?: {
+    product?: number
+    document?: number
+    type?: string
+    page?: number
+  }) =>
     api.get<PaginatedResponse<StockTransaction>>('/stock-transactions/', { params }).then(r => r.data),
 
   adjust: (data: AdjustStockGlobalPayload) =>

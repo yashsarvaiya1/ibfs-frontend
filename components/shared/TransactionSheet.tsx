@@ -4,8 +4,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useAccounts } from '@/hooks/useAccount'
-import { useContacts } from '@/hooks/useContact'
-import { useSend, useReceive } from '@/hooks/useContact'
+import { useContacts, useSend, useReceive } from '@/hooks/useContact'
 import { useDocuments } from '@/hooks/useDocument'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -18,7 +17,6 @@ import { fmtAmount, fmtDate } from '@/lib/utils'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { toast } from 'sonner'
 import { Search, X, FileText, User, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 // ─── Contact Picker ───────────────────────────────────────────────────────────
 
@@ -47,11 +45,11 @@ function ContactPicker({ open, onClose, onSelect }: ContactPickerProps) {
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-6 h-[75vh] flex flex-col gap-0">
-        <SheetHeader className="mb-3 flex-shrink-0">
+        <SheetHeader className="mb-3 shrink-0">
           <SheetTitle className="text-left">Select Contact</SheetTitle>
         </SheetHeader>
 
-        <div className="relative mb-3 flex-shrink-0">
+        <div className="relative mb-3 shrink-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             autoFocus
@@ -72,7 +70,7 @@ function ContactPicker({ open, onClose, onSelect }: ContactPickerProps) {
                 onClick={() => { onSelect(c.id.toString(), c.company_name || c.contact_name); onClose() }}
                 className="w-full flex items-center gap-3 p-3 rounded-xl border bg-muted/30 active:scale-[0.99] transition-transform text-left"
               >
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <User className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -82,7 +80,7 @@ function ContactPicker({ open, onClose, onSelect }: ContactPickerProps) {
                   )}
                   <p className="text-xs text-muted-foreground">{c.phone}</p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
               </button>
             ))
           )}
@@ -119,11 +117,11 @@ function DocPicker({ open, onClose, onSelect, contactId }: DocPickerProps) {
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-6 h-[70vh] flex flex-col gap-0">
-        <SheetHeader className="mb-3 flex-shrink-0">
+        <SheetHeader className="mb-3 shrink-0">
           <SheetTitle className="text-left">Select Document</SheetTitle>
         </SheetHeader>
 
-        <div className="relative mb-3 flex-shrink-0">
+        <div className="relative mb-3 shrink-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             autoFocus
@@ -149,7 +147,7 @@ function DocPicker({ open, onClose, onSelect, contactId }: DocPickerProps) {
                 className="w-full flex items-center justify-between p-3 rounded-xl border bg-muted/30 active:scale-[0.99] transition-transform text-left"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                     <FileText className="h-4 w-4 text-primary" />
                   </div>
                   <div className="min-w-0">
@@ -162,7 +160,7 @@ function DocPicker({ open, onClose, onSelect, contactId }: DocPickerProps) {
                     <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(doc.date)}</p>
                   </div>
                 </div>
-                <p className="text-sm font-semibold ml-3 flex-shrink-0">
+                <p className="text-sm font-semibold ml-3 shrink-0">
                   {doc.total_amount ? fmtAmount(doc.total_amount) : '—'}
                 </p>
               </button>
@@ -193,7 +191,7 @@ export function TransactionSheet() {
   const [amount, setAmount] = useState('')
   const [accountId, setAccountId] = useState('')
   const [notes, setNotes] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState('')
   const [selectedDocId, setSelectedDocId] = useState('')
   const [selectedDocLabel, setSelectedDocLabel] = useState('')
 
@@ -201,8 +199,8 @@ export function TransactionSheet() {
   const [contactPickerOpen, setContactPickerOpen] = useState(false)
   const [docPickerOpen, setDocPickerOpen] = useState(false)
 
-  const sendMutation = useSend(Number(contactId))
-  const receiveMutation = useReceive(Number(contactId))
+  const sendMutation = useSend(contactId ? Number(contactId) : 0)
+  const receiveMutation = useReceive(contactId ? Number(contactId) : 0)
   const isPending = sendMutation.isPending || receiveMutation.isPending
 
   // Reset on open
@@ -213,8 +211,8 @@ export function TransactionSheet() {
       setSelectedDocId(''); setSelectedDocLabel('')
       setDate(new Date().toISOString().split('T')[0])
 
-      if (transactionSheetContactId) {
-        const contact = allContacts?.results.find(c => c.id === transactionSheetContactId)
+      if (transactionSheetContactId && allContacts) {
+        const contact = allContacts.results.find(c => c.id === transactionSheetContactId)
         setContactId(transactionSheetContactId.toString())
         setContactName(contact?.company_name || contact?.contact_name || `Contact #${transactionSheetContactId}`)
       } else {
@@ -253,7 +251,7 @@ export function TransactionSheet() {
       amount,
       payment_account: Number(accountId),
       date,
-      notes: notes || undefined,
+      notes: notes || '',
       document: selectedDocId ? Number(selectedDocId) : undefined,
     }
 
@@ -273,7 +271,7 @@ export function TransactionSheet() {
   return (
     <>
       {/* Main Sheet */}
-      <Sheet open={transactionSheetOpen} onOpenChange={closeTransactionSheet}>
+      <Sheet open={transactionSheetOpen} onOpenChange={(open) => !open && closeTransactionSheet()}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[92vh] overflow-y-auto">
           <SheetHeader className="mb-4">
             <SheetTitle className="text-left">New Transaction</SheetTitle>
@@ -295,7 +293,7 @@ export function TransactionSheet() {
                 <Label>Contact <span className="text-destructive">*</span></Label>
                 {contactId ? (
                   <div className="flex items-center gap-2 p-3 rounded-xl border bg-muted/40">
-                    <User className="h-4 w-4 text-primary flex-shrink-0" />
+                    <User className="h-4 w-4 text-primary shrink-0" />
                     <span className="flex-1 text-sm font-medium">{contactName}</span>
                     <button onClick={() => { setContactId(''); setContactName(''); setSelectedDocId('') }}>
                       <X className="h-4 w-4 text-muted-foreground" />
@@ -330,7 +328,7 @@ export function TransactionSheet() {
                 </Label>
                 {selectedDocId ? (
                   <div className="flex items-center gap-2 p-3 rounded-xl border bg-muted/40">
-                    <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                    <FileText className="h-4 w-4 text-primary shrink-0" />
                     <span className="flex-1 text-sm font-medium">{selectedDocLabel}</span>
                     <button onClick={() => { setSelectedDocId(''); setSelectedDocLabel('') }}>
                       <X className="h-4 w-4 text-muted-foreground" />

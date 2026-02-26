@@ -6,8 +6,12 @@ export interface StockTransaction {
   id: number
   type: StockTransactionType
   document: number | null
+  document_type: string | null     // denormalized from backend
+  document_doc_id: string | null   // denormalized from backend
   product: number
-  quantity: string               // signed Decimal as string
+  product_name: string | null      // denormalized from backend
+  contact_name: string | null      // denormalized from backend
+  quantity: string                 // signed Decimal as string
   date: string
   rate: string | null
   notes: string | null

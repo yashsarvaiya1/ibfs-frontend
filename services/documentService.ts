@@ -1,14 +1,28 @@
 // services/documentService.ts
 import api from '@/lib/axios'
 import {
-  Document, DocumentCreate, DocumentListItem,
-  RecordPaymentPayload, MoveStockPayload,
-  StockPreviewItem, DeleteStrategy
+  Document,
+  DocumentListItem,
+  DocumentCreate,
+  RecordPaymentPayload,
+  MoveStockPayload,
+  StockPreviewItem,
+  DeleteStrategy,
 } from '@/models/document'
 import { PaginatedResponse } from '@/models/pagination'
 
+export interface DocumentListParams {
+  type?: string
+  contact?: number
+  date_from?: string
+  date_to?: string
+  pending_stock?: boolean
+  search?: string
+  page?: number
+}
+
 export const documentService = {
-  list: (params?: { type?: string; contact?: number; page?: number; search?: string }) =>
+  list: (params?: DocumentListParams) =>
     api.get<PaginatedResponse<DocumentListItem>>('/documents/', { params }).then(r => r.data),
 
   get: (id: number) =>
@@ -29,7 +43,7 @@ export const documentService = {
   stockPreview: (id: number) =>
     api.get<StockPreviewItem[]>(`/documents/${id}/stock_preview/`).then(r => r.data),
 
-  addDetails: (id: number, data: { line_items: import('@/models/document').LineItem[] }) =>
+  addDetails: (id: number, data: { line_items: Document['line_items'] }) =>
     api.post<Document>(`/documents/${id}/add_details/`, data).then(r => r.data),
 
   deleteDocument: (id: number, strategy: DeleteStrategy) =>

@@ -1,65 +1,68 @@
-// components/shared/QuickActionSheet.tsx
 'use client'
 
+import React from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettings } from '@/hooks/useSettings'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
-  FileText, Receipt, CreditCard, ClipboardList,
+  FileText, Receipt, ClipboardList,
   Truck, RotateCcw, RotateCw, Banknote, AlertCircle,
   Package, Wallet, Users, ArrowLeftRight,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+
+interface ActionItem {
+  label:  string
+  icon:   React.ComponentType<{ className?: string }>
+  action: () => void
+}
 
 export function QuickActionSheet() {
   const router = useRouter()
-  const quickActionOpen = useUIStore((s) => s.quickActionOpen)
+
+  const quickActionOpen    = useUIStore((s) => s.quickActionOpen)
   const setQuickActionOpen = useUIStore((s) => s.setQuickActionOpen)
-  const openTransactionSheet = useUIStore((s) => s.openTransactionSheet)
   const openDocCreateSheet = useUIStore((s) => s.openDocCreateSheet)
   const { data: settings } = useSettings()
 
   const close = () => setQuickActionOpen(false)
-  const nav = (href: string) => { close(); router.push(href) }
+  const nav   = (href: string) => { close(); router.push(href) }
+  const doc   = (type: Parameters<typeof openDocCreateSheet>[0]) => {
+    close()
+    openDocCreateSheet(type)
+  }
 
-  // Group 1 — Page navigation
-  const pageActions = [
-    { label: 'Inventory', icon: Package, action: () => nav('/inventory') },
-    { label: 'Accounts',  icon: Wallet,  action: () => nav('/accounts') },
-    { label: 'Contacts',  icon: Users,   action: () => nav('/contacts') },
+  // ── Group 1: Always-visible create actions ───────────────────────────────────
+  const coreActions: ActionItem[] = [
+    { label: 'Bill',     icon: FileText, action: () => doc('bill') },
+    { label: 'Invoice',  icon: Receipt,  action: () => doc('invoice') },
+    // F1 FIX: was openTransactionSheet({mode:'send'}) — now correctly opens expense doc flow
+    { label: 'Expense',  icon: Banknote, action: () => doc('expense') },
+    // F2 FIX: was gated behind enable_interest + wrong flow — Interest Path B is always available
+    { label: 'Interest', icon: AlertCircle, action: () => doc('interest') },
+  ]
+
+  // ── Group 2: Settings-gated document types ────────────────────────────────────
+  const optionalActions = [
+    settings?.enable_po        && { label: 'Purch. Order', icon: ClipboardList, action: () => doc('po') },
+    settings?.enable_pi        && { label: 'Proforma Inv', icon: ClipboardList, action: () => doc('pi') },
+    settings?.enable_quotation && { label: 'Quotation',    icon: ClipboardList, action: () => doc('quotation') },
+    settings?.enable_challan   && { label: 'Challan',      icon: Truck,         action: () => doc('challan') },
+    settings?.enable_cn        && { label: 'Credit Note',  icon: RotateCcw,     action: () => doc('cn') },
+    settings?.enable_dn        && { label: 'Debit Note',   icon: RotateCw,      action: () => doc('dn') },
+  ].filter(Boolean) as ActionItem[]
+
+  // ── Group 3: Page navigation ──────────────────────────────────────────────────
+  const pageActions: ActionItem[] = [
+    { label: 'Inventory',    icon: Package,        action: () => nav('/inventory') },
+    { label: 'Accounts',     icon: Wallet,         action: () => nav('/accounts') },
+    { label: 'Contacts',     icon: Users,          action: () => nav('/contacts') },
     { label: 'Transactions', icon: ArrowLeftRight, action: () => nav('/transactions') },
   ]
 
-  // Group 2 — Always visible doc/txn actions
-  const coreActions = [
-    { label: 'Bill',        icon: FileText,     action: () => { close(); openDocCreateSheet('bill') } },
-    { label: 'Invoice',     icon: Receipt,      action: () => { close(); openDocCreateSheet('invoice') } },
-    { label: 'Transaction', icon: CreditCard,   action: () => { close(); openTransactionSheet({}) } },
-    { label: 'Expense',     icon: Banknote,     action: () => { close(); openTransactionSheet({ mode: 'send' }) } },
-  ]
-
-  // Group 3 — Settings-gated document types
-  const optionalActions = [
-    { label: 'Purch. Order', icon: ClipboardList, enabled: !!settings?.enable_po,
-      action: () => { close(); openDocCreateSheet('po') } },
-    { label: 'Proforma Inv', icon: ClipboardList, enabled: !!settings?.enable_pi,
-      action: () => { close(); openDocCreateSheet('pi') } },
-    { label: 'Quotation',    icon: ClipboardList, enabled: !!settings?.enable_quotation,
-      action: () => { close(); openDocCreateSheet('quotation') } },
-    { label: 'Challan',      icon: Truck,         enabled: !!settings?.enable_challan,
-      action: () => { close(); openDocCreateSheet('challan') } },
-    { label: 'Credit Note',  icon: RotateCcw,     enabled: !!settings?.enable_cn,
-      action: () => { close(); openDocCreateSheet('cn') } },
-    { label: 'Debit Note',   icon: RotateCw,      enabled: !!settings?.enable_dn,
-      action: () => { close(); openDocCreateSheet('dn') } },
-    { label: 'Interest',     icon: AlertCircle,   enabled: !!settings?.enable_interest,
-      action: () => { close(); openDocCreateSheet('interest') } },
-  ].filter(a => a.enabled)
-
-  const renderGrid = (actions: { label: string; icon: React.ElementType; action: () => void }[]) => (
+  const renderGrid = (actions: ActionItem[]) => (
     <div className="grid grid-cols-4 gap-2">
-      {actions.map(a => (
+      {actions.map((a) => (
         <button
           key={a.label}
           onClick={a.action}
@@ -80,14 +83,11 @@ export function QuickActionSheet() {
         </SheetHeader>
 
         <div className="space-y-4">
-
-          {/* Core actions */}
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Create</p>
             {renderGrid(coreActions)}
           </div>
 
-          {/* Optional doc types */}
           {optionalActions.length > 0 && (
             <div>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Documents</p>
@@ -95,7 +95,6 @@ export function QuickActionSheet() {
             </div>
           )}
 
-          {/* Pages */}
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Navigate</p>
             {renderGrid(pageActions)}

@@ -1,25 +1,29 @@
-// components/shared/DocCreateSheet.tsx
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useUIStore } from '@/stores/uiStore'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { DOC_TYPE_LABELS } from '@/models/document'
 
-// This sheet just navigates to the doc creation page with type pre-filled
-// Full document form is on /documents/new?type=XXX
+// Navigates to /documents/new?type=XXX&contact=YYY and closes immediately.
+// useRef guard prevents double-navigation on StrictMode double-invoke.
 export function DocCreateSheet() {
   const router = useRouter()
-  const { docCreateSheetOpen, docCreateType, docCreateContactId, closeDocCreateSheet } = useUIStore()
+  const { docCreateSheetOpen, docCreateType, docCreateContactId, closeDocCreateSheet } =
+    useUIStore()
+  const handledRef = useRef(false)
 
   useEffect(() => {
-    if (docCreateSheetOpen && docCreateType) {
-      closeDocCreateSheet()
-      const params = new URLSearchParams({ type: docCreateType })
-      if (docCreateContactId) params.set('contact', docCreateContactId.toString())
-      router.push(`/documents/new?${params.toString()}`)
+    if (!docCreateSheetOpen || !docCreateType) {
+      handledRef.current = false   // reset when closed
+      return
     }
+    if (handledRef.current) return
+    handledRef.current = true
+
+    closeDocCreateSheet()
+    const params = new URLSearchParams({ type: docCreateType })
+    if (docCreateContactId) params.set('contact', docCreateContactId.toString())
+    router.push(`/documents/new?${params.toString()}`)
   }, [docCreateSheetOpen, docCreateType, docCreateContactId, closeDocCreateSheet, router])
 
   return null
