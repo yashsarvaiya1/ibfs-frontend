@@ -1,13 +1,21 @@
-// hooks/useProducts.ts
+// hooks/useProduct.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productService } from '@/services/productService'
-import { ProductCreate, ProductUpdate, AdjustStockPayload } from '@/models/product'
+import type {
+  ProductCreate, ProductUpdate,
+  AdjustStockPayload, SetStockPayload,
+} from '@/models/product'
 
-export const PRODUCTS_KEY = ['products']
-export const productKey = (id: number) => ['products', id]
-export const pendingMovesKey = (id: number) => ['products', id, 'pending_moves']
+export const PRODUCTS_KEY    = ['products'] as const
+export const productKey      = (id: number) => ['products', id] as const
+export const pendingMovesKey = (id: number) => ['products', id, 'pending_moves'] as const
 
-export function useProducts(params?: { search?: string; is_active?: boolean; low_stock?: boolean; page?: number }) {
+export function useProducts(params?: {
+  search?: string
+  is_active?: boolean
+  low_stock?: boolean
+  page?: number
+}) {
   return useQuery({
     queryKey: [...PRODUCTS_KEY, params],
     queryFn: () => productService.list(params),
@@ -49,6 +57,7 @@ export function useUpdateProduct(id: number) {
   })
 }
 
+// Creates actual s.txn + updates current_stock — quantity is signed
 export function useAdjustStock(id: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -57,10 +66,24 @@ export function useAdjustStock(id: number) {
       qc.invalidateQueries({ queryKey: productKey(id) })
       qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
       qc.invalidateQueries({ queryKey: pendingMovesKey(id) })
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
     },
   })
 }
 
+// Direct overwrite — NO s.txn created (spec 3.3 Direct Edit)
+export function useSetStock(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: SetStockPayload) => productService.setStock(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: productKey(id) })
+      qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
+    },
+  })
+}
+
+// Move stock from product page — triggers per-document partial move
 export function useMoveStockFromProduct(id: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -70,6 +93,8 @@ export function useMoveStockFromProduct(id: number) {
       qc.invalidateQueries({ queryKey: productKey(id) })
       qc.invalidateQueries({ queryKey: pendingMovesKey(id) })
       qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
+      qc.invalidateQueries({ queryKey: ['documents'] }) // document stock_status updates
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
     },
   })
 }

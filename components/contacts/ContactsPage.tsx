@@ -18,19 +18,19 @@ import { ContactCreateSheet } from './ContactCreateSheet'
 export function ContactsPage() {
   const router = useRouter()
   const setPageTitle = useUIStore((s) => s.setPageTitle)
-  
+
   useEffect(() => setPageTitle('Contacts'), [setPageTitle])
 
-  const [search, setSearch] = useState('')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [showDeleted, setShowDeleted] = useState(false)
+  const [search,       setSearch]       = useState('')
+  const [createOpen,   setCreateOpen]   = useState(false)
+  const [showDeleted,  setShowDeleted]  = useState(false)
 
-  // Bypass strict type checking for is_active if it's not explicitly in the type definition yet
-  const { data, isLoading } = useContacts({ 
-    search: search || undefined, 
-    is_active: showDeleted ? false : true 
-  } as any)
-  
+  // FIX 1: removed `as any` — is_active added to ContactParams in hooks/useContact.ts
+  const { data, isLoading } = useContacts({
+    search:    search || undefined,
+    is_active: showDeleted ? false : true,
+  })
+
   const contacts = data?.results ?? []
 
   return (
@@ -55,17 +55,20 @@ export function ContactsPage() {
       {/* Filter Toggle */}
       <div className="flex gap-2">
         <Button
-          variant={!showDeleted ? "default" : "outline"}
+          variant={!showDeleted ? 'default' : 'outline'}
           size="sm"
-          className={cn("rounded-lg h-8 px-4 text-xs font-semibold", !showDeleted && "shadow-sm")}
+          className={cn('rounded-lg h-8 px-4 text-xs font-semibold', !showDeleted && 'shadow-sm')}
           onClick={() => setShowDeleted(false)}
         >
           Active
         </Button>
         <Button
-          variant={showDeleted ? "destructive" : "outline"}
+          variant={showDeleted ? 'destructive' : 'outline'}
           size="sm"
-          className={cn("rounded-lg h-8 px-4 text-xs font-semibold gap-1.5", showDeleted && "bg-destructive/10 text-destructive border-destructive/30 shadow-sm")}
+          className={cn(
+            'rounded-lg h-8 px-4 text-xs font-semibold gap-1.5',
+            showDeleted && 'bg-destructive/10 text-destructive border-destructive/30 shadow-sm',
+          )}
           onClick={() => setShowDeleted(true)}
         >
           <Trash2 className="h-3.5 w-3.5" /> Deleted
@@ -75,7 +78,21 @@ export function ContactsPage() {
       {/* List */}
       {isLoading ? (
         <div className="space-y-2.5">
-          {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+          {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+      ) : contacts.length === 0 ? (
+        // FIX 2: empty state hoisted OUTSIDE the list wrapper
+        <div className="text-center py-16 flex flex-col items-center">
+          <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
+            <Users className="h-5 w-5 text-muted-foreground/50" />
+          </div>
+          <p className="text-muted-foreground text-sm font-medium">
+            {showDeleted
+              ? 'No deleted contacts found'
+              : search
+                ? 'No contacts match your search'
+                : 'No contacts yet. Tap + to add one.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -83,22 +100,26 @@ export function ContactsPage() {
             <Card
               key={contact.id}
               className={cn(
-                "cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm",
-                !contact.is_active ? "opacity-70 bg-muted/40 border-dashed" : "border-border/80 hover:bg-muted/20"
+                'cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
+                !contact.is_active
+                  ? 'opacity-70 bg-muted/40 border-dashed'
+                  : 'border-border/80 hover:bg-muted/20',
               )}
               onClick={() => router.push(`/contacts/${contact.id}`)}
             >
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-bold text-foreground/90 truncate">{getContactDisplayName(contact)}</p>
+                    <p className="font-bold text-foreground/90 truncate">
+                      {getContactDisplayName(contact)}
+                    </p>
                     {!contact.is_active && (
-                      <Badge variant="destructive" className="text-[9px] h-4 px-1.5 rounded-md">Deleted</Badge>
+                      <Badge variant="destructive" className="text-[9px] h-4 px-1.5 rounded-md">
+                        Deleted
+                      </Badge>
                     )}
                   </div>
-                  
                   <p className="text-xs font-medium text-muted-foreground">{contact.phone}</p>
-                  
                   {contact.company_name && (
                     <p className="text-[11px] text-muted-foreground/70 truncate mt-0.5 uppercase tracking-wider font-semibold">
                       {contact.contact_name}
@@ -107,8 +128,7 @@ export function ContactsPage() {
                 </div>
                 <div className="flex items-center gap-3 ml-3 shrink-0">
                   <div className="text-right">
-                    {/* FIXED: using current_cf returned by DRF instead of non-existent running_cf */}
-                    <p className={cn("text-sm font-black", cfColor(contact.current_cf))}>
+                    <p className={cn('text-sm font-black', cfColor(contact.current_cf))}>
                       {cfLabel(contact.current_cf)}
                     </p>
                   </div>
@@ -117,21 +137,6 @@ export function ContactsPage() {
               </CardContent>
             </Card>
           ))}
-          
-          {contacts.length === 0 && !isLoading && (
-            <div className="text-center py-16 flex flex-col items-center">
-              <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
-                <Users className="h-5 w-5 text-muted-foreground/50" />
-              </div>
-              <p className="text-muted-foreground text-sm font-medium">
-                {showDeleted 
-                  ? 'No deleted contacts found' 
-                  : search 
-                    ? 'No contacts match your search' 
-                    : 'No contacts yet. Tap + to add one.'}
-              </p>
-            </div>
-          )}
         </div>
       )}
 

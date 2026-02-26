@@ -1,18 +1,24 @@
+// components/settings/SettingsPage.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { UploadInput } from '@/components/shared/UploadInput'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
-import { LogOut, Wallet, Users, Package, Save } from 'lucide-react'
+import {
+  LogOut, Wallet, Users, Package,
+  Image as ImageIcon, PenLine,
+} from 'lucide-react'
+
+// ─── Toggle row ───────────────────────────────────────────────────────────────
 
 interface ToggleRowProps {
   label:       string
@@ -29,14 +35,40 @@ function ToggleRow({ label, description, checked, onToggle, disabled }: ToggleRo
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
-      <Switch
-        checked={checked}
-        onCheckedChange={onToggle}
+      <Switch checked={checked} onCheckedChange={onToggle} disabled={disabled} />
+    </div>
+  )
+}
+
+// ─── Image preview row ────────────────────────────────────────────────────────
+
+interface ImageUploadRowProps {
+  label:       string
+  description: string
+  value:       string[]
+  onChange:    (urls: string[]) => void
+  disabled?:   boolean
+}
+
+function ImageUploadRow({ label, description, value, onChange, disabled }: ImageUploadRowProps) {
+  return (
+    <div className="py-3 space-y-2">
+      <div>
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+      </div>
+      <UploadInput
+        value={value}
+        onChange={onChange}
+        context="settings"
+        maxFiles={1}
         disabled={disabled}
       />
     </div>
   )
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function SettingsPage() {
   const router       = useRouter()
@@ -48,19 +80,42 @@ export function SettingsPage() {
   const logout   = useAuthStore((s) => s.logout)
   const username = useAuthStore((s) => s.username)
 
-  // Local state for the new URL fields (Bug #20)
-  const [headerUrl, setHeaderUrl] = useState('')
-  const [signUrl, setSignUrl] = useState('')
+  const isPending = updateSettings.isPending
 
-  // Sync local state when settings load
+  // ── Image URL state — array of 0-1 GCS URLs ────────────────────────────────
+  // UploadInput works with string[], settings model stores single string
+  const [headerUrls, setHeaderUrls] = useState<string[]>([])
+  const [signUrls,   setSignUrls]   = useState<string[]>([])
+
   useEffect(() => {
     if (settings) {
-      setHeaderUrl(settings.header_image || '')
-      setSignUrl(settings.sign_image || '')
+      setHeaderUrls(settings.header_image ? [settings.header_image] : [])
+      setSignUrls(settings.sign_image   ? [settings.sign_image]   : [])
     }
   }, [settings])
 
-  // Type-safe toggle — key must be a boolean field of Settings
+  // ── Auto-save image to settings on upload (onChange fires after GCS upload) ─
+  const handleHeaderChange = useCallback(async (urls: string[]) => {
+    setHeaderUrls(urls)
+    try {
+      await updateSettings.mutateAsync({ header_image: urls[0] ?? null })
+      toast.success('Letterhead saved')
+    } catch {
+      toast.error('Failed to save letterhead')
+    }
+  }, [updateSettings])
+
+  const handleSignChange = useCallback(async (urls: string[]) => {
+    setSignUrls(urls)
+    try {
+      await updateSettings.mutateAsync({ sign_image: urls[0] ?? null })
+      toast.success('Signature saved')
+    } catch {
+      toast.error('Failed to save signature')
+    }
+  }, [updateSettings])
+
+  // ── Toggle ──────────────────────────────────────────────────────────────────
   const toggle = async (field: string, value: boolean) => {
     try {
       await updateSettings.mutateAsync({ [field]: value })
@@ -69,18 +124,7 @@ export function SettingsPage() {
     }
   }
 
-  // Handle saving the custom URLs
-  const saveCustomUrls = async () => {
-    try {
-      await updateSettings.mutateAsync({
-        header_image: headerUrl,
-        sign_image: signUrl
-      })
-      toast.success('Print customization saved')
-    } catch {
-      toast.error('Failed to save print customization')
-    }
-  }
+  const handleLogout = () => { logout(); router.replace('/login') }
 
   if (isLoading) return (
     <div className="px-4 py-4 space-y-3">
@@ -92,17 +136,10 @@ export function SettingsPage() {
 
   if (!settings) return null
 
-  const handleLogout = () => {
-    logout()
-    router.replace('/login')
-  }
-
-  const isPending = updateSettings.isPending
-
   return (
     <div className="px-4 py-4 pb-10 space-y-6">
 
-      {/* ── Account Info ──────────────────────────────────────────────── */}
+      {/* ── Account info ──────────────────────────────────────────────── */}
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-3">
@@ -119,7 +156,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* ── Quick Links ───────────────────────────────────────────────── */}
+      {/* ── Quick links ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
         {([
           { label: 'Accounts',  icon: Wallet,  href: '/accounts'  },
@@ -164,7 +201,7 @@ export function SettingsPage() {
         </Card>
       </div>
 
-      {/* ── Document Types ────────────────────────────────────────────── */}
+      {/* ── Document types ────────────────────────────────────────────── */}
       <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
           Document Types
@@ -194,28 +231,28 @@ export function SettingsPage() {
             />
             <ToggleRow
               label="Challan"
-              description="Enable delivery challan — Bills/Invoices won't move stock automatically"
+              description="Enable delivery challan — Bills/Invoices won't generate stock entries"
               checked={settings.enable_challan}
               onToggle={v => toggle('enable_challan', v)}
               disabled={isPending}
             />
             <ToggleRow
               label="Credit Note"
-              description="Enable Credit Note (CN) — return of sale"
+              description="Enable CN — return of sale"
               checked={settings.enable_cn}
               onToggle={v => toggle('enable_cn', v)}
               disabled={isPending}
             />
             <ToggleRow
               label="Debit Note"
-              description="Enable Debit Note (DN) — return of purchase"
+              description="Enable DN — return of purchase"
               checked={settings.enable_dn}
               onToggle={v => toggle('enable_dn', v)}
               disabled={isPending}
             />
             <ToggleRow
               label="Cash Vouchers"
-              description="Replace simple amount input with line items when cash account is selected"
+              description="Replace amount input with line items when Cash account is selected"
               checked={settings.enable_vouchers}
               onToggle={v => toggle('enable_vouchers', v)}
               disabled={isPending}
@@ -231,42 +268,40 @@ export function SettingsPage() {
         </Card>
       </div>
 
-      {/* ── Print Customization (Fixes Bug #20) ───────────────────────── */}
+      {/* ── Print customization — GCS upload ──────────────────────────── */}
       <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
           Print Customization
         </h2>
         <Card>
-          <CardContent className="p-4 space-y-4">
-            <div className="space-y-2">
-              <Label className="text-xs">Letterhead URL (header_url)</Label>
-              <Input 
-                placeholder="https://example.com/header.png" 
-                value={headerUrl} 
-                onChange={(e) => setHeaderUrl(e.target.value)}
-                className="text-xs h-9"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Signature URL (sign_url)</Label>
-              <Input 
-                placeholder="https://example.com/sign.png" 
-                value={signUrl} 
-                onChange={(e) => setSignUrl(e.target.value)}
-                className="text-xs h-9"
-              />
-            </div>
-            <Button 
-              size="sm" 
-              onClick={saveCustomUrls} 
+          <CardContent className="p-4 divide-y">
+
+            {/* Letterhead */}
+            <ImageUploadRow
+              label="Letterhead"
+              description="Shown at the top of printed documents. Upload via camera or file."
+              value={headerUrls}
+              onChange={handleHeaderChange}
               disabled={isPending}
-              className="w-full mt-2"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              Save Images
-            </Button>
+            />
+
+            {/* Signature */}
+            <div className="pt-3">
+              <ImageUploadRow
+                label="Signature"
+                description="Shown at the bottom of printed documents."
+                value={signUrls}
+                onChange={handleSignChange}
+                disabled={isPending}
+              />
+            </div>
+
           </CardContent>
         </Card>
+
+        <p className="text-[11px] text-muted-foreground mt-2 px-1">
+          Images are uploaded to cloud storage. Tap the thumbnail to remove and re-upload.
+        </p>
       </div>
 
       {/* ── Logout ────────────────────────────────────────────────────── */}
@@ -277,6 +312,7 @@ export function SettingsPage() {
       >
         <LogOut className="h-4 w-4" /> Logout
       </Button>
+
     </div>
   )
 }

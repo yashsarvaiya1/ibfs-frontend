@@ -1,9 +1,9 @@
 // services/contactService.ts
 import api from '@/lib/axios'
-import { Contact, ContactCreate, ContactUpdate } from '@/models/contact'
-import { FinancialTransaction, SendReceivePayload } from '@/models/transaction'
-import { DocumentListItem } from '@/models/document'
-import { PaginatedResponse } from '@/models/pagination'
+import type { Contact, ContactCreate, ContactUpdate } from '@/models/contact'
+import type { FinancialTransaction, SendReceivePayload, TransactionListParams } from '@/models/transaction'
+import type { DocumentListItem, DocumentListParams } from './documentService'
+import type { PaginatedResponse } from '@/models/pagination'
 
 export const contactService = {
   list: (params?: { search?: string; is_active?: boolean; page?: number }) =>
@@ -21,21 +21,25 @@ export const contactService = {
   remove: (id: number) =>
     api.delete(`/contacts/${id}/`),
 
-  // fix: returns PaginatedResponse not plain array
-  ledger: (id: number, params?: { exclude_type?: string; page?: number }) =>
+  // Ledger = financial transactions filtered by contact
+  // Passes through to GET /transactions/?contact={id}
+  // Backend auto-hides record txns when auto_transaction=ON unless include_records=true
+  ledger: (id: number, params?: Omit<TransactionListParams, 'contact'>) =>
     api.get<PaginatedResponse<FinancialTransaction>>(
-      `/transactions/`, { params: { contact: id, ...params } }
+      '/transactions/', { params: { contact: id, ...params } }
     ).then(r => r.data),
 
-  // new: fetch documents for a contact (bug #16 — separate tab)
-  documents: (id: number, params?: { type?: string; page?: number }) =>
+  // Documents tab on contact page — GET /documents/?contact={id}
+  documents: (id: number, params?: Omit<DocumentListParams, 'contact'>) =>
     api.get<PaginatedResponse<DocumentListItem>>(
-      `/documents/`, { params: { contact: id, ...params } }
+      '/documents/', { params: { contact: id, ...params } }
     ).then(r => r.data),
 
+  // POST /contacts/{id}/send/  — direction derived server-side
   send: (id: number, data: SendReceivePayload) =>
     api.post(`/contacts/${id}/send/`, data).then(r => r.data),
 
+  // POST /contacts/{id}/receive/
   receive: (id: number, data: SendReceivePayload) =>
     api.post(`/contacts/${id}/receive/`, data).then(r => r.data),
 }

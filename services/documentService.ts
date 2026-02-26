@@ -1,25 +1,32 @@
 // services/documentService.ts
 import api from '@/lib/axios'
-import {
+import type {
   Document,
   DocumentListItem,
   DocumentCreate,
+  DocumentUpdate,
   RecordPaymentPayload,
   MoveStockPayload,
   StockPreviewItem,
-  DeleteStrategy,
+  DeleteDocumentPayload,
 } from '@/models/document'
-import { PaginatedResponse } from '@/models/pagination'
+import type { PaginatedResponse } from '@/models/pagination'
 
+// Exported so contactService + other consumers can reuse this type
 export interface DocumentListParams {
   type?: string
   contact?: number
   date_from?: string
   date_to?: string
-  pending_stock?: boolean
+  reference?: number
   search?: string
   page?: number
+  page_size?: number
+  is_active?: boolean 
 }
+
+// Re-export so contactService can import DocumentListItem from this file
+export type { DocumentListItem }
 
 export const documentService = {
   list: (params?: DocumentListParams) =>
@@ -31,7 +38,7 @@ export const documentService = {
   create: (data: DocumentCreate) =>
     api.post<Document>('/documents/', data).then(r => r.data),
 
-  update: (id: number, data: Partial<DocumentCreate>) =>
+  update: (id: number, data: DocumentUpdate) =>
     api.patch<Document>(`/documents/${id}/`, data).then(r => r.data),
 
   recordPayment: (id: number, data: RecordPaymentPayload) =>
@@ -43,9 +50,9 @@ export const documentService = {
   stockPreview: (id: number) =>
     api.get<StockPreviewItem[]>(`/documents/${id}/stock_preview/`).then(r => r.data),
 
-  addDetails: (id: number, data: { line_items: Document['line_items'] }) =>
+  addDetails: (id: number, data: { line_items: DocumentCreate['line_items'] }) =>
     api.post<Document>(`/documents/${id}/add_details/`, data).then(r => r.data),
 
-  deleteDocument: (id: number, strategy: DeleteStrategy) =>
-    api.post(`/documents/${id}/delete_document/`, { strategy }).then(r => r.data),
+  deleteDocument: (id: number, data: DeleteDocumentPayload) =>
+    api.post(`/documents/${id}/delete_document/`, data).then(r => r.data),
 }

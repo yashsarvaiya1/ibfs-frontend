@@ -1,10 +1,10 @@
-// hooks/useAccounts.ts
+// hooks/useAccount.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountService } from '@/services/accountService'
-import { AccountCreate, AccountUpdate, TransferPayload, AdjustBalancePayload } from '@/models/account'
+import type { AccountCreate, AccountUpdate, TransferPayload, AdjustBalancePayload } from '@/models/account'
 
-export const ACCOUNTS_KEY = ['accounts']
-export const accountKey = (id: number) => ['accounts', id]
+export const ACCOUNTS_KEY = ['accounts'] as const
+export const accountKey = (id: number) => ['accounts', id] as const
 
 export function useAccounts(params?: { is_active?: boolean }) {
   return useQuery({
@@ -40,6 +40,18 @@ export function useUpdateAccount(id: number) {
   })
 }
 
+// Direct balance overwrite — PATCH current_balance, no f.txn (spec B1)
+export function useSetBalance(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (balance: string) => accountService.setBalance(id, balance),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: accountKey(id) })
+      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+    },
+  })
+}
+
 export function useTransfer() {
   const qc = useQueryClient()
   return useMutation({
@@ -52,17 +64,6 @@ export function useAdjustBalance(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: AdjustBalancePayload) => accountService.adjust(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: accountKey(id) })
-      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
-    },
-  })
-}
-
-export function useSetBalance(id: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (balance: string) => accountService.setBalance(id, balance),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: accountKey(id) })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })

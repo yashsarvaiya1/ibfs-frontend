@@ -1,16 +1,24 @@
-// hooks/useDocuments.ts
+// hooks/useDocument.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { documentService, DocumentListParams } from '@/services/documentService'
-import { DocumentCreate, RecordPaymentPayload, MoveStockPayload, DeleteStrategy } from '@/models/document'
+import { documentService } from '@/services/documentService'
+import type { DocumentListParams } from '@/services/documentService'
+import type {
+  DocumentCreate, DocumentUpdate,
+  RecordPaymentPayload, MoveStockPayload,
+  DeleteDocumentPayload,
+} from '@/models/document'
 
-export const DOCUMENTS_KEY   = ['documents']
-export const documentKey     = (id: number) => ['documents', id]
-export const stockPreviewKey = (id: number) => ['documents', id, 'stock_preview']
+export const DOCUMENTS_KEY   = ['documents'] as const
+export const documentKey     = (id: number) => ['documents', id] as const
+export const stockPreviewKey = (id: number) => ['documents', id, 'stock_preview'] as const
 
+// enabled: params !== undefined — skips fetch when called as useDocuments(undefined)
+// This is the pattern used in TransactionSheet to conditionally fetch by contact
 export function useDocuments(params?: DocumentListParams) {
   return useQuery({
     queryKey: [...DOCUMENTS_KEY, params],
     queryFn:  () => documentService.list(params),
+    enabled:  params !== undefined,
   })
 }
 
@@ -34,10 +42,23 @@ export function useCreateDocument() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: DocumentCreate) => documentService.create(data),
-    onSuccess: (doc) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
       qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+}
+
+export function useUpdateDocument(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: DocumentUpdate) => documentService.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: documentKey(id) })
+      qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
+      qc.invalidateQueries({ queryKey: stockPreviewKey(id) })
       qc.invalidateQueries({ queryKey: ['products'] })
     },
   })
@@ -47,7 +68,7 @@ export function useRecordPayment(docId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: RecordPaymentPayload) => documentService.recordPayment(docId, data),
-    onSuccess:  () => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
@@ -60,7 +81,7 @@ export function useMoveStock(docId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: MoveStockPayload) => documentService.moveStock(docId, data),
-    onSuccess:  () => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: stockPreviewKey(docId) })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
@@ -85,8 +106,9 @@ export function useAddDetails(docId: number) {
 export function useDeleteDocument(docId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (strategy: DeleteStrategy) => documentService.deleteDocument(docId, strategy),
+    mutationFn: (data: DeleteDocumentPayload) => documentService.deleteDocument(docId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
       qc.invalidateQueries({ queryKey: ['contacts'] })
@@ -94,21 +116,3 @@ export function useDeleteDocument(docId: number) {
     },
   })
 }
-
-export function useUpdateDocument(id: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (data: Partial<DocumentCreate>) => documentService.update(id, data),
-    onSuccess: () => {
-      // Invalidate queries so the UI refreshes with the new data
-      qc.invalidateQueries({ queryKey: documentKey(id) })
-      qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
-      qc.invalidateQueries({ queryKey: stockPreviewKey(id) })
-      qc.invalidateQueries({ queryKey: ['accounts'] })
-      qc.invalidateQueries({ queryKey: ['contacts'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-    },
-  })
-}
-
-

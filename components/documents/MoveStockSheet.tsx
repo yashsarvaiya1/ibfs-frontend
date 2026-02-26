@@ -9,27 +9,29 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { CheckCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Props {
-  docId: number
+  docId:        number
   stockPreview: StockPreviewItem[]
-  open: boolean
-  onClose: () => void
+  open:         boolean
+  onClose:      () => void
 }
+
+// FIX 2 helper — normalise DRF Decimal string to integer string for input display
+const toQtyStr = (v: string | number) => String(Math.floor(Number(v)))
 
 export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
   const moveStock = useMoveStock(docId)
 
-  const [quantities, setQuantities] = useState<Record<number, string>>(
-    Object.fromEntries(stockPreview.map(s => [s.product_id, s.remaining_qty]))
-  )
+  // FIX 1: empty initial state — useEffect below is the sole source of truth
+  const [quantities, setQuantities] = useState<Record<number, string>>({})
 
   useEffect(() => {
+    // FIX 2: normalise remaining_qty from "5.00" → "5"
     setQuantities(
-      Object.fromEntries(stockPreview.map(s => [s.product_id, s.remaining_qty]))
+      Object.fromEntries(stockPreview.map(s => [s.product_id, toQtyStr(s.remaining_qty)]))
     )
   }, [stockPreview])
 
@@ -52,14 +54,17 @@ export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
     }
   }
 
-  // Helper to instantly max out all remaining stock
+  // FIX 2: normalise on max-out too
   const handleMoveAll = () => {
-    const maxed = Object.fromEntries(stockPreview.map(s => [s.product_id, s.remaining_qty]))
-    setQuantities(maxed)
+    setQuantities(
+      Object.fromEntries(stockPreview.map(s => [s.product_id, toQtyStr(s.remaining_qty)]))
+    )
   }
 
   const totalPending = stockPreview.reduce((s, item) => s + Number(item.remaining_qty), 0)
-  const totalQueued = stockPreview.reduce((s, item) => s + (Number(quantities[item.product_id]) || 0), 0)
+  const totalQueued  = stockPreview.reduce(
+    (s, item) => s + (Number(quantities[item.product_id]) || 0), 0
+  )
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
@@ -71,7 +76,12 @@ export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
           <div className="flex items-center justify-between pr-6">
             <SheetTitle className="text-left">Move Stock</SheetTitle>
             {totalPending > 0 && (
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 rounded-lg" onClick={handleMoveAll}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 rounded-lg"
+                onClick={handleMoveAll}
+              >
                 <CheckCheck className="h-3.5 w-3.5" /> Move All
               </Button>
             )}
@@ -85,7 +95,10 @@ export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
             const isDone    = remaining === 0
 
             return (
-              <Card key={s.product_id} className={isDone ? 'opacity-50 bg-muted/40 border-dashed' : 'rounded-xl shadow-sm'}>
+              <Card
+                key={s.product_id}
+                className={isDone ? 'opacity-50 bg-muted/40 border-dashed' : 'rounded-xl shadow-sm'}
+              >
                 <CardContent className="p-3 space-y-2">
                   <div className="flex justify-between items-start">
                     <p className="font-semibold text-sm leading-tight pr-2">{s.product_name}</p>
@@ -112,7 +125,7 @@ export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
                         value={quantities[s.product_id] ?? ''}
                         onChange={e => {
                           const v = Math.min(Math.max(0, Number(e.target.value)), remaining)
-                          setQuantities(prev => ({ ...prev, [s.product_id]: v.toString() }))
+                          setQuantities(prev => ({ ...prev, [s.product_id]: String(v) }))
                         }}
                       />
                     </div>
@@ -134,7 +147,9 @@ export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
             onClick={handleMove}
             disabled={moveStock.isPending || totalQueued === 0}
           >
-            {moveStock.isPending ? 'Moving...' : `Confirm Move${totalQueued > 0 ? ` (${totalQueued})` : ''}`}
+            {moveStock.isPending
+              ? 'Moving...'
+              : `Confirm Move${totalQueued > 0 ? ` (${totalQueued})` : ''}`}
           </Button>
         </div>
       </SheetContent>

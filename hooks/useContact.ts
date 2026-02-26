@@ -1,50 +1,51 @@
-// hooks/useContacts.ts
+// hooks/useContact.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { contactService } from '@/services/contactService'
-import { ContactCreate, ContactUpdate } from '@/models/contact'
-import { SendReceivePayload } from '@/models/transaction'
+import type { ContactCreate, ContactUpdate } from '@/models/contact'
+import type { SendReceivePayload, TransactionListParams } from '@/models/transaction'
+import type { DocumentListParams } from '@/services/documentService'
 
-export const CONTACTS_KEY = ['contacts']
-export const contactKey    = (id: number) => ['contacts', id]
-export const ledgerKey     = (id: number) => ['contacts', id, 'ledger']
-export const contactDocsKey = (id: number) => ['contacts', id, 'documents']
+export const CONTACTS_KEY = ['contacts'] as const
+export const contactKey     = (id: number) => ['contacts', id] as const
+export const ledgerKey      = (id: number) => ['contacts', id, 'ledger'] as const
+export const contactDocsKey = (id: number) => ['contacts', id, 'documents'] as const
 
 export function useContacts(params?: { search?: string; is_active?: boolean; page?: number }) {
   return useQuery({
     queryKey: [...CONTACTS_KEY, params],
-    queryFn:  () => contactService.list(params),
+    queryFn: () => contactService.list(params),
   })
 }
 
 export function useContact(id: number) {
   return useQuery({
     queryKey: contactKey(id),
-    queryFn:  () => contactService.get(id),
-    enabled:  !!id,
+    queryFn: () => contactService.get(id),
+    enabled: !!id,
   })
 }
 
-// fix: now returns PaginatedResponse, supports exclude_type for bug #15
+// Ledger — uses TransactionListParams minus 'contact' (contact is injected by service)
 export function useContactLedger(
   id: number,
-  params?: { exclude_type?: string; page?: number }
+  params?: Omit<TransactionListParams, 'contact'>
 ) {
   return useQuery({
     queryKey: [...ledgerKey(id), params],
-    queryFn:  () => contactService.ledger(id, params),
-    enabled:  !!id,
+    queryFn: () => contactService.ledger(id, params),
+    enabled: !!id,
   })
 }
 
-// new: fetch documents for a contact — bug #16 (separate Documents tab)
+// Documents tab — separate from ledger, shows bills/invoices/etc for this contact
 export function useContactDocuments(
   id: number,
-  params?: { type?: string; page?: number }
+  params?: Omit<DocumentListParams, 'contact'>
 ) {
   return useQuery({
     queryKey: [...contactDocsKey(id), params],
-    queryFn:  () => contactService.documents(id, params),
-    enabled:  !!id,
+    queryFn: () => contactService.documents(id, params),
+    enabled: !!id,
   })
 }
 
@@ -52,7 +53,7 @@ export function useCreateContact() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: ContactCreate) => contactService.create(data),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: CONTACTS_KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: CONTACTS_KEY }),
   })
 }
 
@@ -60,35 +61,39 @@ export function useUpdateContact(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: ContactUpdate) => contactService.update(id, data),
-    onSuccess:  () => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: contactKey(id) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })
     },
   })
 }
 
+// Send — covers plain send, expense (is_expense:true), voucher, with/without interest
 export function useSend(contactId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: SendReceivePayload) => contactService.send(contactId, data),
-    onSuccess:  () => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ledgerKey(contactId) })
       qc.invalidateQueries({ queryKey: contactKey(contactId) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['documents'] })  // voucher doc created on backend
     },
   })
 }
 
+// Receive — covers plain receive, voucher, with/without interest
 export function useReceive(contactId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: SendReceivePayload) => contactService.receive(contactId, data),
-    onSuccess:  () => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ledgerKey(contactId) })
       qc.invalidateQueries({ queryKey: contactKey(contactId) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['documents'] })  // voucher doc created on backend
     },
   })
 }

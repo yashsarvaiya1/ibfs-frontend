@@ -7,11 +7,9 @@ import { useUIStore } from '@/stores/uiStore'
 import {
   useProduct,
   useUpdateProduct,
-  useAdjustStock,
   usePendingMoves,
 } from '@/hooks/useProduct'
-
-import { useStockTransactions } from '@/hooks/useStock' 
+import { useStockTransactions } from '@/hooks/useStock'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,7 +23,10 @@ import {
   DropdownMenu, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import {
+  MoreVertical, TrendingUp, TrendingDown,
+  AlertTriangle, CheckCircle2, MoveRight,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { StockTransactionCard } from '@/components/shared/StockTransactionCard'
 
@@ -33,39 +34,32 @@ interface Props { id: number }
 
 export function ProductDetailPage({ id }: Props) {
   const router       = useRouter()
-  const setPageTitle = useUIStore((s) => s.setPageTitle)
+  const {
+    setPageTitle,
+    openAdjustStockSheet,
+    openMoveStockSheet,
+  } = useUIStore()
 
-  const { data: product,     isLoading } = useProduct(id)
-  const { data: stockTxnsData }          = useStockTransactions({ product: id })
-  const { data: pendingMoves }           = usePendingMoves(id)
+  const { data: product,   isLoading } = useProduct(id)
+  const { data: stockData }            = useStockTransactions({ product: id })
+  const { data: pendingMoves }         = usePendingMoves(id)
 
-  const stockTxns = stockTxnsData?.results ?? []
-  const moves   = pendingMoves ?? []
-
-  // BUG 12 FIX: Separate pending vs fully stocked
-  const pending = moves.filter(m => Number(m.remaining_qty) > 0)
+  const stockTxns = stockData?.results ?? []
+  const moves     = pendingMoves ?? []
+  const pending   = moves.filter(m => Number(m.remaining_qty) > 0)
   const completed = moves.filter(m => Number(m.remaining_qty) <= 0)
 
-  const [editSheet,   setEditSheet]   = useState(false)
-  const [adjustSheet, setAdjustSheet] = useState(false)
-  const [adjustMode,  setAdjustMode]  = useState<'add' | 'remove'>('add')
-
-  // ── Edit state ──────────────────────────────────────────────────────────────
+  // ── Edit sheet — stays inline, not global ──────────────────────────────────
+  const [editSheet,    setEditSheet]    = useState(false)
   const [editName,     setEditName]     = useState('')
   const [editRate,     setEditRate]     = useState('')
   const [editUnit,     setEditUnit]     = useState('')
   const [editMinStock, setEditMinStock] = useState('')
   const [editHsn,      setEditHsn]      = useState('')
   const [editDesc,     setEditDesc]     = useState('')
-  const [editStock,    setEditStock]    = useState('') // BUG 11 FIX: Direct Stock Edit
-
-  // ── Adjust state ────────────────────────────────────────────────────────────
-  const [adjustQty,   setAdjustQty]   = useState('')
-  const [adjustNotes, setAdjustNotes] = useState('')
-  const [adjustRate,  setAdjustRate]  = useState('')
+  const [editStock,    setEditStock]    = useState('') // direct overwrite — no s.txn
 
   const updateProduct = useUpdateProduct(id)
-  const adjustStock   = useAdjustStock(id)
 
   useEffect(() => {
     if (product) {
@@ -76,7 +70,7 @@ export function ProductDetailPage({ id }: Props) {
       setEditMinStock(product.min_stock)
       setEditHsn(product.hsn_code ?? '')
       setEditDesc(product.description ?? '')
-      setEditStock(product.current_stock) // Initialize direct stock value
+      setEditStock(product.current_stock)
     }
   }, [product, setPageTitle])
 
@@ -101,7 +95,7 @@ export function ProductDetailPage({ id }: Props) {
         min_stock:     editMinStock,
         hsn_code:      editHsn || null,
         description:   editDesc || null,
-        current_stock: editStock, // BUG 11 FIX: Send direct stock overwrite (no s.txn created)
+        current_stock: editStock, // direct overwrite — no s.txn created
       })
       toast.success('Product updated')
       setEditSheet(false)
@@ -110,38 +104,10 @@ export function ProductDetailPage({ id }: Props) {
     }
   }
 
-  const handleAdjust = async () => {
-    if (!adjustQty || Number(adjustQty) <= 0) {
-      toast.error('Enter a valid quantity'); return
-    }
-    const signed = adjustMode === 'add' ? adjustQty : `-${adjustQty}`
-    try {
-      await adjustStock.mutateAsync({
-        quantity: signed,
-        rate:     adjustRate  || undefined,
-        notes:    adjustNotes || undefined,
-        date:     new Date().toISOString().split('T')[0],
-      })
-      toast.success(`Stock ${adjustMode === 'add' ? 'added' : 'removed'}`)
-      setAdjustSheet(false)
-      setAdjustQty(''); setAdjustNotes(''); setAdjustRate('')
-    } catch {
-      toast.error('Adjustment failed')
-    }
-  }
-
-  const openAdjustSheet = (mode: 'add' | 'remove') => {
-    setAdjustMode(mode)
-    setAdjustQty('')
-    setAdjustNotes('')
-    setAdjustRate('')
-    setAdjustSheet(true)
-  }
-
   return (
     <div className="pb-10">
 
-      {/* ── Product Header ────────────────────────────────────────────────── */}
+      {/* ── Product header ────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between">
           <div>
@@ -179,13 +145,13 @@ export function ProductDetailPage({ id }: Props) {
         </div>
       </div>
 
-      {/* ── Stock Stats ───────────────────────────────────────────────────── */}
+      {/* ── Stock stats ───────────────────────────────────────────────────── */}
       <div className="px-4 pb-4">
         <div className="grid grid-cols-3 gap-3">
           <Card className="rounded-xl shadow-sm">
             <CardContent className="p-3 text-center">
               <p className="text-xs text-muted-foreground">Current Stock</p>
-              <p className={cn("text-xl font-bold mt-1", isLow ? "text-orange-500" : "")}>
+              <p className={cn('text-xl font-bold mt-1', isLow && 'text-orange-500')}>
                 {product.current_stock}
               </p>
               <p className="text-[10px] text-muted-foreground">{product.unit}</p>
@@ -208,15 +174,18 @@ export function ProductDetailPage({ id }: Props) {
         </div>
       </div>
 
-      {/* ── Adjust Buttons (Bug #11 Part 2) ─────────────────────────────── */}
+      {/* ── Adjust buttons → global AdjustStockSheet ─────────────────────── */}
       <div className="px-4 pb-4 grid grid-cols-2 gap-3">
-        <Button className="h-11 gap-2 rounded-xl" onClick={() => openAdjustSheet('add')}>
+        <Button
+          className="h-11 gap-2 rounded-xl"
+          onClick={() => openAdjustStockSheet(id, 'add')}
+        >
           <TrendingUp className="h-4 w-4" /> Add Stock
         </Button>
         <Button
           variant="outline"
           className="h-11 gap-2 rounded-xl"
-          onClick={() => openAdjustSheet('remove')}
+          onClick={() => openAdjustStockSheet(id, 'remove')}
         >
           <TrendingDown className="h-4 w-4" /> Remove Stock
         </Button>
@@ -224,7 +193,7 @@ export function ProductDetailPage({ id }: Props) {
 
       <Separator />
 
-      {/* ── Stock Movements (Bug #12 FIX) ─────────────────────────────────── */}
+      {/* ── Document movements ───────────────────────────────────────────── */}
       {moves.length > 0 && (
         <>
           <div className="px-4 pt-5 pb-2">
@@ -233,8 +202,8 @@ export function ProductDetailPage({ id }: Props) {
             </h2>
           </div>
           <div className="px-4 space-y-3">
-            
-            {/* Pending Section */}
+
+            {/* Pending — ACTION REQUIRED */}
             {pending.length > 0 && (
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold text-orange-600 flex items-center gap-1">
@@ -243,25 +212,36 @@ export function ProductDetailPage({ id }: Props) {
                 {pending.map(move => (
                   <Card
                     key={move.document_id}
-                    className="border-orange-200 bg-orange-50 dark:bg-orange-950/20 cursor-pointer rounded-xl shadow-sm"
-                    onClick={() => router.push(`/documents/${move.document_id}`)}
+                    className="border-orange-200 bg-orange-50 dark:bg-orange-950/20 rounded-xl shadow-sm"
                   >
                     <CardContent className="p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
+                      <div className="flex items-center justify-between gap-2">
+                        {/* Left — tap to nav to doc */}
+                        <button
+                          type="button"
+                          className="flex-1 text-left"
+                          onClick={() => router.push(`/documents/${move.document_id}`)}
+                        >
                           <p className="text-sm font-semibold">
                             {move.doc_type.toUpperCase()} #{move.doc_id}
                           </p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {move.contact ?? 'No contact'} · {fmtDate(move.date)}
                           </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-0.5">Remaining</p>
-                          <p className="text-sm font-bold text-orange-600">
-                            {move.remaining_qty} {product.unit}
+                          <p className="text-xs font-bold text-orange-600 mt-1">
+                            {move.remaining_qty} {product.unit} remaining
                           </p>
-                        </div>
+                        </button>
+
+                        {/* Right — Move Stock → global MoveStockSheet */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 h-8 text-xs gap-1.5 rounded-lg border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100"
+                          onClick={() => openMoveStockSheet(move.document_id, 'product')}
+                        >
+                          <MoveRight className="h-3.5 w-3.5" /> Move
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -269,7 +249,7 @@ export function ProductDetailPage({ id }: Props) {
               </div>
             )}
 
-            {/* Completed Section */}
+            {/* Completed — FULFILLED */}
             {completed.length > 0 && (
               <div className="space-y-2 pt-2">
                 <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
@@ -278,7 +258,7 @@ export function ProductDetailPage({ id }: Props) {
                 {completed.map(move => (
                   <Card
                     key={move.document_id}
-                    className="border-emerald-100 bg-emerald-50/50 dark:bg-emerald-950/10 cursor-pointer rounded-xl opacity-75 hover:opacity-100 transition-opacity"
+                    className="border-emerald-100 bg-emerald-50/50 dark:bg-emerald-950/10 rounded-xl opacity-75 hover:opacity-100 transition-opacity cursor-pointer"
                     onClick={() => router.push(`/documents/${move.document_id}`)}
                   >
                     <CardContent className="p-3">
@@ -291,11 +271,12 @@ export function ProductDetailPage({ id }: Props) {
                             {move.contact ?? 'No contact'}
                           </p>
                         </div>
-                        <div className="text-right">
-                          <Badge variant="outline" className="text-[10px] h-5 bg-emerald-100/50 text-emerald-700 border-emerald-200">
-                            Moved
-                          </Badge>
-                        </div>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] h-5 bg-emerald-100/50 text-emerald-700 border-emerald-200"
+                        >
+                          Moved
+                        </Badge>
                       </div>
                     </CardContent>
                   </Card>
@@ -307,7 +288,7 @@ export function ProductDetailPage({ id }: Props) {
         </>
       )}
 
-      {/* ── Stock Transaction History ─────────────────────────────────────── */}
+      {/* ── Stock transaction ledger ──────────────────────────────────────── */}
       <div className="px-4 pt-5 pb-2">
         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
           Ledger History
@@ -320,118 +301,106 @@ export function ProductDetailPage({ id }: Props) {
           </p>
         ) : (
           stockTxns.map(txn => (
-            <StockTransactionCard 
-              key={txn.id} 
-              txn={txn} 
-              showProduct={false} 
-            />
+            <StockTransactionCard key={txn.id} txn={txn} showProduct={false} />
           ))
         )}
       </div>
 
-      {/* ── Edit Product Sheet (Bug #11 FIX) ────────────────────────────── */}
+      {/* ── Edit product sheet — stays inline, not global ────────────────── */}
       <Sheet open={editSheet} onOpenChange={setEditSheet}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
           <SheetHeader className="mb-5">
             <SheetTitle className="text-left">Edit Product</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
+
             <div className="space-y-1.5">
               <Label>Name <span className="text-destructive">*</span></Label>
-              <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 rounded-xl" />
+              <Input
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                className="h-11 rounded-xl"
+              />
             </div>
+
             <div className="space-y-1.5">
               <Label>Description</Label>
-              <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="h-11 rounded-xl" />
+              <Input
+                value={editDesc}
+                onChange={e => setEditDesc(e.target.value)}
+                className="h-11 rounded-xl"
+              />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Rate (₹) <span className="text-destructive">*</span></Label>
-                <Input type="number" value={editRate} onChange={e => setEditRate(e.target.value)} className="h-11 rounded-xl" />
+                <Input
+                  type="number"
+                  value={editRate}
+                  onChange={e => setEditRate(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Unit</Label>
-                <Input value={editUnit} onChange={e => setEditUnit(e.target.value)} className="h-11 rounded-xl" />
+                <Input
+                  value={editUnit}
+                  onChange={e => setEditUnit(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
               </div>
             </div>
-            
-            {/* BUG 11: Direct Stock Overwrite */}
-            <div className="p-3 bg-muted/40 rounded-xl border border-border/50 mb-2">
-               <div className="space-y-1.5">
-                <Label className="flex justify-between">
-                  <span>Direct Stock Edit</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">Doesn't create record</span>
+
+            {/* Direct stock overwrite — no s.txn created */}
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800">
+              <div className="space-y-1.5">
+                <Label className="flex justify-between items-center">
+                  <span>Direct Stock Override</span>
+                  <span className="text-[10px] text-amber-700 font-normal">
+                    ⚠️ No transaction created
+                  </span>
                 </Label>
-                <Input type="number" value={editStock} onChange={e => setEditStock(e.target.value)} className="h-11 rounded-xl bg-background" />
+                <Input
+                  type="number"
+                  value={editStock}
+                  onChange={e => setEditStock(e.target.value)}
+                  className="h-11 rounded-xl bg-background"
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Min Stock Alert</Label>
-                <Input type="number" value={editMinStock} onChange={e => setEditMinStock(e.target.value)} className="h-11 rounded-xl" />
+                <Input
+                  type="number"
+                  value={editMinStock}
+                  onChange={e => setEditMinStock(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>HSN Code</Label>
-                <Input value={editHsn} onChange={e => setEditHsn(e.target.value)} className="h-11 rounded-xl" />
+                <Input
+                  value={editHsn}
+                  onChange={e => setEditHsn(e.target.value)}
+                  className="h-11 rounded-xl"
+                />
               </div>
             </div>
-            <Button className="w-full h-12 text-md mt-2 rounded-xl" onClick={handleUpdate} disabled={updateProduct.isPending}>
+
+            <Button
+              className="w-full h-12 mt-2 rounded-xl"
+              onClick={handleUpdate}
+              disabled={updateProduct.isPending}
+            >
               {updateProduct.isPending ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
         </SheetContent>
       </Sheet>
 
-      {/* ── Adjust Stock Sheet ────────────────────────────────────────────── */}
-      <Sheet open={adjustSheet} onOpenChange={v => { setAdjustSheet(v); if (!v) { setAdjustQty(''); setAdjustNotes(''); setAdjustRate('') }}}>
-        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
-          <SheetHeader className="mb-5">
-            <SheetTitle className="text-left">
-              {adjustMode === 'add' ? 'Add Stock (Actual)' : 'Remove Stock (Actual)'}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border">
-              <span className="text-sm text-muted-foreground">Current Stock</span>
-              <span className={`font-bold ${isLow ? 'text-orange-500' : ''}`}>
-                {product.current_stock} {product.unit}
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Quantity ({product.unit}) <span className="text-destructive ml-1">*</span></Label>
-              <Input type="number" placeholder="0" min={0} value={adjustQty} onChange={e => setAdjustQty(e.target.value)} className="h-11 rounded-xl" />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Rate per {product.unit} <span className="text-xs text-muted-foreground ml-1">(optional)</span></Label>
-              <Input type="number" placeholder={product.rate} value={adjustRate} onChange={e => setAdjustRate(e.target.value)} className="h-11 rounded-xl" />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Notes <span className="text-xs text-muted-foreground ml-1">(optional)</span></Label>
-              <Input placeholder="e.g. Manual physical count correction" value={adjustNotes} onChange={e => setAdjustNotes(e.target.value)} className="h-11 rounded-xl" />
-            </div>
-
-            {Number(adjustQty) > 0 && (
-              <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10 mt-2">
-                <span>New Stock Level</span>
-                <span className={adjustMode === 'remove' && Number(adjustQty) > Number(product.current_stock) ? 'text-red-500' : ''}>
-                  {adjustMode === 'add'
-                    ? Number(product.current_stock) + Number(adjustQty)
-                    : Number(product.current_stock) - Number(adjustQty)
-                  } {product.unit}
-                </span>
-              </div>
-            )}
-
-            <Button className="w-full h-12 text-md mt-2 rounded-xl" onClick={handleAdjust} disabled={adjustStock.isPending}>
-              {adjustStock.isPending ? 'Adjusting...' : `Confirm ${adjustMode === 'add' ? 'Add' : 'Remove'}`}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
   )
 }

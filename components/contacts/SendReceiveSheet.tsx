@@ -25,9 +25,9 @@ interface VoucherLine  { name: string; amount: string }
 
 interface Props {
   contactId: number
-  open: boolean
-  mode: 'send' | 'receive'
-  onClose: () => void
+  open:      boolean
+  mode:      'send' | 'receive'
+  onClose:   () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,36 +37,37 @@ const realVal  = (v: string) => v === NONE_VAL ? '' : v
 
 export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
   const { data: accounts } = useAccounts({ is_active: true })
-  const { data: settings }  = useSettings()
-  const { data: docsData }  = useDocuments({ contact: contactId })
+  const { data: settings } = useSettings()
+  const { data: docsData } = useDocuments({ contact: contactId })
 
   // ── Form state ──────────────────────────────────────────────────────────────
-  const [amount, setAmount]         = useState('')
-  const [accountId, setAccountId]   = useState('')
-  const [date, setDate]             = useState(new Date().toISOString().split('T')[0])
-  const [notes, setNotes]           = useState('')
-  const [linkedDoc, setLinkedDoc]   = useState('')
+  const [amount,    setAmount]    = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [date,      setDate]      = useState(new Date().toISOString().split('T')[0])
+  const [notes,     setNotes]     = useState('')
+  const [linkedDoc, setLinkedDoc] = useState('')
 
-  const [isExpense, setIsExpense]   = useState(false)
-  const [addInterest, setAddInterest] = useState(false)
+  const [isExpense,    setIsExpense]    = useState(false)
+  const [addInterest,  setAddInterest]  = useState(false)
 
   const [interestLines, setInterestLines] = useState<InterestLine[]>([
-    { name: '', amount: '', type: 'charge' }
+    { name: '', amount: '', type: 'charge' },
   ])
   const [voucherLines, setVoucherLines] = useState<VoucherLine[]>([
-    { name: '', amount: '' }
+    { name: '', amount: '' },
   ])
 
   const sendMutation    = useSend(contactId)
   const receiveMutation = useReceive(contactId)
   const isPending       = sendMutation.isPending || receiveMutation.isPending
 
-  const docs             = docsData?.results ?? []
-  const selectedAccount  = accounts?.results.find(a => a.id.toString() === accountId)
-  const isCash           = selectedAccount?.type === 'cash'
+  const docs            = docsData?.results ?? []
+  const selectedAccount = accounts?.results.find(a => a.id.toString() === accountId)
+  const isCash          = selectedAccount?.type === 'cash'
   const showVoucherLines = settings?.enable_vouchers && isCash && !isExpense
 
-  // Reset on open
+  // FIX 3: added `mode` to dependency array so form resets when sheet is
+  // reused across send ↔ receive without unmounting (prevents isExpense stale state)
   useEffect(() => {
     if (!open) return
     setAmount(''); setAccountId(''); setNotes(''); setLinkedDoc('')
@@ -74,7 +75,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     setDate(new Date().toISOString().split('T')[0])
     setInterestLines([{ name: '', amount: '', type: 'charge' }])
     setVoucherLines([{ name: '', amount: '' }])
-  }, [open])
+  }, [open, mode]) // ← mode added
 
   // ── Interest line helpers ───────────────────────────────────────────────────
   const addInterestLine    = () =>
@@ -86,13 +87,12 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
 
   // ── Voucher / Expense line helpers ──────────────────────────────────────────
   const addVoucherLine    = () => setVoucherLines(p => [...p, { name: '', amount: '' }])
-  const removeVoucherLine = (i: number) => setVoucherLines(p => p.filter((_, idx) => idx !== i))
+  const removeVoucherLine = (i: number) =>
+    setVoucherLines(p => p.filter((_, idx) => idx !== i))
   const updateVoucherLine = (i: number, field: keyof VoucherLine, value: string) =>
     setVoucherLines(p => p.map((l, idx) => idx === i ? { ...l, [field]: value } : l))
 
   // ── CF Impact Preview ───────────────────────────────────────────────────────
-  const voucherTotal = voucherLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
-
   const interestNet = useMemo(() => {
     if (!addInterest) return 0
     return interestLines.reduce((s, l) => {
@@ -101,13 +101,15 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     }, 0)
   }, [addInterest, interestLines])
 
-  // FIX: Properly compute actualAmount checking if vouchers are currently active
-  const displayActual   = showVoucherLines ? voucherTotal : (Number(amount) || 0)
-  const signedActual    = mode === 'receive' ? displayActual : -displayActual
-  const interestRecord  = addInterest
+  const actualAmount   = Number(amount) || 0
+  const signedActual   = mode === 'receive' ? actualAmount : -actualAmount
+  const interestRecord = addInterest
     ? interestNet * (mode === 'receive' ? -1 : 1)
     : 0
-  const netCFChange     = signedActual + interestRecord
+  const netCFChange    = signedActual + interestRecord
+
+  // ── Voucher total ───────────────────────────────────────────────────────────
+  const voucherTotal = voucherLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -119,11 +121,11 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
       if (total <= 0) { toast.error('Add at least one expense item'); return }
       try {
         await sendMutation.mutateAsync({
-          amount: total.toString(),
+          amount:          total.toString(),
           payment_account: Number(accountId),
           date,
-          is_expense: true,
-          line_items: voucherLines
+          is_expense:      true,
+          line_items:      voucherLines
             .filter(l => l.name)
             .map(l => ({ name: l.name, amount: Number(l.amount) })),
         })
@@ -134,37 +136,33 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     }
 
     // Normal send/receive
-    const payAmount = showVoucherLines
-      ? voucherTotal.toString()
-      : amount
+    const payAmount = showVoucherLines ? voucherTotal.toString() : amount
 
     if (!payAmount || Number(payAmount) <= 0) {
       toast.error('Enter a valid amount'); return
     }
 
     const payload: any = {
-      amount: payAmount,
+      amount:          payAmount,
       payment_account: Number(accountId),
       date,
-      notes: notes || undefined,
-      document: linkedDoc ? Number(linkedDoc) : undefined,
+      notes:           notes || undefined,
+      document:        linkedDoc ? Number(linkedDoc) : undefined,
     }
 
-    // Voucher line items
     if (showVoucherLines) {
       payload.line_items = voucherLines
         .filter(l => l.name && l.amount)
         .map(l => ({ name: l.name, amount: Number(l.amount) }))
     }
 
-    // Interest lines
     if (addInterest) {
       const validLines = interestLines.filter(l => l.name && l.amount)
       if (validLines.length > 0) {
         payload.interest_lines = validLines.map(l => ({
-          name: l.name,
+          name:   l.name,
           amount: Number(l.amount),
-          type: l.type,
+          type:   l.type,
         }))
       }
     }
@@ -268,7 +266,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                     onChange={e => updateVoucherLine(i, 'amount', e.target.value)}
                   />
                   {voucherLines.length > 1 && (
-                    <button onClick={() => removeVoucherLine(i)} className="shrink-0">
+                    <button onClick={() => removeVoucherLine(i)} className="flex-shrink-0">
                       <X className="h-4 w-4 text-muted-foreground" />
                     </button>
                   )}
@@ -365,6 +363,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
 
               {addInterest && (
                 <div className="space-y-3 rounded-xl border p-3 bg-muted/20">
+
                   {/* Header hint */}
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">
                     <span className="mt-0.5">💡</span>
@@ -394,7 +393,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                             onChange={e => updateInterestLine(i, 'amount', e.target.value)}
                           />
                           {interestLines.length > 1 && (
-                            <button onClick={() => removeInterestLine(i)} className="shrink-0">
+                            <button onClick={() => removeInterestLine(i)} className="flex-shrink-0">
                               <X className="h-4 w-4 text-muted-foreground" />
                             </button>
                           )}
@@ -428,7 +427,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                   </Button>
 
                   {/* ── CF Impact Preview ────────────────────────────────── */}
-                  {displayActual > 0 && (
+                  {(actualAmount > 0 || voucherTotal > 0) && (
                     <>
                       <Separator />
                       <div className="space-y-2 text-sm">
@@ -436,32 +435,28 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                           CF Impact Preview
                         </p>
 
-                        {/* Actual row - FIX: Color matching Option B (Receive is Positive -> Red) */}
                         <div className="flex justify-between items-center">
                           <span className="text-muted-foreground">
                             {mode === 'receive' ? 'Payment In (actual)' : 'Payment Out (actual)'}
                           </span>
-                          <span className={mode === 'receive' ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
+                          <span className={mode === 'receive' ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
                             {mode === 'receive' ? '+' : '−'}
-                            {fmtAmount(displayActual)}
+                            {fmtAmount(showVoucherLines ? voucherTotal : actualAmount)}
                           </span>
                         </div>
 
-                        {/* Interest record row(s) - FIX: Color matching Option B (Negative -> Green) */}
                         {interestLines.filter(l => l.name && Number(l.amount) > 0).map((l, i) => {
-                          const lineAmt  = Number(l.amount)
-                          const lineNet  = l.type === 'charge' ? lineAmt : -lineAmt
-                          const lineRec  = lineNet * (mode === 'receive' ? -1 : 1)
-                          const isNeg    = lineRec < 0
+                          const lineAmt = Number(l.amount)
+                          const lineNet = l.type === 'charge' ? lineAmt : -lineAmt
+                          const lineRec = lineNet * (mode === 'receive' ? -1 : 1)
+                          const isNeg   = lineRec < 0
                           return (
                             <div key={i} className="flex justify-between items-center">
                               <span className="text-muted-foreground flex items-center gap-1.5">
                                 {l.name || 'Interest'}
-                                <Badge variant="outline" className="text-[10px] h-4">
-                                  record
-                                </Badge>
+                                <Badge variant="outline" className="text-[10px] h-4">record</Badge>
                               </span>
-                              <span className={isNeg ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                              <span className={isNeg ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
                                 {isNeg ? '−' : '+'}{fmtAmount(Math.abs(lineRec))}
                               </span>
                             </div>
@@ -470,12 +465,11 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
 
                         <Separator />
 
-                        {/* Net CF - FIX: Strict sign formatting to prevent double minus signs */}
                         <div className="flex justify-between items-center font-semibold">
                           <span>Net CF Change</span>
                           <span className={netCFChange >= 0 ? 'text-red-500' : 'text-green-600'}>
-                            {netCFChange >= 0 ? '+' : '−'}
-                            {fmtAmount(Math.abs(netCFChange))}
+                            {netCFChange >= 0 ? '+' : ''}
+                            {fmtAmount(netCFChange)}
                           </span>
                         </div>
                         <p className="text-[10px] text-muted-foreground">
@@ -501,6 +495,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                 ? 'Record Expense'
                 : mode === 'send' ? 'Confirm Send' : 'Confirm Receive'}
           </Button>
+
         </div>
       </SheetContent>
     </Sheet>

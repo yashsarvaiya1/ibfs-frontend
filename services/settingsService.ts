@@ -1,12 +1,12 @@
 // services/settingsService.ts
 import api from '@/lib/axios'
-import { Settings, SettingsUpdate } from '@/models/settings'
+import type { Settings, SettingsUpdate } from '@/models/settings'
 
 export const settingsService = {
   get: () =>
     api.get<Settings>('/settings/').then(r => r.data),
 
-  // fix: was api.post — should be api.patch for partial singleton update
+  // PATCH — partial update on singleton (pk=1 always)
   update: (data: SettingsUpdate) =>
-    api.post<Settings>('/settings/', data).then(r => r.data),
+    api.patch<Settings>('/settings/', data).then(r => r.data),
 }

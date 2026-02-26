@@ -66,19 +66,19 @@ export function StockTransactionCard({ txn, showProduct = false, onDelete }: Sto
       {(showProduct || txn.document) && (
         <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-border/50 text-[11px] text-muted-foreground">
           {showProduct && txn.product && (
-            <span className="bg-muted px-2 py-0.5 rounded-md truncate max-w-[150px]">
+            <span className="bg-muted px-2 py-0.5 rounded-md truncate max-w-37.5">
               {txn.product_name || `Product #${txn.product}`}
             </span>
           )}
           {txn.document && (
-            <span className="flex items-center gap-1 bg-primary/5 text-primary px-2 py-0.5 rounded-md font-medium truncate max-w-[150px]">
+            <span className="flex items-center gap-1 bg-primary/5 text-primary px-2 py-0.5 rounded-md font-medium truncate max-w-37.5">
               <FileText className="h-3 w-3 shrink-0" />
               {txn.document_type ? `${txn.document_type.toUpperCase()} ` : ''}
               {txn.document_doc_id || `#${txn.document}`}
             </span>
           )}
           {txn.contact_name && (
-            <span className="bg-muted px-2 py-0.5 rounded-md truncate max-w-[120px]">
+            <span className="bg-muted px-2 py-0.5 rounded-md truncate max-w-30">
               {txn.contact_name}
             </span>
           )}

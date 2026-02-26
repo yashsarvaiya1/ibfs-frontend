@@ -1,3 +1,4 @@
+// components/accounts/AccountDetailPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -9,7 +10,7 @@ import {
   useSetBalance,
   useAccounts,
 } from '@/hooks/useAccount'
-import { useTransactions, useDeleteTransaction } from '@/hooks/useTransaction' // Bug #9: Added useDeleteTransaction
+import { useTransactions, useDeleteTransaction } from '@/hooks/useTransaction'
 import { fmtAmount } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -33,7 +34,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AccountType } from '@/models/account'
-import { TransactionCard } from '@/components/shared/TransactionCard' // Bug #1: Import shared component
+import { TransactionCard } from '@/components/shared/TransactionCard'
 
 const ACCOUNT_ICONS: Record<AccountType, typeof Landmark> = {
   bank: Landmark,
@@ -46,9 +47,9 @@ interface Props { id: number }
 export function AccountDetailPage({ id }: Props) {
   const setPageTitle = useUIStore((s) => s.setPageTitle)
 
-  const { data: account,        isLoading } = useAccount(id)
-  const { data: txnsData }                  = useTransactions({ account: id })
-  const { data: allAccountsData }           = useAccounts({ is_active: true })
+  const { data: account,      isLoading } = useAccount(id)
+  const { data: txnsData }               = useTransactions({ account: id })
+  const { data: allAccountsData }        = useAccounts({ is_active: true })
 
   const txns          = txnsData?.results ?? []
   const otherAccounts = (allAccountsData?.results ?? []).filter(a => a.id !== id)
@@ -72,9 +73,7 @@ export function AccountDetailPage({ id }: Props) {
   const transferMutation   = useTransfer()
   const adjustMutation     = useAdjustBalance(id)
   const setBalanceMutation = useSetBalance(id)
-  
-  // Bug #9 FIX: Hook for deleting transactions
-  const deleteMutation = useDeleteTransaction()
+  const deleteMutation     = useDeleteTransaction()
 
   useEffect(() => {
     if (account) setPageTitle(account.name)
@@ -143,22 +142,20 @@ export function AccountDetailPage({ id }: Props) {
     }
   }
 
-  // Bug #9 FIX: Delete handler for actual txns
+  // ── Delete transaction — no confirm(), toast only ───────────────────────────
   const handleDeleteTxn = async (txnId: number) => {
-    if (confirm("Are you sure you want to delete this transaction? This will revert the account balance.")) {
-      try {
-        await deleteMutation.mutateAsync(txnId)
-        // Success toast is handled in the mutation usually, but we can add one here if needed
-      } catch (e) {
-        toast.error('Failed to delete transaction')
-      }
+    try {
+      await deleteMutation.mutateAsync(txnId)
+      toast.success('Transaction deleted')
+    } catch {
+      toast.error('Failed to delete transaction')
     }
   }
 
   return (
     <div className="pb-10">
 
-      {/* ── Balance Card ──────────────────────────────────────────────────── */}
+      {/* ── Balance card ──────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-4">
         <Card className="bg-primary text-primary-foreground overflow-hidden rounded-2xl shadow-md">
           <CardContent className="p-5">
@@ -212,7 +209,7 @@ export function AccountDetailPage({ id }: Props) {
         </Card>
       </div>
 
-      {/* ── Action Buttons ────────────────────────────────────────────────── */}
+      {/* ── Action buttons ────────────────────────────────────────────────── */}
       <div className="px-4 pb-4 grid grid-cols-2 gap-3">
         <Button
           variant="outline"
@@ -238,7 +235,7 @@ export function AccountDetailPage({ id }: Props) {
 
       <Separator />
 
-      {/* ── Transaction History ───────────────────────────────────────────── */}
+      {/* ── Transaction history ───────────────────────────────────────────── */}
       <div className="px-4 pt-5 pb-2">
         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
           Transaction History
@@ -251,25 +248,23 @@ export function AccountDetailPage({ id }: Props) {
           </p>
         ) : (
           txns.map(txn => (
-            // Bug #1, #9, #17 FIX: Replaced manual Card with shared TransactionCard
-            <TransactionCard 
-              key={txn.id} 
-              txn={txn} 
-              showContact={true} 
-              onDelete={handleDeleteTxn} // Enables delete logic for this account's txns
+            <TransactionCard
+              key={txn.id}
+              txn={txn}
+              showContact={true}
+              onDelete={handleDeleteTxn}
             />
           ))
         )}
       </div>
 
-      {/* ── Transfer Sheet ────────────────────────────────────────────────── */}
+      {/* ── Transfer sheet ────────────────────────────────────────────────── */}
       <Sheet open={transferOpen} onOpenChange={setTransferOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
             <SheetTitle className="text-left">Transfer Funds</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
-            {/* From context */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border">
               <span className="text-sm text-muted-foreground">From</span>
               <div className="text-right">
@@ -313,11 +308,13 @@ export function AccountDetailPage({ id }: Props) {
               />
             </div>
 
-            {/* Transfer preview */}
             {Number(transferAmount) > 0 && (
               <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10 mt-2">
                 <span>Balance after transfer</span>
-                <span className={Number(transferAmount) > balance ? 'text-red-500 font-bold' : 'font-bold'}>
+                <span className={cn(
+                  'font-bold',
+                  Number(transferAmount) > balance && 'text-red-500'
+                )}>
                   {fmtAmount(balance - Number(transferAmount))}
                 </span>
               </div>
@@ -334,7 +331,7 @@ export function AccountDetailPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ── Adjust Balance Sheet ──────────────────────────────────────────── */}
+      {/* ── Adjust balance sheet ──────────────────────────────────────────── */}
       <Sheet open={adjustOpen} onOpenChange={setAdjustOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
@@ -393,7 +390,7 @@ export function AccountDetailPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ── Direct Balance Edit Sheet ─────────────────────────────────────── */}
+      {/* ── Direct balance edit sheet ─────────────────────────────────────── */}
       <Sheet open={editBalanceOpen} onOpenChange={setEditBalanceOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
@@ -426,6 +423,7 @@ export function AccountDetailPage({ id }: Props) {
           </div>
         </SheetContent>
       </Sheet>
+
     </div>
   )
 }

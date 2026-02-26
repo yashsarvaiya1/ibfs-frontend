@@ -5,7 +5,6 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { fmtAmount, cn } from '@/lib/utils'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { FinancialTransaction } from '@/models/transaction'
@@ -14,27 +13,26 @@ import { ExternalLink } from 'lucide-react'
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
 
-// Utility — format a YYYY-MM-DD date string to short "DD MMM" without a Date object pitfall
-function fmtShortDate(dateStr: string): string {
+// FIX 1: null guard added
+function fmtShortDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
   const [, mm, dd] = dateStr.split('-')
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   return `${parseInt(dd)} ${months[parseInt(mm) - 1]}`
 }
 
 interface ContactLedgerProps {
-  transactions: FinancialTransaction[]   // already filtered: no expenses
+  transactions:   FinancialTransaction[]
   openingBalance: number
 }
 
 export function ContactLedger({ transactions, openingBalance }: ContactLedgerProps) {
   const router = useRouter()
 
-  // Sort oldest → newest, then compute running balance per row
   const ledgerRows = useMemo(() => {
     const sorted = [...transactions].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     )
-
     let running = openingBalance
     return sorted.map(txn => {
       const amt = Number(txn.amount)
@@ -49,14 +47,15 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
     return (
       <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
         <p className="text-sm font-medium text-muted-foreground">No ledger entries yet</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">Send / Receive or create a document to get started</p>
+        <p className="text-xs text-muted-foreground/60 mt-1">
+          Send / Receive or create a document to get started
+        </p>
       </div>
     )
   }
 
   return (
     <Card className="rounded-xl shadow-sm border-border/60 overflow-hidden">
-      {/* Horizontal scroll wrapper — essential for mobile */}
       <div className="overflow-x-auto">
         <div className="min-w-[540px]">
 
@@ -78,7 +77,6 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                 <div>
                   <span className="font-bold text-primary/80 text-[11px]">Opening Balance</span>
                 </div>
-                {/* Positive opening = Dr (you owe them) */}
                 <div className="text-right font-bold text-red-600/80 tabular-nums">
                   {openingBalance > 0 ? fmtAmount(openingBalance) : ''}
                 </div>
@@ -86,21 +84,24 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                   {openingBalance < 0 ? fmtAmount(Math.abs(openingBalance)) : ''}
                 </div>
                 <div className={cn(
-                  "text-right font-black text-[11px] tabular-nums",
-                  openingBalance > 0 ? 'text-red-600' : 'text-emerald-600'
+                  'text-right font-black text-[11px] tabular-nums',
+                  openingBalance > 0 ? 'text-red-600' : 'text-emerald-600',
                 )}>
                   {fmtAmount(Math.abs(openingBalance))}
-                  <span className="text-[9px] font-normal ml-1">{openingBalance > 0 ? 'Dr' : 'Cr'}</span>
+                  <span className="text-[9px] font-normal ml-1">
+                    {openingBalance > 0 ? 'Dr' : 'Cr'}
+                  </span>
                 </div>
               </div>
             )}
 
             {/* ── Transaction Rows ──────────────────────────────────── */}
             {ledgerRows.map((row) => {
-              const isDebit  = row.numericAmount >= 0   // positive = Dr = outgoing
-              const absAmt   = Math.abs(row.numericAmount)
-              const absBal   = Math.abs(row.runningBalance)
-              const balSuffix = row.runningBalance > 0 ? 'Dr' : row.runningBalance < 0 ? 'Cr' : ''
+              const isDebit   = row.numericAmount >= 0
+              const absAmt    = Math.abs(row.numericAmount)
+              const absBal    = Math.abs(row.runningBalance)
+              const balSuffix = row.runningBalance > 0 ? 'Dr'
+                : row.runningBalance < 0 ? 'Cr' : ''
 
               return (
                 <div
@@ -115,15 +116,12 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                   {/* Particulars */}
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {/* Transaction type badge */}
                       <Badge
                         variant={row.type === 'actual' ? 'default' : 'secondary'}
                         className="text-[9px] h-4 px-1.5 rounded-sm uppercase tracking-wider font-bold"
                       >
                         {row.type}
                       </Badge>
-
-                      {/* Linked document chip — clickable */}
                       {row.document && (
                         <button
                           onClick={() => router.push(`/documents/${row.document}`)}
@@ -133,35 +131,35 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                           <ExternalLink className="h-2.5 w-2.5 ml-0.5" />
                         </button>
                       )}
-
-                      {/* Orphan badge */}
                       {row.is_doc_deleted && (
-                        <Badge variant="destructive" className="text-[9px] h-4 px-1 rounded-sm">orphan</Badge>
+                        <Badge variant="destructive" className="text-[9px] h-4 px-1 rounded-sm">
+                          orphan
+                        </Badge>
                       )}
                     </div>
-
-                    {/* Notes */}
                     {row.notes && (
-                      <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.notes}</p>
+                      <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+                        {row.notes}
+                      </p>
                     )}
                   </div>
 
-                  {/* Debit column — positive amounts */}
+                  {/* Debit */}
                   <div className="text-right font-bold tabular-nums text-red-600/90">
                     {isDebit ? fmtAmount(absAmt) : ''}
                   </div>
 
-                  {/* Credit column — negative amounts */}
+                  {/* Credit */}
                   <div className="text-right font-bold tabular-nums text-emerald-600/90">
                     {!isDebit ? fmtAmount(absAmt) : ''}
                   </div>
 
                   {/* Running balance */}
                   <div className={cn(
-                    "text-right font-black tabular-nums text-[11px]",
+                    'text-right font-black tabular-nums text-[11px]',
                     row.runningBalance > 0 ? 'text-red-600'
                     : row.runningBalance < 0 ? 'text-emerald-600'
-                    : 'text-muted-foreground'
+                    : 'text-muted-foreground',
                   )}>
                     {fmtAmount(absBal)}
                     {balSuffix && (
@@ -185,8 +183,10 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                   Closing Balance
                 </div>
                 <div className={cn(
-                  "text-right font-black text-sm tabular-nums",
-                  finalBal > 0 ? 'text-red-600' : finalBal < 0 ? 'text-emerald-600' : 'text-muted-foreground'
+                  'text-right font-black text-sm tabular-nums',
+                  finalBal > 0 ? 'text-red-600'
+                  : finalBal < 0 ? 'text-emerald-600'
+                  : 'text-muted-foreground',
                 )}>
                   {fmtAmount(absFinal)}
                   {suffix && <span className="text-[9px] font-normal ml-1">{suffix}</span>}

@@ -28,7 +28,7 @@ import {
 import {
   ArrowUpRight, ArrowDownLeft, ChevronRight,
   Phone, Building2, MapPin, FileText, MoreVertical,
-  TrendingUp, TrendingDown, Minus, Trash2, Pencil, BookOpen, AlertCircle
+  TrendingUp, TrendingDown, Minus, Trash2, Pencil, BookOpen, AlertCircle,
 } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuContent,
@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ContactEditSheet } from './ContactEditSheet'
 import { SendReceiveSheet } from './SendReceiveSheet'
-import { ContactLedger } from './ContactLedger' // NEW COMPONENT IMPORT
+import { ContactLedger } from './ContactLedger'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { SearchableSelect, SearchableSelectOption } from '@/components/shared/SearchableSelect'
 import { toast } from 'sonner'
@@ -44,6 +44,7 @@ import { toast } from 'sonner'
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
 
+// MCD-based running CF — uses last txn per month (map.set overwrites = last wins = correct)
 function computeRunningCF(openingBalance: number, txns: any[]): number {
   if (txns.length === 0) return openingBalance
   const monthMap = new Map<string, number>()
@@ -69,21 +70,21 @@ export function ContactDetailPage({ id }: Props) {
   const { data: accountsData }                      = useAccounts({ is_active: true })
 
   const updateTxn = useUpdateTransaction(id)
-  const deleteTxn = useDeleteTransaction(id)
+  // FIX 3: useDeleteTransaction takes no argument — contactId not needed as hook param
+  const deleteTxn = useDeleteTransaction()
 
-  const [editOpen, setEditOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'docs' | 'ledger'>('ledger')
-  const [srSheet, setSrSheet]   = useState<{ open: boolean; mode: 'send' | 'receive' }>({
+  const [editOpen,   setEditOpen]   = useState(false)
+  const [activeTab,  setActiveTab]  = useState<'docs' | 'ledger'>('ledger')
+  const [srSheet,    setSrSheet]    = useState<{ open: boolean; mode: 'send' | 'receive' }>({
     open: false, mode: 'send',
   })
 
-  // Edit Transaction State
-  const [editTxn,          setEditTxn]         = useState<FinancialTransaction | null>(null)
-  const [confirmDelOpen,   setConfirmDelOpen]  = useState(false)
-  const [txnAmount,        setTxnAmount]       = useState('')
-  const [txnDate,          setTxnDate]         = useState('')
-  const [txnNotes,         setTxnNotes]        = useState('')
-  const [txnAccountId,     setTxnAccountId]    = useState('')
+  const [editTxn,        setEditTxn]        = useState<FinancialTransaction | null>(null)
+  const [confirmDelOpen, setConfirmDelOpen] = useState(false)
+  const [txnAmount,      setTxnAmount]      = useState('')
+  const [txnDate,        setTxnDate]        = useState('')
+  const [txnNotes,       setTxnNotes]       = useState('')
+  const [txnAccountId,   setTxnAccountId]   = useState('')
 
   useEffect(() => {
     if (!editTxn) return
@@ -155,11 +156,19 @@ export function ContactDetailPage({ id }: Props) {
         <div className="flex items-start justify-between">
           <div className="min-w-0 pr-2">
             <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-black text-foreground/90 tracking-tight truncate">{getContactDisplayName(contact)}</h1>
-              {!contact.is_active && <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5 shrink-0">Deleted</Badge>}
+              <h1 className="text-2xl font-black text-foreground/90 tracking-tight truncate">
+                {getContactDisplayName(contact)}
+              </h1>
+              {!contact.is_active && (
+                <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5 shrink-0">
+                  Deleted
+                </Badge>
+              )}
             </div>
             {contact.company_name && (
-              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{contact.contact_name}</p>
+              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                {contact.contact_name}
+              </p>
             )}
           </div>
           <DropdownMenu>
@@ -200,20 +209,26 @@ export function ContactDetailPage({ id }: Props) {
         </div>
 
         {/* ── Running CF card ─────────────────────────────────────────── */}
-        <Card className={cn("border-2 shadow-sm rounded-2xl", 
-          runningCF > 0 ? 'border-red-200 bg-red-50/50' : 
-          runningCF < 0 ? 'border-emerald-200 bg-emerald-50/50' : 'border-border'
+        <Card className={cn(
+          'border-2 shadow-sm rounded-2xl',
+          runningCF > 0 ? 'border-red-200 bg-red-50/50'
+          : runningCF < 0 ? 'border-emerald-200 bg-emerald-50/50'
+          : 'border-border',
         )}>
           <CardContent className="p-5 flex items-center justify-between">
             <div>
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Total Ledger Balance</p>
-              <p className={cn("text-3xl font-black tracking-tight", cfColor(runningCF))}>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
+                Total Ledger Balance
+              </p>
+              <p className={cn('text-3xl font-black tracking-tight', cfColor(runningCF))}>
                 {fmtAmount(Math.abs(runningCF))}
               </p>
               <p className="text-sm font-medium text-muted-foreground mt-1.5 flex items-center gap-1">
-                {runningCF > 0 ? <><TrendingUp className="h-4 w-4 text-red-500" /> You owe them</>
-                  : runningCF < 0 ? <><TrendingDown className="h-4 w-4 text-emerald-500" /> They owe you</>
-                  : <><Minus className="h-4 w-4 text-muted-foreground" /> Fully settled</>}
+                {runningCF > 0
+                  ? <><TrendingUp className="h-4 w-4 text-red-500" /> You owe them</>
+                  : runningCF < 0
+                    ? <><TrendingDown className="h-4 w-4 text-emerald-500" /> They owe you</>
+                    : <><Minus className="h-4 w-4 text-muted-foreground" /> Fully settled</>}
               </p>
             </div>
           </CardContent>
@@ -222,12 +237,18 @@ export function ContactDetailPage({ id }: Props) {
         {/* ── Send / Receive Buttons ────────────────────────────────────── */}
         {contact.is_active && (
           <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" className="h-12 gap-2 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-md"
-              onClick={() => setSrSheet({ open: true, mode: 'send' })}>
+            <Button
+              variant="outline"
+              className="h-12 gap-2 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-md"
+              onClick={() => setSrSheet({ open: true, mode: 'send' })}
+            >
               <ArrowUpRight className="h-5 w-5" /> Send
             </Button>
-            <Button variant="outline" className="h-12 gap-2 rounded-xl border-emerald-200 text-emerald-600 hover:bg-emerald-50 font-bold text-md"
-              onClick={() => setSrSheet({ open: true, mode: 'receive' })}>
+            <Button
+              variant="outline"
+              className="h-12 gap-2 rounded-xl border-emerald-200 text-emerald-600 hover:bg-emerald-50 font-bold text-md"
+              onClick={() => setSrSheet({ open: true, mode: 'receive' })}
+            >
               <ArrowDownLeft className="h-5 w-5" /> Receive
             </Button>
           </div>
@@ -236,12 +257,18 @@ export function ContactDetailPage({ id }: Props) {
         {/* ── Quick doc create ─────────────────────────────────────────── */}
         {contact.is_active && (
           <div className="grid grid-cols-2 gap-3">
-            <Button size="sm" variant="secondary" className="gap-1.5 h-10 rounded-lg text-xs font-bold shadow-sm"
-              onClick={() => openDocSheet('bill', id)}>
+            <Button
+              size="sm" variant="secondary"
+              className="gap-1.5 h-10 rounded-lg text-xs font-bold shadow-sm"
+              onClick={() => openDocSheet('bill', id)}
+            >
               <FileText className="h-3.5 w-3.5" /> Create Bill
             </Button>
-            <Button size="sm" variant="secondary" className="gap-1.5 h-10 rounded-lg text-xs font-bold shadow-sm"
-              onClick={() => openDocSheet('invoice', id)}>
+            <Button
+              size="sm" variant="secondary"
+              className="gap-1.5 h-10 rounded-lg text-xs font-bold shadow-sm"
+              onClick={() => openDocSheet('invoice', id)}
+            >
               <FileText className="h-3.5 w-3.5" /> Create Invoice
             </Button>
           </div>
@@ -250,26 +277,38 @@ export function ContactDetailPage({ id }: Props) {
 
       <Separator className="my-6" />
 
-      {/* ── Tabs (Docs vs Ledger) ───────────────────────────────────────── */}
+      {/* ── Tabs ───────────────────────────────────────────────────────── */}
       <div className="px-4">
         <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)} className="w-full">
           <TabsList className="w-full h-12 bg-muted/60 p-1 rounded-xl mb-4">
-            <TabsTrigger value="ledger" className="flex-1 h-full text-sm font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">Ledger Book</TabsTrigger>
-            <TabsTrigger value="docs" className="flex-1 h-full text-sm font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">Documents ({docs.length})</TabsTrigger>
+            <TabsTrigger
+              value="ledger"
+              className="flex-1 h-full text-sm font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              Ledger Book
+            </TabsTrigger>
+            <TabsTrigger
+              value="docs"
+              className="flex-1 h-full text-sm font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              Documents ({docs.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="ledger" className="space-y-4 outline-none">
             {loadingLedger ? (
-               <Skeleton className="h-[300px] w-full rounded-xl" />
+              <Skeleton className="h-[300px] w-full rounded-xl" />
             ) : (
               <>
-                 <div className="flex items-center justify-between text-xs text-muted-foreground px-1 mb-2">
-                   <span className="flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5" /> Horizontal scroll for details</span>
-                 </div>
-                 <ContactLedger 
-                   transactions={txns.filter(t => t.document_type !== 'expense')} 
-                   openingBalance={Number(contact.opening_balance ?? 0)} 
-                 />
+                <div className="flex items-center justify-between text-xs text-muted-foreground px-1 mb-2">
+                  <span className="flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5" /> Horizontal scroll for details
+                  </span>
+                </div>
+                <ContactLedger
+                  transactions={txns.filter(t => t.document_type !== 'expense')}
+                  openingBalance={Number(contact.opening_balance ?? 0)}
+                />
               </>
             )}
           </TabsContent>
@@ -277,20 +316,24 @@ export function ContactDetailPage({ id }: Props) {
           <TabsContent value="docs" className="space-y-3 outline-none">
             {docs.length === 0 ? (
               <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
-                 <p className="text-sm font-medium text-muted-foreground">No documents found</p>
+                <p className="text-sm font-medium text-muted-foreground">No documents found</p>
               </div>
             ) : (
               docs.map((doc) => (
-                <Card key={doc.id}
+                <Card
+                  key={doc.id}
                   className="cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm border-border/80 hover:bg-muted/20"
-                  onClick={() => router.push(`/documents/${doc.id}`)}>
+                  onClick={() => router.push(`/documents/${doc.id}`)}
+                >
                   <CardContent className="p-4 flex items-center justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wider rounded-md px-1.5 border border-border">
                           {getDocLabel(doc.type)}
                         </Badge>
-                        <span className="text-sm font-bold text-foreground/90 truncate">#{doc.doc_id}</span>
+                        <span className="text-sm font-bold text-foreground/90 truncate">
+                          #{doc.doc_id}
+                        </span>
                       </div>
                       <p className="text-xs font-medium text-muted-foreground mt-1.5">
                         {fmtDate(doc.date)}
@@ -308,16 +351,18 @@ export function ContactDetailPage({ id }: Props) {
                 </Card>
               ))
             )}
-            
             {docs.length > 5 && (
-              <Button variant="outline" className="w-full h-11 rounded-xl font-bold mt-2" onClick={() => router.push(`/documents?contact=${id}`)}>
+              <Button
+                variant="outline"
+                className="w-full h-11 rounded-xl font-bold mt-2"
+                onClick={() => router.push(`/documents?contact=${id}`)}
+              >
                 View All {docs.length} Documents
               </Button>
             )}
           </TabsContent>
         </Tabs>
       </div>
-
 
       {/* ── Sheets ──────────────────────────────────────────────────────── */}
       <ContactEditSheet
@@ -351,11 +396,13 @@ export function ContactDetailPage({ id }: Props) {
                 </div>
               </SheetHeader>
 
-              {/* Transaction summary */}
               <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-muted mb-5">
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant={editTxn.type === 'actual' ? 'default' : 'secondary'} className="text-[10px] uppercase font-bold tracking-wider rounded-md h-5 px-1.5">
+                    <Badge
+                      variant={editTxn.type === 'actual' ? 'default' : 'secondary'}
+                      className="text-[10px] uppercase font-bold tracking-wider rounded-md h-5 px-1.5"
+                    >
                       {editTxn.type}
                     </Badge>
                     {editTxn.document && (
@@ -364,7 +411,9 @@ export function ContactDetailPage({ id }: Props) {
                       </span>
                     )}
                     {editTxn.is_doc_deleted && (
-                      <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5">orphan</Badge>
+                      <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5">
+                        orphan
+                      </Badge>
                     )}
                   </div>
                   <p className="text-xs font-medium text-muted-foreground mt-1">
@@ -379,7 +428,10 @@ export function ContactDetailPage({ id }: Props) {
               {editTxn.document && !editTxn.is_doc_deleted && (
                 <div className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-5 flex gap-2 items-start">
                   <span className="mt-0.5 text-amber-500">⚠️</span>
-                  <span>This is linked to a document. Editing the amount here may cause a discrepancy with the document total.</span>
+                  <span>
+                    This is linked to a document. Editing the amount here may cause a
+                    discrepancy with the document total.
+                  </span>
                 </div>
               )}
 
@@ -391,14 +443,23 @@ export function ContactDetailPage({ id }: Props) {
                       ({Number(editTxn.amount) >= 0 ? 'outgoing' : 'incoming'} — sign preserved)
                     </span>
                   </Label>
-                  <Input type="number" className="text-lg font-bold h-12 rounded-xl" value={txnAmount} onChange={e => setTxnAmount(e.target.value)} placeholder="0.00" />
+                  <Input
+                    type="number"
+                    className="text-lg font-bold h-12 rounded-xl"
+                    value={txnAmount}
+                    onChange={e => setTxnAmount(e.target.value)}
+                    placeholder="0.00"
+                  />
                 </div>
-
                 <div className="space-y-1.5">
                   <Label>Date</Label>
-                  <Input type="date" className="h-11 rounded-xl" value={txnDate} onChange={e => setTxnDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    className="h-11 rounded-xl"
+                    value={txnDate}
+                    onChange={e => setTxnDate(e.target.value)}
+                  />
                 </div>
-
                 {editTxn.type === 'actual' && (
                   <div className="space-y-1.5">
                     <Label>Payment Account</Label>
@@ -413,13 +474,22 @@ export function ContactDetailPage({ id }: Props) {
                     />
                   </div>
                 )}
-
                 <div className="space-y-1.5">
-                  <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span></Label>
-                  <Input placeholder="Add a note..." className="h-11 rounded-xl" value={txnNotes} onChange={e => setTxnNotes(e.target.value)} />
+                  <Label>
+                    Notes <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    placeholder="Add a note..."
+                    className="h-11 rounded-xl"
+                    value={txnNotes}
+                    onChange={e => setTxnNotes(e.target.value)}
+                  />
                 </div>
-
-                <Button className="w-full h-12 mt-2 rounded-xl text-md font-bold shadow-lg shadow-primary/20" onClick={handleUpdateTxn} disabled={updateTxn.isPending}>
+                <Button
+                  className="w-full h-12 mt-2 rounded-xl text-md font-bold shadow-lg shadow-primary/20"
+                  onClick={handleUpdateTxn}
+                  disabled={updateTxn.isPending}
+                >
                   {updateTxn.isPending ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
@@ -436,8 +506,11 @@ export function ContactDetailPage({ id }: Props) {
             <AlertDialogDescription asChild>
               <div className="space-y-2.5 text-sm font-medium pt-2">
                 <p>
-                  Permanently delete this <strong className="text-foreground">{editTxn?.type}</strong> of{' '}
-                  <strong className="text-foreground">{editTxn ? fmtAmount(editTxn.amount) : ''}</strong>
+                  Permanently delete this{' '}
+                  <strong className="text-foreground">{editTxn?.type}</strong> of{' '}
+                  <strong className="text-foreground">
+                    {editTxn ? fmtAmount(editTxn.amount) : ''}
+                  </strong>
                   {editTxn ? ` on ${fmtDate(editTxn.date).split(',')[0]}` : ''}.
                 </p>
                 {editTxn?.type === 'actual' && editTxn.payment_account && (
@@ -447,7 +520,8 @@ export function ContactDetailPage({ id }: Props) {
                 )}
                 {editTxn?.document && !editTxn.is_doc_deleted && (
                   <p className="text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100 leading-tight">
-                    ⚠️ This is linked to a document. If you delete it, the document balance will become unpaid again.
+                    ⚠️ This is linked to a document. If you delete it, the document balance
+                    will become unpaid again.
                   </p>
                 )}
               </div>
@@ -455,7 +529,11 @@ export function ContactDetailPage({ id }: Props) {
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-4 gap-2">
             <AlertDialogCancel className="h-11 rounded-xl border-border">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteTxn} disabled={deleteTxn.isPending} className="h-11 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold shadow-sm">
+            <AlertDialogAction
+              onClick={handleDeleteTxn}
+              disabled={deleteTxn.isPending}
+              className="h-11 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold shadow-sm"
+            >
               {deleteTxn.isPending ? 'Deleting...' : 'Yes, Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -477,8 +555,8 @@ function ContactDetailSkeleton() {
         <Skeleton className="h-12 rounded-xl" />
       </div>
       <div className="mt-8 space-y-3">
-         <Skeleton className="h-12 rounded-xl" />
-         <Skeleton className="h-[300px] rounded-xl" />
+        <Skeleton className="h-12 rounded-xl" />
+        <Skeleton className="h-[300px] rounded-xl" />
       </div>
     </div>
   )

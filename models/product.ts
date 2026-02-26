@@ -5,9 +5,9 @@ export interface Product {
   name: string
   description: string | null
   image_url: string | null
-  rate: string
-  current_stock: string
-  min_stock: string
+  rate: string                   // Decimal as string
+  current_stock: string          // Decimal as string
+  min_stock: string              // Decimal as string
   hsn_code: string | null
   unit: string
   is_active: boolean
@@ -15,13 +15,14 @@ export interface Product {
   updated_at: string
 }
 
+// Matches ProductListSerializer fields exactly
 export interface ProductListItem {
   id: number
   name: string
   rate: string
   current_stock: string
   min_stock: string
-  hsn_code: string | null         // now included from backend fix
+  hsn_code: string | null
   unit: string
   is_active: boolean
 }
@@ -29,13 +30,21 @@ export interface ProductListItem {
 export type ProductCreate = Omit<Product, 'id' | 'created_at' | 'updated_at'>
 export type ProductUpdate = Partial<ProductCreate>
 
+// Payload for POST /products/{id}/adjust_stock/
 export interface AdjustStockPayload {
-  quantity: string
+  quantity: string               // signed — positive or negative
   rate?: string
   notes?: string
   date?: string
 }
 
+// Payload for POST /products/{id}/set_stock/
+export interface SetStockPayload {
+  current_stock: string
+}
+
+// Response from GET /products/{id}/pending_moves/
+// Matches inventory/views.py ProductViewSet.pending_moves exactly
 export interface PendingMove {
   document_id: number
   doc_id: string

@@ -1,39 +1,34 @@
-// components/shared/AppShell.tsx
 'use client'
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
-import { BottomNav }        from '@/components/shared/BottomNav'
-import { Header }           from '@/components/shared/Header'
-import { QuickActionSheet } from '@/components/shared/QuickActionSheet'
-import { DocCreateSheet }   from '@/components/shared/DocCreateSheet'
-import { TransactionSheet } from '@/components/shared/TransactionSheet'
-
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
+import { Header }              from '@/components/shared/Header'
+import { BottomNav }           from '@/components/shared/BottomNav'
+import { QuickActionSheet }    from '@/components/shared/QuickActionSheet'
+import { DocCreateSheet }      from '@/components/shared/DocCreateSheet'
+import { TransactionSheet }    from '@/components/shared/TransactionSheet'
+import { DeleteDocSheet }      from '@/components/shared/DeleteDocSheet'
+import { RecordPaymentSheet }  from '@/components/shared/RecordPaymentSheet'
+import { AddDetailsSheet }     from '@/components/shared/AddDetailsSheet'
+import { TransferSheet }       from '@/components/shared/TransferSheet'
+import { AdjustBalanceSheet }  from '@/components/shared/AdjustBalanceSheet'
+import { AdjustStockSheet }    from '@/components/shared/AdjustStockSheet'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router          = useRouter()
-  const hasHydrated     = useAuthStore((s) => s._hasHydrated)
+  // In-memory auth — no hydration wait, no loginDate, no session duration
+  // If isAuthenticated is false, credentials were never set this session → go to login
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const loginDate       = useAuthStore((s) => s.loginDate)
-  const logout          = useAuthStore((s) => s.logout)
-
-  const isSessionValid =
-    isAuthenticated &&
-    loginDate != null &&
-    Date.now() - loginDate <= SESSION_DURATION
 
   useEffect(() => {
-    if (!hasHydrated) return
-    if (!isSessionValid) {
-      logout()
+    if (!isAuthenticated) {
       router.replace('/login')
     }
-  }, [hasHydrated, isSessionValid, logout, router])
+  }, [isAuthenticated, router])
 
-  if (!hasHydrated) return null
-  if (!isSessionValid) return null
+  // Prevents flash of protected content on hard refresh
+  if (!isAuthenticated) return null
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -42,9 +37,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <BottomNav />
+
+      {/* ── Global Sheets — mounted once at app root ─────────────────────── */}
+      {/* Triggered via uiStore open* actions from any page */}
       <QuickActionSheet />
       <DocCreateSheet />
       <TransactionSheet />
+      <DeleteDocSheet />
+      <RecordPaymentSheet />
+      <AddDetailsSheet />
+      <TransferSheet />
+      <AdjustBalanceSheet />
+      <AdjustStockSheet />
     </div>
   )
 }

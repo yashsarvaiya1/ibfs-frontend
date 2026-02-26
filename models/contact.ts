@@ -12,8 +12,8 @@ export interface Contact {
   contact_name: string
   phone: string
   additional_contacts: AdditionalContact[]
-  opening_balance: string        // Decimal as string
-  current_cf: string             // computed: opening_balance + SUM(last MCD per month)
+  opening_balance: string   // signed Decimal as string
+  current_cf: string        // computed server-side: opening_balance + SUM(last MCD per month)
   gstin: string | null
   address: string | null
   notes: string | null
@@ -25,6 +25,5 @@ export interface Contact {
 export type ContactCreate = Omit<Contact, 'id' | 'current_cf' | 'created_at' | 'updated_at'>
 export type ContactUpdate = Partial<ContactCreate>
 
-// Derived helper — display name
 export const getContactDisplayName = (c: Contact): string =>
   c.company_name || c.contact_name

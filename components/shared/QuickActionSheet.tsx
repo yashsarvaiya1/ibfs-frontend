@@ -1,3 +1,4 @@
+// components/shared/QuickActionSheet.tsx
 'use client'
 
 import React from 'react'
@@ -6,10 +7,12 @@ import { useUIStore } from '@/stores/uiStore'
 import { useSettings } from '@/hooks/useSettings'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
-  FileText, Receipt, ClipboardList,
-  Truck, RotateCcw, RotateCw, Banknote, AlertCircle,
+  FileText, Receipt, ClipboardList, Truck,
+  RotateCcw, RotateCw, Banknote, AlertCircle,
   Package, Wallet, Users, ArrowLeftRight,
 } from 'lucide-react'
+import type { DocumentType } from '@/models/document'
+import type { QuickActionType } from '@/stores/uiStore'
 
 interface ActionItem {
   label:  string
@@ -20,39 +23,52 @@ interface ActionItem {
 export function QuickActionSheet() {
   const router = useRouter()
 
+  // Fixed: use new store API — quickActionOpen + closeQuickAction
   const quickActionOpen    = useUIStore((s) => s.quickActionOpen)
-  const setQuickActionOpen = useUIStore((s) => s.setQuickActionOpen)
+  const closeQuickAction   = useUIStore((s) => s.closeQuickAction)
   const openDocCreateSheet = useUIStore((s) => s.openDocCreateSheet)
+  const openQuickAction    = useUIStore((s) => s.openQuickAction)
   const { data: settings } = useSettings()
 
-  const close = () => setQuickActionOpen(false)
-  const nav   = (href: string) => { close(); router.push(href) }
-  const doc   = (type: Parameters<typeof openDocCreateSheet>[0]) => {
+  const close = () => closeQuickAction()
+
+  const nav = (href: string) => { close(); router.push(href) }
+
+  // Document types go through DocCreateSheet
+  const doc = (type: DocumentType) => {
     close()
     openDocCreateSheet(type)
   }
 
-  // ── Group 1: Always-visible create actions ───────────────────────────────────
+  // Non-doc quick actions (expense, interest, transfer) reopen as typed quick action
+  // This is correct: QuickActionSheet is the picker; typed sheets handle the form
+  const qa = (type: QuickActionType) => {
+    close()
+    // Small delay so close animation doesn't conflict with reopen
+    setTimeout(() => openQuickAction(type), 150)
+  }
+
+  // ── Group 1: Always-visible core document types ───────────────────────────
   const coreActions: ActionItem[] = [
-    { label: 'Bill',     icon: FileText, action: () => doc('bill') },
-    { label: 'Invoice',  icon: Receipt,  action: () => doc('invoice') },
-    // F1 FIX: was openTransactionSheet({mode:'send'}) — now correctly opens expense doc flow
-    { label: 'Expense',  icon: Banknote, action: () => doc('expense') },
-    // F2 FIX: was gated behind enable_interest + wrong flow — Interest Path B is always available
-    { label: 'Interest', icon: AlertCircle, action: () => doc('interest') },
+    { label: 'Bill',     icon: FileText,    action: () => doc('bill') },
+    { label: 'Invoice',  icon: Receipt,     action: () => doc('invoice') },
+    // Expense → qa flow (not DocCreateSheet — it has its own form)
+    { label: 'Expense',  icon: Banknote,    action: () => qa('expense') },
+    // Interest Path B → qa flow (standalone, creates only record f.txn)
+    { label: 'Interest', icon: AlertCircle, action: () => qa('interest') },
   ]
 
-  // ── Group 2: Settings-gated document types ────────────────────────────────────
-  const optionalActions = [
+  // ── Group 2: Settings-gated document types ────────────────────────────────
+  const optionalActions = ([
     settings?.enable_po        && { label: 'Purch. Order', icon: ClipboardList, action: () => doc('po') },
     settings?.enable_pi        && { label: 'Proforma Inv', icon: ClipboardList, action: () => doc('pi') },
     settings?.enable_quotation && { label: 'Quotation',    icon: ClipboardList, action: () => doc('quotation') },
     settings?.enable_challan   && { label: 'Challan',      icon: Truck,         action: () => doc('challan') },
     settings?.enable_cn        && { label: 'Credit Note',  icon: RotateCcw,     action: () => doc('cn') },
     settings?.enable_dn        && { label: 'Debit Note',   icon: RotateCw,      action: () => doc('dn') },
-  ].filter(Boolean) as ActionItem[]
+  ] as (ActionItem | false)[]).filter((x): x is ActionItem => Boolean(x))
 
-  // ── Group 3: Page navigation ──────────────────────────────────────────────────
+  // ── Group 3: Navigation shortcuts ────────────────────────────────────────
   const pageActions: ActionItem[] = [
     { label: 'Inventory',    icon: Package,        action: () => nav('/inventory') },
     { label: 'Accounts',     icon: Wallet,         action: () => nav('/accounts') },
@@ -65,6 +81,7 @@ export function QuickActionSheet() {
       {actions.map((a) => (
         <button
           key={a.label}
+          type="button"
           onClick={a.action}
           className="flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-muted/40 py-3 px-1 text-center active:scale-95 transition-transform"
         >
@@ -76,7 +93,8 @@ export function QuickActionSheet() {
   )
 
   return (
-    <Sheet open={quickActionOpen} onOpenChange={setQuickActionOpen}>
+    // Fixed: onOpenChange calls closeQuickAction, not setQuickActionOpen
+    <Sheet open={quickActionOpen} onOpenChange={(open) => { if (!open) close() }}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
         <SheetHeader className="mb-4">
           <SheetTitle className="text-left">Quick Actions</SheetTitle>

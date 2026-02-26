@@ -1,29 +1,26 @@
 // components/documents/DocumentsPage.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocuments } from '@/hooks/useDocument'
 import { useSettings } from '@/hooks/useSettings'
 import { DOC_TYPE_LABELS, DocumentType } from '@/models/document'
-import { fmtAmount, fmtDate } from '@/lib/utils'
+import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Search, ChevronRight, FileText, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import type { Settings } from '@/models/settings'
 
 // ── Filter config ───────────────────────────────────────────────────────────
 const BASE_FILTERS: { label: string; value: string }[] = [
-  { label: 'All',          value: '' },
-  { label: 'Bills',        value: 'bill' },
-  { label: 'Invoices',     value: 'invoice' },
-  // BUG5 FIX: cash vouchers are always core payable doc types
-  { label: 'Pay Voucher',  value: 'cash_payment_voucher' },
-  { label: 'Recv Voucher', value: 'cash_receipt_voucher' },
+  { label: 'All',      value: '' },
+  { label: 'Bills',    value: 'bill' },
+  { label: 'Invoices', value: 'invoice' },
+  // FIX 3: vouchers moved to OPTIONAL_FILTERS — only show when enable_vouchers is ON
 ]
 
 const OPTIONAL_FILTERS: {
@@ -31,14 +28,15 @@ const OPTIONAL_FILTERS: {
   value: DocumentType
   flag: keyof Settings
 }[] = [
-  { label: 'PO',          value: 'po',          flag: 'enable_po' },
-  { label: 'Proforma',    value: 'pi',          flag: 'enable_pi' },
-  { label: 'Quotation',   value: 'quotation',   flag: 'enable_quotation' },
-  { label: 'Challan',     value: 'challan',     flag: 'enable_challan' },
-  { label: 'Credit Note', value: 'cn',          flag: 'enable_cn' },
-  { label: 'Debit Note',  value: 'dn',          flag: 'enable_dn' },
-  // BUG1 FIX: vouchers only in optional if settings flag, but base already has them
-  { label: 'Interest',    value: 'interest',    flag: 'enable_interest' },
+  { label: 'PO',           value: 'po',                   flag: 'enable_po' },
+  { label: 'Proforma',     value: 'pi',                   flag: 'enable_pi' },
+  { label: 'Quotation',    value: 'quotation',            flag: 'enable_quotation' },
+  { label: 'Challan',      value: 'challan',              flag: 'enable_challan' },
+  { label: 'Credit Note',  value: 'cn',                   flag: 'enable_cn' },
+  { label: 'Debit Note',   value: 'dn',                   flag: 'enable_dn' },
+  { label: 'Interest',     value: 'interest',             flag: 'enable_interest' },
+  { label: 'Pay Voucher',  value: 'cash_payment_voucher', flag: 'enable_vouchers' },
+  { label: 'Recv Voucher', value: 'cash_receipt_voucher', flag: 'enable_vouchers' },
 ]
 
 // ── Type badge colours ──────────────────────────────────────────────────────
@@ -60,35 +58,31 @@ export function DocumentsPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const setPageTitle = useUIStore((s) => s.setPageTitle)
-  
+
   useEffect(() => setPageTitle('Documents'), [setPageTitle])
 
   const { data: settings } = useSettings()
 
-  const [activeType, setActiveType]   = useState(searchParams.get('type') ?? '')
-  const [search,     setSearch]       = useState('')
-  const [showDeleted, setShowDeleted] = useState(false) 
+  const [activeType,   setActiveType]   = useState(searchParams.get('type') ?? '')
+  const [search,       setSearch]       = useState('')
+  const [showDeleted,  setShowDeleted]  = useState(false)
 
-  // BUG4 FIX: Cast the payload to `any` to bypass the TS error without modifying DocumentListParams model
   const { data, isLoading } = useDocuments({
-    type:    activeType || undefined,
-    search:  search || undefined,
-    // BUG2 FIX: contact param was Number(null) = 0 causing wrong filter
-    contact: searchParams.get('contact')
-      ? Number(searchParams.get('contact'))
-      : undefined,
-    is_active: showDeleted ? false : true, 
+    type:      activeType || undefined,
+    search:    search || undefined,
+    contact:   searchParams.get('contact') ? Number(searchParams.get('contact')) : undefined,
+    is_active: showDeleted ? false : true,
   } as any)
 
   const docs = data?.results ?? []
 
-  // BUG1 FIX: build filter list conditionally from settings
-  const visibleFilters = [
+  // FIX 2: memoised — only rebuilds when settings changes, not on every search keystroke
+  const visibleFilters = useMemo(() => [
     ...BASE_FILTERS,
     ...OPTIONAL_FILTERS.filter(f => settings?.[f.flag]),
-    // expense always shown — spec says it's a core path
+    // expense always shown — core path per spec
     { label: 'Expense', value: 'expense' },
-  ]
+  ], [settings])
 
   return (
     <div className="pb-10">
@@ -113,31 +107,30 @@ export function DocumentsPage() {
             key={f.value}
             onClick={() => {
               setActiveType(f.value)
-              setShowDeleted(false) // Reset deleted view if changing types
+              setShowDeleted(false)
             }}
             className={cn(
               'shrink-0 px-4 py-2 rounded-xl text-xs font-semibold border transition-colors',
               activeType === f.value && !showDeleted
                 ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                : 'bg-background text-muted-foreground border-border hover:bg-muted/50'
+                : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
             )}
           >
             {f.label}
           </button>
         ))}
-        
-        {/* Toggle for Deleted Documents */}
+
         <div className="h-6 w-px bg-border mx-1 shrink-0" />
         <button
           onClick={() => {
             setShowDeleted(true)
-            setActiveType('') // Clear type to just show all deleted docs
+            setActiveType('')
           }}
           className={cn(
             'shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-colors',
             showDeleted
               ? 'bg-destructive/10 text-destructive border-destructive/30 shadow-sm'
-              : 'bg-background text-muted-foreground border-border hover:bg-muted/50'
+              : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
           )}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -165,8 +158,10 @@ export function DocumentsPage() {
             <Card
               key={doc.id}
               className={cn(
-                "cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm",
-                !doc.is_active ? "opacity-70 bg-muted/40 border-dashed" : "hover:bg-muted/20 border-border"
+                'cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
+                !doc.is_active
+                  ? 'opacity-70 bg-muted/40 border-dashed'
+                  : 'hover:bg-muted/20 border-border',
               )}
               onClick={() => router.push(`/documents/${doc.id}`)}
             >
@@ -175,7 +170,7 @@ export function DocumentsPage() {
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className={cn(
                       'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border',
-                      TYPE_BADGE_COLORS[doc.type] ?? 'bg-muted text-muted-foreground border-border'
+                      TYPE_BADGE_COLORS[doc.type] ?? 'bg-muted text-muted-foreground border-border',
                     )}>
                       {DOC_TYPE_LABELS[doc.type] ?? doc.type}
                     </span>
@@ -186,17 +181,17 @@ export function DocumentsPage() {
                     )}
                   </div>
                   <p className="font-semibold text-sm text-foreground/90">#{doc.doc_id}</p>
-                  
-                  {/* BUG3 FIX: show contact name on card for quick identification */}
                   {doc.contact_name ? (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5 font-medium">{doc.contact_name}</p>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5 font-medium">
+                      {doc.contact_name}
+                    </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground/50 truncate mt-0.5 italic">No contact</p>
+                    <p className="text-xs text-muted-foreground/50 truncate mt-0.5 italic">
+                      No contact
+                    </p>
                   )}
-                  
                   <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDate(doc.date)}</p>
                 </div>
-                
                 <div className="flex flex-col items-end justify-center gap-1.5 shrink-0">
                   <p className="text-base font-bold tracking-tight">
                     {doc.total_amount ? fmtAmount(doc.total_amount) : '—'}

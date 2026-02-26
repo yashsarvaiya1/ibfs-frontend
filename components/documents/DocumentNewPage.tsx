@@ -27,17 +27,18 @@ import { X, Plus, ChevronDown, ChevronUp, FileText, Package, Link as LinkIcon } 
 import { fmtAmount } from '@/lib/utils'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/SearchableSelect'
 
-// ─── Safe label lookup ────────────────────────────────────────────────────────
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined) => t ? (DOC_LABELS[t] ?? t) : ''
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const WITH_LINE_ITEMS: DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotation', 'challan', 'cn', 'dn']
-const WITH_REFERENCE: DocumentType[] = ['po', 'pi', 'quotation', 'cn', 'dn', 'challan', 'bill', 'invoice']
-const WITH_CONSIGNEE: DocumentType[] = ['challan', 'invoice', 'bill']
-const WITH_PAYMENT:   DocumentType[] = ['bill', 'invoice', 'cn', 'dn']
-const IS_VOUCHER:     DocumentType[] = ['cash_payment_voucher', 'cash_receipt_voucher']
-const FAST_BILL_TYPES: DocumentType[] = ['bill', 'invoice']
+const WITH_LINE_ITEMS:   DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotation', 'challan', 'cn', 'dn']
+const WITH_REFERENCE:    DocumentType[] = ['po', 'pi', 'quotation', 'cn', 'dn', 'challan', 'bill', 'invoice']
+const WITH_CONSIGNEE:    DocumentType[] = ['challan', 'invoice', 'bill']
+const WITH_PAYMENT:      DocumentType[] = ['bill', 'invoice', 'cn', 'dn']
+const IS_VOUCHER:        DocumentType[] = ['cash_payment_voucher', 'cash_receipt_voucher']
+const FAST_BILL_TYPES:   DocumentType[] = ['bill', 'invoice']
+// FIX 1: types where contact is mandatory
+const CONTACT_REQUIRED:  DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher']
 
 const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType[]>> = {
   cn:      ['invoice'],
@@ -49,7 +50,6 @@ const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType[]>> = {
   invoice: ['pi'],
 }
 
-// ─── Line item types ──────────────────────────────────────────────────────────
 interface LineItemRow extends LineItem { _key: string }
 
 // ─── Line item picker sheet ───────────────────────────────────────────────────
@@ -235,12 +235,13 @@ export function DocumentNewPage() {
   const { data: productsData } = useProducts({ is_active: true })
   const { data: accountsData } = useAccounts({ is_active: true })
 
-  const refDocTypes       = REF_DOC_TYPES[docType]
-  const primaryRefDocType = refDocTypes?.[0]
+  const refDocTypes        = REF_DOC_TYPES[docType]
+  const primaryRefDocType  = refDocTypes?.[0]
   const shouldFetchRefDocs = WITH_REFERENCE.includes(docType)
 
+  // FIX 5: only fetch when both conditions met — no accidental `{}` all-docs query
   const { data: referenceDocs } = useDocuments(
-    shouldFetchRefDocs ? (primaryRefDocType ? { type: primaryRefDocType } : {}) : undefined
+    shouldFetchRefDocs && primaryRefDocType ? { type: primaryRefDocType } : undefined
   )
 
   const createDocument = useCreateDocument()
@@ -257,12 +258,9 @@ export function DocumentNewPage() {
   const [discount,         setDiscount]         = useState('')
   const [fastAmount,       setFastAmount]       = useState('')
   const [voucherAmount,    setVoucherAmount]    = useState('')
+  const [attachmentUrls,   setAttachmentUrls]   = useState<string[]>([])
+  const [currentLink,      setCurrentLink]      = useState('')
 
-  // Multi-attachment Array state (replaces single string)
-  const [attachmentUrls, setAttachmentUrls] = useState<string[]>([])
-  const [currentLink, setCurrentLink] = useState('')
-
-  // Fast/Detailed toggle — default to 'fast' for bill/invoice, 'detailed' for others
   const [billMode, setBillMode] = useState<'fast' | 'detailed'>(
     FAST_BILL_TYPES.includes(docType) ? 'fast' : 'detailed'
   )
@@ -284,18 +282,22 @@ export function DocumentNewPage() {
   const refDocs  = shouldFetchRefDocs ? (referenceDocs?.results ?? []) : []
 
   const refDocId = referenceId ? Number(referenceId) : undefined
-  const { data: refDoc } = useDocument(refDocId as number)
+  const { data: refDoc } = useDocument(refDocId!)  // hook must have enabled: !!id guard
 
   // ── Computed flags ──────────────────────────────────────────────────────────
-  const isVoucher          = IS_VOUCHER.includes(docType)
-  const hasLineItems       = WITH_LINE_ITEMS.includes(docType)
-  const hasReference       = WITH_REFERENCE.includes(docType)
-  const hasConsignee       = WITH_CONSIGNEE.includes(docType)
-  const showPaymentAccount = WITH_PAYMENT.includes(docType) && !!settings?.auto_transaction
-  const isFastBillType     = FAST_BILL_TYPES.includes(docType)
-  const isFastMode         = isFastBillType && billMode === 'fast'
+  const isVoucher      = IS_VOUCHER.includes(docType)
+  const hasLineItems   = WITH_LINE_ITEMS.includes(docType)
+  const hasReference   = WITH_REFERENCE.includes(docType)
+  const hasConsignee   = WITH_CONSIGNEE.includes(docType)
+  const isFastBillType = FAST_BILL_TYPES.includes(docType)
+  const isFastMode     = isFastBillType && billMode === 'fast'
 
-  // ── SearchableSelect options ────────────────────────────────────────────────
+  // FIX 2: vouchers always need account selector, regardless of auto_transaction
+  const showPaymentAccount =
+    (WITH_PAYMENT.includes(docType) && !!settings?.auto_transaction) ||
+    IS_VOUCHER.includes(docType)
+
+  // ── Options ─────────────────────────────────────────────────────────────────
   const contactOptions: SearchableSelectOption[] = contacts.map(c => ({
     value: String(c.id), label: getContactDisplayName(c),
     sublabel: c.phone, badge: c.gstin ? 'GST' : undefined,
@@ -331,11 +333,15 @@ export function DocumentNewPage() {
     })),
   ]
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+  // FIX 6: reset line items when ref doc changes before opening picker
   useEffect(() => {
     if (!refDoc) return
     if (refDoc.contact) setContactId(String(refDoc.contact))
-    if ((refDoc.line_items?.length ?? 0) > 0) setPickerOpen(true)
+    if ((refDoc.line_items?.length ?? 0) > 0) {
+      setLineItems([{ _key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
+      setPickerOpen(true)
+    }
   }, [refDoc])
 
   const handlePickerConfirm = (selected: LineItem[]) => {
@@ -358,18 +364,20 @@ export function DocumentNewPage() {
     })
   }
 
-  // File Attachments Handler
   const handleAddAttachment = () => {
     if (currentLink.trim() === '') return
     setAttachmentUrls(prev => [...prev, currentLink.trim()])
     setCurrentLink('')
   }
-  const handleRemoveAttachment = (indexToRemove: number) => {
-    setAttachmentUrls(prev => prev.filter((_, index) => index !== indexToRemove))
+
+  const handleRemoveAttachment = (idx: number) => {
+    setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))
   }
 
   // Line item helpers
-  const addLineItem = () => setLineItems(p => [...p, { _key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
+  const addLineItem = () => setLineItems(p => [...p, {
+    _key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null,
+  }])
   const removeLineItem = (key: string) => setLineItems(p => p.filter(l => l._key !== key))
   const updateLineItem = (key: string, field: keyof LineItemRow, value: string | number | null) => {
     setLineItems(p => p.map(l => {
@@ -388,7 +396,12 @@ export function DocumentNewPage() {
     setLineItems(p => p.map(l => {
       if (l._key !== key) return l
       const qty = Number(l.quantity) || 1
-      return { ...l, product_id: product.id, name: product.name, rate: Number(product.rate), amount: qty * Number(product.rate), hsn: product.hsn_code ?? undefined }
+      return {
+        ...l,
+        product_id: product.id, name: product.name,
+        rate: Number(product.rate), amount: qty * Number(product.rate),
+        hsn: product.hsn_code ?? undefined,
+      }
     }))
   }
 
@@ -400,30 +413,34 @@ export function DocumentNewPage() {
   const taxTotal    = taxes.reduce((s, t) => s + (taxBase * (Number(t.percentage) || 0)) / 100, 0)
   const grandTotal  = lineTotal + chargeTotal - discountAmt + taxTotal
 
-  // Charge/Tax helpers
   const addCharge    = () => setCharges(p => [...p, { name: '', amount: 0 }])
   const removeCharge = (i: number) => setCharges(p => p.filter((_, idx) => idx !== i))
-  const updateCharge = (i: number, f: keyof Charge, v: string) => setCharges(p => p.map((c, idx) => idx === i ? { ...c, [f]: f === 'amount' ? Number(v) : v } : c))
+  const updateCharge = (i: number, f: keyof Charge, v: string) =>
+    setCharges(p => p.map((c, idx) => idx === i ? { ...c, [f]: f === 'amount' ? Number(v) : v } : c))
 
   const addTax    = () => setTaxes(p => [...p, { name: '', percentage: 0 }])
   const removeTax = (i: number) => setTaxes(p => p.filter((_, idx) => idx !== i))
-  const updateTax = (i: number, f: keyof Tax, v: string) => setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
+  const updateTax = (i: number, f: keyof Tax, v: string) =>
+    setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
 
-  // Submit
+  // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!contactId) { toast.error('Select a contact'); return }
+    // FIX 1: only enforce contact for types that require it
+    if (CONTACT_REQUIRED.includes(docType) && !contactId) {
+      toast.error('Select a contact'); return
+    }
 
     const payload: DocumentCreate = {
       type:    docType,
-      contact: Number(contactId),
+      contact: contactId ? Number(contactId) : undefined,
       date,
-      due_date:      dueDate      || undefined,
-      payment_terms: paymentTerms || undefined,
-      notes:         notes        || undefined,
-      reference:     referenceId  ? Number(referenceId) : undefined,
-      consignee:     consigneeId  ? Number(consigneeId) : undefined,
-      discount:      discountAmt,
-      attachment_urls: attachmentUrls, // Map the robust array directly
+      due_date:        dueDate      || undefined,
+      payment_terms:   paymentTerms || undefined,
+      notes:           notes        || undefined,
+      reference:       referenceId  ? Number(referenceId) : undefined,
+      consignee:       consigneeId  ? Number(consigneeId) : undefined,
+      discount:        discountAmt,
+      attachment_urls: attachmentUrls,
     }
 
     if (isVoucher) {
@@ -459,7 +476,7 @@ export function DocumentNewPage() {
     }
   }
 
-  // ── Reusable Attachments UI Component Function ────────────────────────────────
+  // ── Attachments UI ───────────────────────────────────────────────────────────
   const renderAttachmentsSection = () => (
     <div className="space-y-3">
       <Label className="flex items-center gap-1.5">
@@ -467,23 +484,17 @@ export function DocumentNewPage() {
         Attachments
         <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span>
       </Label>
-      
-      {/* Input row to add links */}
+
       <div className="flex gap-2">
         <Input
-          placeholder="https://drive.google.com/... or click to upload later"
+          placeholder="https://drive.google.com/..."
           value={currentLink}
           onChange={e => setCurrentLink(e.target.value)}
           className="h-11 rounded-xl flex-1"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleAddAttachment();
-            }
-          }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAttachment() } }}
         />
-        <Button 
-          variant="secondary" 
+        <Button
+          variant="secondary"
           className="h-11 px-4 rounded-xl shrink-0 font-semibold"
           onClick={handleAddAttachment}
           disabled={!currentLink.trim()}
@@ -492,21 +503,18 @@ export function DocumentNewPage() {
         </Button>
       </div>
 
-      {/* List of current attachments */}
       {attachmentUrls.length > 0 && (
         <div className="space-y-2 mt-2">
           {attachmentUrls.map((url, index) => (
-            <div 
-              key={index} 
+            <div
+              key={index}
               className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/20"
             >
               <div className="flex items-center gap-3 overflow-hidden">
                 <FileText className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-sm truncate font-medium text-foreground/80">
-                  {url}
-                </span>
+                <span className="text-sm truncate font-medium text-foreground/80">{url}</span>
               </div>
-              <button 
+              <button
                 onClick={() => handleRemoveAttachment(index)}
                 className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0"
               >
@@ -522,37 +530,38 @@ export function DocumentNewPage() {
   return (
     <div className="px-4 py-4 pb-10 space-y-6">
 
-      {/* ── Contact (always visible) ─────────────────────────────────────── */}
+      {/* ── Contact ──────────────────────────────────────────────────────── */}
       <div className="space-y-1.5">
-        <Label>Contact <span className="text-destructive">*</span></Label>
+        <Label>
+          Contact
+          {CONTACT_REQUIRED.includes(docType) && <span className="text-destructive"> *</span>}
+          {!CONTACT_REQUIRED.includes(docType) && (
+            <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span>
+          )}
+        </Label>
         <SearchableSelect
           options={contactOptions} value={contactId} onChange={setContactId}
           placeholder="Select contact" title="Select Contact"
           searchPlaceholder="Search by name or phone..."
-          emptyText="No contacts found" error={!contactId}
+          emptyText="No contacts found"
+          error={CONTACT_REQUIRED.includes(docType) && !contactId}
         />
       </div>
 
-      {/* ── Date (always visible) ────────────────────────────────────────── */}
+      {/* ── Date ─────────────────────────────────────────────────────────── */}
       <div className="space-y-1.5">
         <Label>Date <span className="text-destructive">*</span></Label>
         <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-11 rounded-xl" />
       </div>
 
-      {/* ── Mode Toggle (bill/invoice only — moved to top for fast UX) ────── */}
+      {/* ── Mode Toggle ──────────────────────────────────────────────────── */}
       {isFastBillType && (
         <Tabs value={billMode} onValueChange={v => setBillMode(v as 'fast' | 'detailed')} className="w-full">
           <TabsList className="w-full h-11 bg-muted/60 p-1 rounded-xl">
-            <TabsTrigger
-              value="fast"
-              className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"
-            >
+            <TabsTrigger value="fast" className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
               ⚡ Fast (Amount Only)
             </TabsTrigger>
-            <TabsTrigger
-              value="detailed"
-              className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"
-            >
+            <TabsTrigger value="detailed" className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
               📋 Detailed (Items)
             </TabsTrigger>
           </TabsList>
@@ -562,12 +571,10 @@ export function DocumentNewPage() {
       <Separator />
 
       {/* ══════════════════════════════════════════════════════════════════
-          FAST MODE — only amount + attachment URL
+          FAST MODE
       ══════════════════════════════════════════════════════════════════ */}
       {isFastMode && (
         <div className="space-y-6">
-
-          {/* Total Amount */}
           <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
             <Label className="text-primary font-semibold">
               Total Amount <span className="text-destructive">*</span>
@@ -580,20 +587,15 @@ export function DocumentNewPage() {
             />
             <p className="text-[11px] text-muted-foreground mt-1 leading-tight">
               Creates a valid {getDocLabel(docType)} instantly. Switch to{' '}
-              <button
-                className="font-semibold text-primary underline underline-offset-2"
-                onClick={() => setBillMode('detailed')}
-              >
+              <button className="font-semibold text-primary underline underline-offset-2" onClick={() => setBillMode('detailed')}>
                 Detailed
               </button>{' '}
               to add line items &amp; track inventory.
             </p>
           </div>
 
-          {/* Render Multi-Attachments */}
           {renderAttachmentsSection()}
 
-          {/* Payment Account (if auto_transaction ON) */}
           {showPaymentAccount && (
             <div className="space-y-1.5">
               <Label>
@@ -611,18 +613,14 @@ export function DocumentNewPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
-          DETAILED MODE — all fields visible
+          DETAILED MODE
       ══════════════════════════════════════════════════════════════════ */}
       {!isFastMode && (
         <div className="space-y-6">
 
-          {/* Consignee */}
           {hasConsignee && (
             <div className="space-y-1.5">
-              <Label>
-                Consignee
-                <span className="text-xs text-muted-foreground ml-1">(optional)</span>
-              </Label>
+              <Label>Consignee <span className="text-xs text-muted-foreground ml-1">(optional)</span></Label>
               <SearchableSelect
                 options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
                 placeholder="Select consignee" title="Select Consignee"
@@ -631,7 +629,6 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Reference Document */}
           {hasReference && (
             <div className="space-y-1.5">
               <Label>
@@ -674,7 +671,6 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Due Date + Payment Terms */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Due Date <span className="text-xs text-muted-foreground font-normal">(opt)</span></Label>
@@ -686,7 +682,6 @@ export function DocumentNewPage() {
             </div>
           </div>
 
-          {/* Voucher mode */}
           {isVoucher && (
             <div className="space-y-1.5">
               <Label>Amount <span className="text-destructive">*</span></Label>
@@ -698,7 +693,6 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Line Items */}
           {hasLineItems && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -761,7 +755,6 @@ export function DocumentNewPage() {
                 </Card>
               ))}
 
-              {/* Taxes, Discounts & Charges */}
               {docType !== 'challan' && (
                 <div className="pt-2">
                   <button
@@ -816,7 +809,6 @@ export function DocumentNewPage() {
                     </div>
                   )}
 
-                  {/* Total Summary */}
                   <Card className="mt-4 bg-muted/30 border-transparent">
                     <CardContent className="p-4 space-y-2 text-sm">
                       <div className="flex justify-between text-muted-foreground font-medium">
@@ -848,7 +840,6 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Payment Account */}
           {showPaymentAccount && (
             <div className="space-y-1.5">
               <Label>
@@ -863,10 +854,8 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Render Multi-Attachments for Detailed Mode too */}
           {renderAttachmentsSection()}
 
-          {/* Notes */}
           <div className="space-y-1.5">
             <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span></Label>
             <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />

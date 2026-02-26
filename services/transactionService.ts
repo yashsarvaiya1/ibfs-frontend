@@ -1,7 +1,12 @@
 // services/transactionService.ts
 import api from '@/lib/axios'
-import { FinancialTransaction, LinkDocumentPayload, TransactionListParams } from '@/models/transaction'
-import { PaginatedResponse } from '@/models/pagination'
+import type {
+  FinancialTransaction,
+  LinkDocumentPayload,
+  TransactionListParams,
+  TransactionUpdatePayload,
+} from '@/models/transaction'
+import type { PaginatedResponse } from '@/models/pagination'
 
 export const transactionService = {
   list: (params?: TransactionListParams) =>
@@ -10,11 +15,12 @@ export const transactionService = {
   get: (id: number) =>
     api.get<FinancialTransaction>(`/transactions/${id}/`).then(r => r.data),
 
-  // fix: was using wrong prefix '/accounting/transactions/'
-  update: (id: number, data: Partial<Pick<FinancialTransaction, 'amount' | 'date' | 'notes'> & { payment_account: number }>) =>
+  // Only actual f.txns — backend blocks record edits with 400
+  update: (id: number, data: TransactionUpdatePayload) =>
     api.patch<FinancialTransaction>(`/transactions/${id}/`, data).then(r => r.data),
 
-  // fix: was using wrong prefix '/accounting/transactions/'
+  // Only actual f.txns — backend blocks record deletes with 400
+  // Reverses account balance automatically on backend
   delete: (id: number) =>
     api.delete(`/transactions/${id}/`),
 

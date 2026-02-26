@@ -1,57 +1,31 @@
 // stores/authStore.ts
+// Spec: "Frontend stores credentials in memory — no persistent localStorage"
+// No persist middleware. Credentials live only in JS memory for the session.
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
 
 interface AuthState {
   isAuthenticated: boolean
   username: string | null
-  loginDate: number | null
-  _hasHydrated: boolean
-  setHasHydrated: (val: boolean) => void
+  // Encoded Basic Auth header value — kept in memory, attached to every request by axios
+  credentials: string | null
   login: (username: string, password: string) => void
   logout: () => void
-  checkSession: () => boolean
 }
 
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
+export const useAuthStore = create<AuthState>()((set) => ({
+  isAuthenticated: false,
+  username: null,
+  credentials: null,
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      isAuthenticated: false,
-      username: null,
-      loginDate: null,
-      _hasHydrated: false,
+  login: (username, password) => {
+    const encoded = btoa(`${username}:${password}`)
+    set({ isAuthenticated: true, username, credentials: encoded })
+  },
 
-      setHasHydrated: (val) => set({ _hasHydrated: val }),
+  logout: () => {
+    set({ isAuthenticated: false, username: null, credentials: null })
+  },
+}))
 
-      login: (username, password) => {
-        const encoded = btoa(`${username}:${password}`)
-        localStorage.setItem('ibfs_credentials', encoded)
-        set({ isAuthenticated: true, username, loginDate: Date.now() })
-      },
-
-      logout: () => {
-        localStorage.removeItem('ibfs_credentials')
-        set({ isAuthenticated: false, username: null, loginDate: null })
-      },
-
-      checkSession: () => {
-        const { loginDate, logout } = get()
-        if (!loginDate) return false
-        if (Date.now() - loginDate > SESSION_DURATION) {
-          logout()
-          return false
-        }
-        return true
-      },
-    }),
-    {
-      name: 'ibfs_auth',
-      storage: createJSONStorage(() => localStorage),
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true)
-      },
-    }
-  )
-)
+// Selector — used by axios interceptor to read the current auth header
+export const selectCredentials = (state: AuthState) => state.credentials

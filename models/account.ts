@@ -9,7 +9,7 @@ export interface PaymentAccount {
   account_number: string | null
   ifsc_code: string | null
   upi_id: string | null
-  current_balance: string        // Decimal as string
+  current_balance: string   // signed Decimal as string
   is_active: boolean
   created_at: string
   updated_at: string

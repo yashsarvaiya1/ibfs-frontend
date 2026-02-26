@@ -8,10 +8,10 @@ import {
   useDocument, useStockPreview,
   useRecordPayment, useDeleteDocument
 } from '@/hooks/useDocument'
+import { DOC_TYPE_LABELS, DeleteStrategy, DeleteDocumentPayload } from '@/models/document'
 import { useDeleteTransaction } from '@/hooks/useTransaction'
 import { useSettings } from '@/hooks/useSettings'
 import { useAccounts } from '@/hooks/useAccount'
-import { DOC_TYPE_LABELS, DeleteStrategy } from '@/models/document'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,7 +32,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   MoreVertical, Banknote, Package,
-  Trash2, ExternalLink, TrendingUp, TrendingDown, Plus, X, Link as LinkIcon, Printer, Edit
+  Trash2, ExternalLink, TrendingUp, TrendingDown,
+  Plus, X, Link as LinkIcon, Printer, Edit
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { MoveStockSheet } from './MoveStockSheet'
@@ -61,8 +62,8 @@ export function DocumentDetailPage({ id }: Props) {
   const { data: accountsData }         = useAccounts({ is_active: true })
   const accounts = accountsData?.results ?? []
 
-  const recordPayment  = useRecordPayment(id)
-  const deleteDocument = useDeleteDocument(id)
+  const recordPayment     = useRecordPayment(id)
+  const deleteDocument    = useDeleteDocument(id)
   const deleteTxnMutation = useDeleteTransaction()
 
   const [paymentSheet,   setPaymentSheet]   = useState(false)
@@ -80,9 +81,10 @@ export function DocumentDetailPage({ id }: Props) {
 
   const [deleteStrategy, setDeleteStrategy] = useState<DeleteStrategy>('revert')
 
+  // FIX 3: narrow deps to stable identity fields — don't retrigger on every refetch
   useEffect(() => {
     if (doc) setPageTitle(`${getDocLabel(doc.type)} #${doc.doc_id}`)
-  }, [doc, setPageTitle])
+  }, [doc?.id, doc?.doc_id, doc?.type, setPageTitle])
 
   const addInterestLine    = () => setInterestLines(p => [...p, { name: '', amount: '', type: 'charge' }])
   const removeInterestLine = (i: number) => setInterestLines(p => p.filter((_, idx) => idx !== i))
@@ -106,13 +108,24 @@ export function DocumentDetailPage({ id }: Props) {
   const totalAmount = Number(doc.total_amount ?? 0)
   const balance     = totalAmount - totalPaid
 
-  const lineSubtotal    = doc.line_items.reduce((s, l) => s + (Number(l.amount) || 0), 0)
-  const chargesSubtotal = doc.charges.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+  // FIX 1: null-guard on line_items, charges, taxes
+  const lineItems       = doc.line_items ?? []
+  const charges         = doc.charges    ?? []
+  const taxes           = doc.taxes      ?? []
+  const attachmentUrls  = doc.attachment_urls ?? []
+
+  const lineSubtotal    = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const chargesSubtotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0)
   const taxBase         = lineSubtotal + chargesSubtotal - Number(doc.discount ?? 0)
 
-  const hasStock        = (stockPreview?.length ?? 0) > 0
-  const showMoveStock   = hasStock
-  const isPayableType   = PAYMENT_DOC_TYPES.has(doc.type)
+  const hasStock      = (stockPreview?.length ?? 0) > 0
+  const isPayableType = PAYMENT_DOC_TYPES.has(doc.type)
+
+  // FIX 5: pre-fill amount with balance for convenience
+  const handleOpenPaymentSheet = () => {
+    if (balance > 0) setPayAmount(balance.toFixed(2))
+    setPaymentSheet(true)
+  }
 
   const handleRecordPayment = async () => {
     if (!payAmount || !payAccount) {
@@ -148,7 +161,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   const handleDelete = async () => {
     try {
-      await deleteDocument.mutateAsync(deleteStrategy)
+      await deleteDocument.mutateAsync({ strategy: deleteStrategy })  // ← wrap here
       toast.success('Document deleted')
       router.back()
     } catch {
@@ -156,14 +169,23 @@ export function DocumentDetailPage({ id }: Props) {
     }
   }
 
-  const handleDeleteTxn = async (txnId: number) => {
-    if (confirm("Are you sure you want to delete this transaction? This will revert the account balance.")) {
-      try {
-        await deleteTxnMutation.mutateAsync(txnId)
-      } catch (e) {
-        toast.error('Failed to delete transaction')
-      }
-    }
+  // FIX 2: replace window.confirm() with sonner toast action — works in PWA/WebView
+  const handleDeleteTxn = (txnId: number) => {
+    toast('Delete this transaction?', {
+      description: 'This will revert the account balance.',
+      action: {
+        label: 'Delete',
+        onClick: async () => {
+          try {
+            await deleteTxnMutation.mutateAsync(txnId)
+            toast.success('Transaction deleted')
+          } catch {
+            toast.error('Failed to delete transaction')
+          }
+        },
+      },
+      cancel: { label: 'Cancel', onClick: () => {} },
+    })
   }
 
   return (
@@ -188,10 +210,9 @@ export function DocumentDetailPage({ id }: Props) {
           </div>
           <div className="flex items-center gap-1">
             {doc.is_active && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-9 px-3 mr-1 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 gap-1.5" 
+              <Button
+                variant="outline" size="sm"
+                className="h-9 px-3 mr-1 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 gap-1.5"
                 onClick={() => router.push(`/documents/${doc.id}/edit`)}
               >
                 <Edit className="h-4 w-4" /> Edit
@@ -235,18 +256,17 @@ export function DocumentDetailPage({ id }: Props) {
           </div>
         </div>
 
-        {/* Bug #5 FIX: Handle the array correctly */}
-        {(doc.attachment_urls?.length ?? 0) > 0 && (
+        {/* FIX 4: null-safe attachment rendering via attachmentUrls local var */}
+        {attachmentUrls.length > 0 && (
           <div className="mt-4 flex flex-col gap-2">
-            {doc.attachment_urls.map((url, idx) => (
-              <Button 
-                key={idx}
-                variant="outline" 
-                size="sm" 
-                className="w-full h-10 rounded-xl bg-primary/5 text-primary border-primary/20 hover:bg-primary/10 transition-colors" 
+            {attachmentUrls.map((url, idx) => (
+              <Button
+                key={idx} variant="outline" size="sm"
+                className="w-full h-10 rounded-xl bg-primary/5 text-primary border-primary/20 hover:bg-primary/10 transition-colors"
                 onClick={() => window.open(url, '_blank')}
               >
-                <LinkIcon className="h-4 w-4 mr-2" /> View Attached File {doc.attachment_urls.length > 1 ? `#${idx + 1}` : ''}
+                <LinkIcon className="h-4 w-4 mr-2" />
+                View Attached File {attachmentUrls.length > 1 ? `#${idx + 1}` : ''}
               </Button>
             ))}
           </div>
@@ -269,9 +289,7 @@ export function DocumentDetailPage({ id }: Props) {
                   <span className="text-muted-foreground">
                     {isOutgoing ? 'Paid' : 'Received'}
                   </span>
-                  <span className="text-emerald-600">
-                    −{fmtAmount(totalPaid)}
-                  </span>
+                  <span className="text-emerald-600">−{fmtAmount(totalPaid)}</span>
                 </div>
               )}
               <Separator className="my-1" />
@@ -300,12 +318,13 @@ export function DocumentDetailPage({ id }: Props) {
       {doc.is_active && (
         <div className="px-4 pb-4 flex gap-3">
           {isPayableType && balance > 0 && (
-            <Button className="flex-1 h-12 gap-2 rounded-xl shadow-md shadow-primary/20" onClick={() => setPaymentSheet(true)}>
+            // FIX 5: pre-fills amount with balance
+            <Button className="flex-1 h-12 gap-2 rounded-xl shadow-md shadow-primary/20" onClick={handleOpenPaymentSheet}>
               <Banknote className="h-4 w-4" />
               {isOutgoing ? 'Record Payment' : 'Record Receipt'}
             </Button>
           )}
-          {showMoveStock && (
+          {hasStock && (
             <Button
               variant="outline"
               className="flex-1 h-12 gap-2 rounded-xl border-primary/30 text-primary hover:bg-primary/10"
@@ -320,15 +339,14 @@ export function DocumentDetailPage({ id }: Props) {
       <Separator />
 
       {/* ── Line Items ────────────────────────────────────────────────────── */}
-      {doc.line_items.length > 0 && (
+      {/* FIX 1: use null-safe local vars */}
+      {lineItems.length > 0 && (
         <>
           <div className="px-4 pt-5 pb-2">
-            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-              Items
-            </h2>
+            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Items</h2>
           </div>
           <div className="px-4 space-y-2.5">
-            {doc.line_items.map((item, i) => (
+            {lineItems.map((item, i) => (
               <Card key={i} className="rounded-xl shadow-sm border-border/60">
                 <CardContent className="p-3">
                   <div className="flex justify-between items-start">
@@ -352,7 +370,7 @@ export function DocumentDetailPage({ id }: Props) {
             ))}
 
             <div className="pt-2 px-1 space-y-2">
-              {doc.charges.map((c, i) => (
+              {charges.map((c, i) => (
                 <div key={i} className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">{c.name}</span>
                   <span>+{fmtAmount(c.amount)}</span>
@@ -366,7 +384,7 @@ export function DocumentDetailPage({ id }: Props) {
                 </div>
               )}
 
-              {doc.taxes.map((t, i) => (
+              {taxes.map((t, i) => (
                 <div key={i} className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">
                     {t.name} ({t.percentage}%)
@@ -384,9 +402,7 @@ export function DocumentDetailPage({ id }: Props) {
       {hasStock && (
         <>
           <div className="px-4 pt-5 pb-2">
-            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-              Stock Movements
-            </h2>
+            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Stock Movements</h2>
           </div>
           <div className="px-4 space-y-2.5 pb-4">
             {stockPreview!.map((s) => (
@@ -415,13 +431,11 @@ export function DocumentDetailPage({ id }: Props) {
         </>
       )}
 
-      {/* ── Transaction History ─────────────────────────── */}
+      {/* ── Transaction History ───────────────────────────────────────────── */}
       {txns.length > 0 && (
         <>
           <div className="px-4 pt-5 pb-2">
-            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-              Ledger Transactions
-            </h2>
+            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Ledger Transactions</h2>
           </div>
           <div className="px-4 space-y-2.5 pb-4">
             {[...txns]
@@ -430,11 +444,11 @@ export function DocumentDetailPage({ id }: Props) {
                 return new Date(a.date).getTime() - new Date(b.date).getTime()
               })
               .map((txn) => (
-                <TransactionCard 
-                  key={txn.id} 
-                  txn={txn} 
-                  showContact={false} 
-                  onDelete={handleDeleteTxn} 
+                <TransactionCard
+                  key={txn.id}
+                  txn={txn}
+                  showContact={false}
+                  onDelete={handleDeleteTxn}
                 />
               ))}
           </div>
@@ -520,7 +534,7 @@ export function DocumentDetailPage({ id }: Props) {
                 <div className="flex items-start gap-2 text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-2.5">
                   <span className="mt-0.5">💡</span>
                   <span className="leading-tight">
-                    <strong>Charge</strong> = extra owed (late fee, penalty)<br/>
+                    <strong>Charge</strong> = extra owed (late fee, penalty)<br />
                     <strong>Discount</strong> = amount waived
                   </span>
                 </div>
@@ -535,8 +549,7 @@ export function DocumentDetailPage({ id }: Props) {
                         onChange={e => updateInterestLine(i, 'name', e.target.value)}
                       />
                       <Input
-                        type="number"
-                        placeholder="₹"
+                        type="number" placeholder="₹"
                         className="w-24 text-sm h-10 font-bold rounded-lg"
                         value={line.amount}
                         onChange={e => updateInterestLine(i, 'amount', e.target.value)}
@@ -626,21 +639,9 @@ export function DocumentDetailPage({ id }: Props) {
             </p>
             <div className="space-y-2">
               {([
-                {
-                  value: 'revert',
-                  label: 'Revert & Delete',
-                  desc:  'Delete all linked transactions and reverse account balances',
-                },
-                {
-                  value: 'manual',
-                  label: 'Keep as Manual',
-                  desc:  'Keep transactions but unlink from document — become standalone entries',
-                },
-                {
-                  value: 'orphan',
-                  label: 'Keep as Orphan',
-                  desc:  'Keep all records as-is, just mark document deleted',
-                },
+                { value: 'revert', label: 'Revert & Delete',  desc: 'Delete all linked transactions and reverse account balances' },
+                { value: 'manual', label: 'Keep as Manual',   desc: 'Keep transactions but unlink from document — become standalone entries' },
+                { value: 'orphan', label: 'Keep as Orphan',   desc: 'Keep all records as-is, just mark document deleted' },
               ] as { value: DeleteStrategy; label: string; desc: string }[]).map(opt => (
                 <div
                   key={opt.value}
