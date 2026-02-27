@@ -132,6 +132,7 @@ export interface DocumentCreate {
   notes?: string
   // Only sent when auto_transaction = ON
   payment_account?: number
+  interest_direction?:  'pay' | 'receive'
 }
 
 // Safe fields allowed on document PATCH (matches views.py DocumentViewSet.update)

@@ -2,24 +2,37 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/stores/authStore'
-import { Header }              from '@/components/shared/Header'
-import { BottomNav }           from '@/components/shared/BottomNav'
-import { QuickActionSheet }    from '@/components/shared/QuickActionSheet'
-import { DocCreateSheet }      from '@/components/shared/DocCreateSheet'
-import { TransactionSheet }    from '@/components/shared/TransactionSheet'
-import { DeleteDocSheet }      from '@/components/shared/DeleteDocSheet'
-import { RecordPaymentSheet }  from '@/components/shared/RecordPaymentSheet'
-import { AddDetailsSheet }     from '@/components/shared/AddDetailsSheet'
-import { TransferSheet }       from '@/components/shared/TransferSheet'
-import { AdjustBalanceSheet }  from '@/components/shared/AdjustBalanceSheet'
-import { AdjustStockSheet }    from '@/components/shared/AdjustStockSheet'
+import { useAuthStore, SESSION_KEY } from '@/stores/authStore'
+import { Header } from '@/components/shared/Header'
+import { BottomNav } from '@/components/shared/BottomNav'
+import { QuickActionSheet } from '@/components/shared/QuickActionSheet'
+import { DocCreateSheet } from '@/components/shared/DocCreateSheet'
+import { TransactionSheet } from '@/components/shared/TransactionSheet'
+import { DeleteDocSheet } from '@/components/shared/DeleteDocSheet'
+import { RecordPaymentSheet } from '@/components/shared/RecordPaymentSheet'
+import { AddDetailsSheet } from '@/components/shared/AddDetailsSheet'
+import { TransferSheet } from '@/components/shared/TransferSheet'
+import { AdjustBalanceSheet } from '@/components/shared/AdjustBalanceSheet'
+import { AdjustStockSheet } from '@/components/shared/AdjustStockSheet'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router          = useRouter()
-  // In-memory auth — no hydration wait, no loginDate, no session duration
-  // If isAuthenticated is false, credentials were never set this session → go to login
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+
+  // Rehydrate once on client
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (!raw) return
+    try {
+      const { username, credentials } = JSON.parse(raw)
+      if (username && credentials) {
+        useAuthStore.setState({ isAuthenticated: true, username, credentials })
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -27,7 +40,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, router])
 
-  // Prevents flash of protected content on hard refresh
   if (!isAuthenticated) return null
 
   return (
@@ -38,8 +50,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
       <BottomNav />
 
-      {/* ── Global Sheets — mounted once at app root ─────────────────────── */}
-      {/* Triggered via uiStore open* actions from any page */}
       <QuickActionSheet />
       <DocCreateSheet />
       <TransactionSheet />

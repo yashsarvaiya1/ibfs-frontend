@@ -1,4 +1,3 @@
-// components/shared/QuickActionSheet.tsx
 'use client'
 
 import React from 'react'
@@ -9,10 +8,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import {
   FileText, Receipt, ClipboardList, Truck,
   RotateCcw, RotateCw, Banknote, AlertCircle,
-  Package, Wallet, Users, ArrowLeftRight,
+  Package, Wallet, Users, ArrowLeftRight, Settings,
 } from 'lucide-react'
 import type { DocumentType } from '@/models/document'
-import type { QuickActionType } from '@/stores/uiStore'
+
 
 interface ActionItem {
   label:  string
@@ -20,42 +19,46 @@ interface ActionItem {
   action: () => void
 }
 
+
 export function QuickActionSheet() {
   const router = useRouter()
 
-  // Fixed: use new store API — quickActionOpen + closeQuickAction
   const quickActionOpen    = useUIStore((s) => s.quickActionOpen)
   const closeQuickAction   = useUIStore((s) => s.closeQuickAction)
   const openDocCreateSheet = useUIStore((s) => s.openDocCreateSheet)
-  const openQuickAction    = useUIStore((s) => s.openQuickAction)
   const { data: settings } = useSettings()
 
   const close = () => closeQuickAction()
 
-  const nav = (href: string) => { close(); router.push(href) }
+  // Navigate and close sheet
+  const nav = (href: string) => {
+    close()
+    router.push(href)
+  }
 
-  // Document types go through DocCreateSheet
+  // Document types → DocCreateSheet (bill, invoice, po, etc.)
   const doc = (type: DocumentType) => {
     close()
     openDocCreateSheet(type)
   }
 
-  // Non-doc quick actions (expense, interest, transfer) reopen as typed quick action
-  // This is correct: QuickActionSheet is the picker; typed sheets handle the form
-  const qa = (type: QuickActionType) => {
+  // expense / interest → direct navigation to /documents/new?type=...
+  // This fixes the redirect issue — no intermediate sheet reopening
+  const newDoc = (type: 'expense' | 'interest') => {
     close()
-    // Small delay so close animation doesn't conflict with reopen
-    setTimeout(() => openQuickAction(type), 150)
+    router.push(`/documents/new?type=${type}`)
   }
 
-  // ── Group 1: Always-visible core document types ───────────────────────────
+
+  // ── Group 1: Core actions ─────────────────────────────────────────────────
   const coreActions: ActionItem[] = [
     { label: 'Bill',     icon: FileText,    action: () => doc('bill') },
     { label: 'Invoice',  icon: Receipt,     action: () => doc('invoice') },
-    // Expense → qa flow (not DocCreateSheet — it has its own form)
-    { label: 'Expense',  icon: Banknote,    action: () => qa('expense') },
-    // Interest Path B → qa flow (standalone, creates only record f.txn)
-    { label: 'Interest', icon: AlertCircle, action: () => qa('interest') },
+    { label: 'Expense',  icon: Banknote,    action: () => newDoc('expense') },   // ← fixed
+    ...(settings?.enable_interest !== false
+      ? [{ label: 'Interest', icon: AlertCircle, action: () => newDoc('interest') }]  // ← fixed
+      : []
+    ),
   ]
 
   // ── Group 2: Settings-gated document types ────────────────────────────────
@@ -68,12 +71,12 @@ export function QuickActionSheet() {
     settings?.enable_dn        && { label: 'Debit Note',   icon: RotateCw,      action: () => doc('dn') },
   ] as (ActionItem | false)[]).filter((x): x is ActionItem => Boolean(x))
 
-  // ── Group 3: Navigation shortcuts ────────────────────────────────────────
+  // ── Group 3: Navigation shortcuts (Settings added) ────────────────────────
   const pageActions: ActionItem[] = [
-    { label: 'Inventory',    icon: Package,        action: () => nav('/inventory') },
     { label: 'Accounts',     icon: Wallet,         action: () => nav('/accounts') },
-    { label: 'Contacts',     icon: Users,          action: () => nav('/contacts') },
     { label: 'Transactions', icon: ArrowLeftRight, action: () => nav('/transactions') },
+    { label: 'Inventory',    icon: Package,        action: () => nav('/inventory') },
+    { label: 'Settings',     icon: Settings,       action: () => nav('/settings') },
   ]
 
   const renderGrid = (actions: ActionItem[]) => (
@@ -93,7 +96,6 @@ export function QuickActionSheet() {
   )
 
   return (
-    // Fixed: onOpenChange calls closeQuickAction, not setQuickActionOpen
     <Sheet open={quickActionOpen} onOpenChange={(open) => { if (!open) close() }}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
         <SheetHeader className="mb-4">

@@ -1,37 +1,40 @@
-// services/uploadService.ts
 import api from '@/lib/axios'
 
 export type UploadContext = 'document' | 'product' | 'settings'
 
 export interface UploadResponse {
-  url: string          // public GCS URL returned by backend
-  filename: string     // original filename
-  size: number         // bytes
-  content_type: string
+  path: string   // "uploads/settings/abc.jpg" — store this in DB
+  url:  string   // "http://localhost:8000/media/uploads/settings/abc.jpg"
 }
 
 export const uploadService = {
-  // Upload a single file — returns the GCS public URL
-  // POST /upload/  (multipart/form-data)
   upload: (file: File, context?: UploadContext): Promise<UploadResponse> => {
     const formData = new FormData()
     formData.append('file', file)
-    if (context) formData.append('context', context)
+    const subfolder = contextToSubfolder(context)
 
     return api
-      .post<UploadResponse>('/upload/', formData, {
+      .post<UploadResponse>('/upload/file/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        params:  { type: subfolder },
       })
       .then(r => r.data)
   },
 
-  // Upload multiple files in parallel — returns ordered array of URLs
   uploadMany: (files: File[], context?: UploadContext): Promise<UploadResponse[]> =>
     Promise.all(files.map(f => uploadService.upload(f, context))),
 
-  // Convenience: upload and return only the URL strings (most common use case)
+  // CRITICAL: return r.path (relative path), not r.url
   uploadForUrls: async (files: File[], context?: UploadContext): Promise<string[]> => {
     const results = await uploadService.uploadMany(files, context)
-    return results.map(r => r.url)
+    return results.map(r => r.path)  // "uploads/settings/abc.jpg"
   },
+}
+
+function contextToSubfolder(context?: UploadContext): string {
+  switch (context) {
+    case 'product':  return 'products'
+    case 'settings': return 'settings'
+    default:         return 'documents'
+  }
 }

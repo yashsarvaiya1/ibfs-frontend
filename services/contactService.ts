@@ -26,7 +26,7 @@ export const contactService = {
   // Backend auto-hides record txns when auto_transaction=ON unless include_records=true
   ledger: (id: number, params?: Omit<TransactionListParams, 'contact'>) =>
     api.get<PaginatedResponse<FinancialTransaction>>(
-      '/transactions/', { params: { contact: id, ...params } }
+      '/transactions/', { params: { contact: id,include_records: true, ...params } }
     ).then(r => r.data),
 
   // Documents tab on contact page — GET /documents/?contact={id}
