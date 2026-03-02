@@ -6,32 +6,25 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Trash2, RotateCcw, Unlink, AlertTriangle } from 'lucide-react'
+import { Trash2, RotateCcw, Unlink } from 'lucide-react'
 
+// Exactly 2 strategies — per spec Part 5, no third option exists
 const OPTIONS = [
   {
     strategy: 'revert' as const,
     icon:     RotateCcw,
     label:    'Revert & Delete',
-    desc:     'Deletes the actual transaction and reverses all balance/stock changes. Clean slate.',
+    desc:     'Hard-deletes all record and actual transactions. Reverses all account balances and stock changes. Clean slate.',
     color:    'text-red-600',
     bg:       'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800',
   },
   {
     strategy: 'manual' as const,
     icon:     Unlink,
-    label:    'Keep as Manual',
-    desc:     'Removes document reference. Transaction stays as a standalone payment or stock entry.',
+    label:    'Keep Transactions',
+    desc:     'Keeps all actual transactions intact. Document is soft-deleted — transactions will show a "Doc Deleted" warning badge. No balance or stock changes.',
     color:    'text-amber-600',
     bg:       'bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800',
-  },
-  {
-    strategy: 'orphan' as const,
-    icon:     AlertTriangle,
-    label:    'Keep as Orphan',
-    desc:     'Leaves transaction as-is, marked orphaned. No balance/stock changes.',
-    color:    'text-muted-foreground',
-    bg:       'bg-muted/40 border-border',
   },
 ]
 
@@ -42,16 +35,15 @@ export function DeleteDocSheet() {
     closeDeleteDocSheet,
   } = useUIStore()
 
-  const router     = useRouter()
-  const docId      = deleteDocId ?? 0
-  const deleteMut  = useDeleteDocument(docId)
+  const router    = useRouter()
+  const docId     = deleteDocId ?? 0
+  const deleteMut = useDeleteDocument(docId)
 
-  const handleDelete = async (strategy: 'revert' | 'manual' | 'orphan') => {
+  const handleDelete = async (strategy: 'revert' | 'manual') => {
     try {
       await deleteMut.mutateAsync({ strategy })
       toast.success('Document deleted')
       closeDeleteDocSheet()
-      // Navigate away if we're on the document's own page
       router.back()
     } catch {
       toast.error('Delete failed')
@@ -69,7 +61,7 @@ export function DeleteDocSheet() {
         </SheetHeader>
 
         <p className="text-sm text-muted-foreground mb-5">
-          This document has linked transactions. Choose how to handle them:
+          Choose how to handle linked transactions:
         </p>
 
         <div className="space-y-3">

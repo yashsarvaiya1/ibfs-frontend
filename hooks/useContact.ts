@@ -1,11 +1,10 @@
-// hooks/useContact.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { contactService } from '@/services/contactService'
 import type { ContactCreate, ContactUpdate } from '@/models/contact'
-import type { SendReceivePayload, TransactionListParams } from '@/models/transaction'
+import type { SendReceivePayload } from '@/models/transaction'
 import type { DocumentListParams } from '@/services/documentService'
 
-export const CONTACTS_KEY = ['contacts'] as const
+export const CONTACTS_KEY   = ['contacts'] as const
 export const contactKey     = (id: number) => ['contacts', id] as const
 export const ledgerKey      = (id: number) => ['contacts', id, 'ledger'] as const
 export const contactDocsKey = (id: number) => ['contacts', id, 'documents'] as const
@@ -25,19 +24,16 @@ export function useContact(id: number) {
   })
 }
 
-// Ledger — uses TransactionListParams minus 'contact' (contact is injected by service)
-export function useContactLedger(
-  id: number,
-  params?: Omit<TransactionListParams, 'contact'>
-) {
+// GET /contacts/{id}/ledger/ — dedicated non-paginated endpoint, no params
+export function useContactLedger(id: number) {
   return useQuery({
-    queryKey: [...ledgerKey(id), params],
-    queryFn: () => contactService.ledger(id, params),
+    queryKey: ledgerKey(id),
+    queryFn: () => contactService.ledger(id),
     enabled: !!id,
   })
 }
 
-// Documents tab — separate from ledger, shows bills/invoices/etc for this contact
+// GET /documents/?contact={id} — paginated, supports filtering
 export function useContactDocuments(
   id: number,
   params?: Omit<DocumentListParams, 'contact'>
@@ -78,7 +74,7 @@ export function useSend(contactId: number) {
       qc.invalidateQueries({ queryKey: contactKey(contactId) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
-      qc.invalidateQueries({ queryKey: ['documents'] })  // voucher doc created on backend
+      qc.invalidateQueries({ queryKey: ['documents'] })
     },
   })
 }
@@ -93,7 +89,7 @@ export function useReceive(contactId: number) {
       qc.invalidateQueries({ queryKey: contactKey(contactId) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
-      qc.invalidateQueries({ queryKey: ['documents'] })  // voucher doc created on backend
+      qc.invalidateQueries({ queryKey: ['documents'] })
     },
   })
 }

@@ -1,4 +1,3 @@
-// components/contacts/ContactsPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -25,7 +24,6 @@ export function ContactsPage() {
   const [createOpen,   setCreateOpen]   = useState(false)
   const [showDeleted,  setShowDeleted]  = useState(false)
 
-  // FIX 1: removed `as any` — is_active added to ContactParams in hooks/useContact.ts
   const { data, isLoading } = useContacts({
     search:    search || undefined,
     is_active: showDeleted ? false : true,
@@ -81,7 +79,6 @@ export function ContactsPage() {
           {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : contacts.length === 0 ? (
-        // FIX 2: empty state hoisted OUTSIDE the list wrapper
         <div className="text-center py-16 flex flex-col items-center">
           <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
             <Users className="h-5 w-5 text-muted-foreground/50" />

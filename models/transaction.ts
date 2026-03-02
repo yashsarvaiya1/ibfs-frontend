@@ -1,30 +1,21 @@
-// models/transaction.ts
 import type { InterestLine } from './document'
 
 export type TransactionType = 'record' | 'actual' | 'contra'
 
 export interface FinancialTransaction {
   id:                       number
-  type:                     TransactionType
-  date:                     string
-  amount:                   string           // Decimal string from DRF
-  monthly_cumulative_delta: string           // MCD — used for running CF calc
-  is_doc_deleted:           boolean
+  type:                     'record' | 'actual' | 'contra'
+  date:                     string          // ISO "YYYY-MM-DD"
+  amount:                   string          // DecimalField comes as string from DRF
+  document:                 number | null   // FK id
+  contact:                  number | null   // FK id
+  payment_account:          number | null   // FK id
+  notes:                    string | null
+  monthly_cumulative_delta: string          // DecimalField as string
   created_at:               string
   updated_at:               string
-
-  // FK IDs
-  document:        number | null
-  contact:         number | null
-  payment_account: number | null
-
-  // ── Denormalized read-only display fields (serializer annotations) ─────────
-  // Backend must include these via SerializerMethodField / source on serializer
-  document_type:        string | null  // e.g. 'bill', 'invoice', 'expense'
-  contact_name:         string | null  // Contact.company_name or Contact.contact_name
-  payment_account_name: string | null  // PaymentAccount.name
-
-  notes: string | null
+  document_type:            string | null   // e.g. "bill", "invoice"
+  is_document_deleted:      boolean
 }
 
 export type { InterestLine }
@@ -45,16 +36,16 @@ export interface LinkDocumentPayload {
 }
 
 export interface TransactionListParams {
-  contact?:         number
-  account?:         number
-  type?:            TransactionType
-  document?:        number
-  date_from?:       string
-  date_to?:         string
-  is_doc_deleted?:  boolean
-  include_records?: boolean
-  page?:            number
-  page_size?:       number   // ← added
+  contact?:             number
+  account?:             number
+  type?:                TransactionType
+  document?:            number
+  date_from?:           string
+  date_to?:             string
+  is_document_deleted?: boolean
+  include_records?:     boolean
+  page?:                number
+  page_size?:           number
 }
 
 export interface TransactionUpdatePayload {

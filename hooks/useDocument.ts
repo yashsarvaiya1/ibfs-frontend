@@ -1,19 +1,18 @@
-// hooks/useDocument.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { documentService } from '@/services/documentService'
 import type { DocumentListParams } from '@/services/documentService'
 import type {
   DocumentCreate, DocumentUpdate,
   RecordPaymentPayload, MoveStockPayload,
-  DeleteDocumentPayload,
+  DeleteDocumentPayload, StandaloneInterestPayload
 } from '@/models/document'
 
 export const DOCUMENTS_KEY   = ['documents'] as const
 export const documentKey     = (id: number) => ['documents', id] as const
 export const stockPreviewKey = (id: number) => ['documents', id, 'stock_preview'] as const
+export const referenceDataKey = (id: number) => ['documents', id, 'reference_data'] as const
 
 // enabled: params !== undefined — skips fetch when called as useDocuments(undefined)
-// This is the pattern used in TransactionSheet to conditionally fetch by contact
 export function useDocuments(params?: DocumentListParams) {
   return useQuery({
     queryKey: [...DOCUMENTS_KEY, params],
@@ -35,6 +34,14 @@ export function useStockPreview(id: number, enabled = true) {
     queryKey: stockPreviewKey(id),
     queryFn:  () => documentService.stockPreview(id),
     enabled:  !!id && enabled,
+  })
+}
+
+export function useReferenceData(id: number | null) {
+  return useQuery({
+    queryKey: referenceDataKey(id as number),
+    queryFn:  () => documentService.referenceData(id as number),
+    enabled:  !!id,
   })
 }
 
@@ -86,6 +93,7 @@ export function useMoveStock(docId: number) {
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
     },
   })
 }
@@ -113,6 +121,26 @@ export function useDeleteDocument(docId: number) {
       qc.invalidateQueries({ queryKey: ['accounts'] })
       qc.invalidateQueries({ queryKey: ['contacts'] })
       qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
     },
+  })
+}
+
+export function useStandaloneInterest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: StandaloneInterestPayload) => documentService.standaloneInterest(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['contacts'] })
+    },
+  })
+}
+
+export function usePrintDocument() {
+  return useMutation({
+    mutationFn: (id: number) => documentService.print(id),
   })
 }

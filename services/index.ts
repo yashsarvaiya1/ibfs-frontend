@@ -1,4 +1,3 @@
-// services/index.ts
 export { accountService } from './accountService'
 export { contactService } from './contactService'
 export { documentService } from './documentService'

@@ -1,5 +1,3 @@
-// models/contact.ts
-
 export interface AdditionalContact {
   name: string
   number: string
@@ -13,7 +11,7 @@ export interface Contact {
   phone: string
   additional_contacts: AdditionalContact[]
   opening_balance: string   // signed Decimal as string
-  current_cf: string        // computed server-side: opening_balance + SUM(last MCD per month)
+  current_cf?: string       // computed server-side in ledger; optional on standard list
   gstin: string | null
   address: string | null
   notes: string | null

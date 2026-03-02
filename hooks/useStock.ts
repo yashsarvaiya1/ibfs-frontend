@@ -1,4 +1,3 @@
-// hooks/useStock.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { stockService } from '@/services/stockService'
 import type {

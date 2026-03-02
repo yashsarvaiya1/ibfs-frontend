@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
-import { useSettings } from '@/hooks/useSettings'
+import { settingsService } from '@/services/settingsService'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,15 +20,17 @@ export function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
+  
+  // Fetch settings directly — useSettings() is auth-guarded so won't fire here
+  const [logoUrl, setLogoUrl]   = useState<string | null>(null)
 
-  // If already authenticated (e.g. back navigation), redirect immediately
   useEffect(() => {
-    if (isAuthenticated) router.replace('/')
+    if (isAuthenticated) { router.replace('/'); return }
+    // Attempt unauthenticated settings fetch for white-label logo — silent on failure
+    settingsService.get()
+      .then((s) => setLogoUrl(s.header_image_url ?? null))
+      .catch(() => {/* server may require auth — silently ignore */})
   }, [isAuthenticated, router])
-
-  // Try fetching settings for header_image — unauthenticated, so may return null
-  // We attempt it anyway for white-label branding; failure is silent
-  const { data: settings } = useSettings()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,16 +40,16 @@ export function LoginPage() {
     }
     setLoading(true)
     try {
-      // Verify credentials against a lightweight endpoint before storing in memory
       const encoded = btoa(`${username}:${password}`)
       await api.get('/contacts/', {
         headers: { Authorization: `Basic ${encoded}` },
-        params: { page: 1, page_size: 1 },
+        params:  { page: 1, page_size: 1 },
       })
       login(username, password)
       router.replace('/')
-    } catch (err: any) {
-      if (err?.response?.status === 401) {
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 401) {
         toast.error('Invalid username or password')
       } else {
         toast.error('Connection failed — check server')
@@ -61,16 +63,15 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
-
-      {/* Logo — uses header_image from Settings if available */}
       <div className="mb-8 text-center">
-        {settings?.header_image ? (
+        {logoUrl ? (
           <Image
-            src={settings.header_image}
+            src={logoUrl}
             alt="Logo"
             width={64}
             height={64}
             className="rounded-2xl mx-auto mb-4 object-contain"
+            unoptimized
           />
         ) : (
           <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4">

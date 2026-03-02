@@ -2,10 +2,10 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuthStore, SESSION_KEY } from '@/stores/authStore'
-import { Header } from '@/components/shared/Header'
-import { BottomNav } from '@/components/shared/BottomNav'
-import { QuickActionSheet } from '@/components/shared/QuickActionSheet'
+import { useAuthStore } from '@/stores/authStore'
+import { Header } from '@/components/shared/common/Header'
+import { BottomNav } from '@/components/shared/common/BottomNav'
+import { QuickActionSheet } from '@/components/shared/common/QuickActionSheet'
 import { DocCreateSheet } from '@/components/shared/DocCreateSheet'
 import { TransactionSheet } from '@/components/shared/TransactionSheet'
 import { DeleteDocSheet } from '@/components/shared/DeleteDocSheet'
@@ -19,21 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router          = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
-  // Rehydrate once on client
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const raw = sessionStorage.getItem(SESSION_KEY)
-    if (!raw) return
-    try {
-      const { username, credentials } = JSON.parse(raw)
-      if (username && credentials) {
-        useAuthStore.setState({ isAuthenticated: true, username, credentials })
-      }
-    } catch {
-      // ignore
-    }
-  }, [])
-
+  // No rehydration — auth lives in Zustand memory only (per spec)
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace('/login')

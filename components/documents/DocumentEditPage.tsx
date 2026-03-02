@@ -24,7 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { toast } from 'sonner'
 import { X, Plus, ChevronDown, ChevronUp, FileText, Package, Link as LinkIcon, AlertCircle } from 'lucide-react'
 import { fmtAmount } from '@/lib/utils'
-import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/SearchableSelect'
+import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>

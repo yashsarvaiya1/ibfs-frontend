@@ -8,10 +8,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import {
   FileText, Receipt, ClipboardList, Truck,
   RotateCcw, RotateCw, Banknote, AlertCircle,
-  Package, Wallet, Users, ArrowLeftRight, Settings,
+  Package, Wallet, ArrowLeftRight, Settings,
 } from 'lucide-react'
 import type { DocumentType } from '@/models/document'
-
 
 interface ActionItem {
   label:  string
@@ -19,49 +18,45 @@ interface ActionItem {
   action: () => void
 }
 
-
 export function QuickActionSheet() {
   const router = useRouter()
 
   const quickActionOpen    = useUIStore((s) => s.quickActionOpen)
   const closeQuickAction   = useUIStore((s) => s.closeQuickAction)
+  const openQuickAction    = useUIStore((s) => s.openQuickAction)
   const openDocCreateSheet = useUIStore((s) => s.openDocCreateSheet)
   const { data: settings } = useSettings()
 
   const close = () => closeQuickAction()
 
-  // Navigate and close sheet
   const nav = (href: string) => {
     close()
     router.push(href)
   }
 
-  // Document types → DocCreateSheet (bill, invoice, po, etc.)
+  // Opens DocCreateSheet for standard document types
   const doc = (type: DocumentType) => {
     close()
     openDocCreateSheet(type)
   }
 
-  // expense / interest → direct navigation to /documents/new?type=...
-  // This fixes the redirect issue — no intermediate sheet reopening
-  const newDoc = (type: 'expense' | 'interest') => {
-    close()
-    router.push(`/documents/new?type=${type}`)
+  // Opens QuickAction sub-sheet for expense/interest (different sheet body)
+  const subAction = (type: 'expense' | 'interest') => {
+    // Re-opens with specific type — sheet stays open, body changes
+    openQuickAction(type)
   }
 
-
-  // ── Group 1: Core actions ─────────────────────────────────────────────────
   const coreActions: ActionItem[] = [
-    { label: 'Bill',     icon: FileText,    action: () => doc('bill') },
-    { label: 'Invoice',  icon: Receipt,     action: () => doc('invoice') },
-    { label: 'Expense',  icon: Banknote,    action: () => newDoc('expense') },   // ← fixed
-    ...(settings?.enable_interest !== false
-      ? [{ label: 'Interest', icon: AlertCircle, action: () => newDoc('interest') }]  // ← fixed
+    { label: 'Bill',    icon: FileText, action: () => doc('bill') },
+    { label: 'Invoice', icon: Receipt,  action: () => doc('invoice') },
+    { label: 'Expense', icon: Banknote, action: () => subAction('expense') },
+    // Interest Quick Action requires enable_interest === true (Path C)
+    ...(settings?.enable_interest === true
+      ? [{ label: 'Interest', icon: AlertCircle, action: () => subAction('interest') }]
       : []
     ),
   ]
 
-  // ── Group 2: Settings-gated document types ────────────────────────────────
   const optionalActions = ([
     settings?.enable_po        && { label: 'Purch. Order', icon: ClipboardList, action: () => doc('po') },
     settings?.enable_pi        && { label: 'Proforma Inv', icon: ClipboardList, action: () => doc('pi') },
@@ -71,7 +66,6 @@ export function QuickActionSheet() {
     settings?.enable_dn        && { label: 'Debit Note',   icon: RotateCw,      action: () => doc('dn') },
   ] as (ActionItem | false)[]).filter((x): x is ActionItem => Boolean(x))
 
-  // ── Group 3: Navigation shortcuts (Settings added) ────────────────────────
   const pageActions: ActionItem[] = [
     { label: 'Accounts',     icon: Wallet,         action: () => nav('/accounts') },
     { label: 'Transactions', icon: ArrowLeftRight, action: () => nav('/transactions') },

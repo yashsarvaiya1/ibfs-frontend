@@ -1,4 +1,3 @@
-// components/documents/MoveStockSheet.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

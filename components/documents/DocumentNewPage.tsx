@@ -27,8 +27,7 @@ import {
   Link as LinkIcon, TrendingUp, TrendingDown,
 } from 'lucide-react'
 import { fmtAmount } from '@/lib/utils'
-import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/SearchableSelect'
-
+import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined) => t ? DOC_LABELS[t] ?? t : ''
@@ -42,6 +41,8 @@ const IS_VOUCHER:       DocumentType[] = ['cash_payment_voucher', 'cash_receipt_
 const FAST_BILL_TYPES:  DocumentType[] = ['bill', 'invoice']
 const CONTACT_REQUIRED: DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher']
 const IS_EXPENSE_TYPE:  DocumentType[] = ['expense', 'interest']
+// FIX 3: only CN/DN auto-open the item picker on reference selection
+const AUTO_COPY_REF_TYPES: DocumentType[] = ['cn', 'dn']
 
 const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType>> = {
   cn: 'invoice', dn: 'bill',
@@ -53,14 +54,12 @@ const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType>> = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface LineItemRow extends LineItem { key: string }
 
-// Expense row: name + amount only
 interface ExpenseRow {
   key:    string
   name:   string
   amount: string
 }
 
-// Interest row: name + amount + charge/discount toggle
 interface InterestRow {
   key:    string
   name:   string
@@ -189,14 +188,12 @@ export function DocumentNewPage() {
   const { data: productsData } = useProducts({ is_active: true })
   const { data: accountsData } = useAccounts({ is_active: true })
 
-  const refDocTypes        = REF_DOC_TYPES[docType]
-  const primaryRefDocType  = refDocTypes ?? undefined
+  const primaryRefDocType  = REF_DOC_TYPES[docType]
   const shouldFetchRefDocs = WITH_REFERENCE.includes(docType)
   const { data: referenceDocs } = useDocuments(
     shouldFetchRefDocs && primaryRefDocType ? { type: primaryRefDocType } : undefined
   )
 
-  // For interest doc — fetch all docs to allow linking a reference
   const isInterest = docType === 'interest'
   const { data: allDocsData } = useDocuments(isInterest ? {} : undefined)
 
@@ -223,23 +220,16 @@ export function DocumentNewPage() {
   const [pickerOpen,        setPickerOpen]         = useState(false)
   const [productPickerOpen, setProductPickerOpen]  = useState(false)
 
-  // Standard line items
   const [lineItems, setLineItems] = useState<LineItemRow[]>([
     { key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null },
   ])
-  // Expense rows (expense doc type)
   const [expenseRows, setExpenseRows] = useState<ExpenseRow[]>([
     { key: crypto.randomUUID(), name: '', amount: '' },
   ])
-  // Interest rows (interest doc type) — each has charge/discount toggle
   const [interestRows, setInterestRows] = useState<InterestRow[]>([
     { key: crypto.randomUUID(), name: '', amount: '', type: 'charge' },
   ])
-  // Interest: payment direction — determines record f.txn sign
-  // 'pay'     = we are paying interest out → record goes positive (we owe more)
-  // 'receive' = we are receiving interest  → record goes negative (they owe us more)
   const [interestDirection, setInterestDirection] = useState<'pay' | 'receive'>('pay')
-  // Interest: optional linked document reference
   const [interestLinkedDoc, setInterestLinkedDoc] = useState('')
 
   const [charges, setCharges] = useState<Charge[]>([])
@@ -253,6 +243,10 @@ export function DocumentNewPage() {
 
   const refDocId = referenceId ? Number(referenceId) : undefined
   const { data: refDoc } = useDocument(refDocId as number)
+
+  // FIX 5: fetch linked doc for interest to inherit contact
+  const linkedDocId = interestLinkedDoc ? Number(interestLinkedDoc) : undefined
+  const { data: linkedDoc } = useDocument(linkedDocId as number)
 
   // ── Computed flags ──────────────────────────────────────────────────────────
   const isVoucher      = IS_VOUCHER.includes(docType)
@@ -276,12 +270,6 @@ export function DocumentNewPage() {
     }, 0)
   }, [docType, interestRows])
 
-  // Record sign logic:
-  // "pay"     direction: charge increases what we owe → positive record  (+)
-  //                      discount decreases what we owe → negative record (-)
-  // "receive" direction: charge increases what they owe us → negative record (-)
-  //                      discount decreases what they owe us → positive record (+)
-  // net CF change from records: pay → +interestNet, receive → -interestNet
   const interestCFImpact = interestDirection === 'pay' ? interestNet : -interestNet
 
   // ── Select options ──────────────────────────────────────────────────────────
@@ -315,7 +303,6 @@ export function DocumentNewPage() {
       meta: p.rate,
     })),
   ]
-  // All docs for interest linking
   const allDocOptions: SearchableSelectOption[] = [
     { value: '', label: 'None', sublabel: 'No linked document' },
     ...allDocs.map(d => ({
@@ -325,14 +312,22 @@ export function DocumentNewPage() {
   ]
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+
+  // FIX 3: only auto-open picker for CN/DN — for others, use the "Copy Items" button
   useEffect(() => {
     if (!refDoc) return
     if (refDoc.contact) setContactId(String(refDoc.contact))
-    if ((refDoc.line_items?.length ?? 0) > 0) {
+    if (AUTO_COPY_REF_TYPES.includes(docType) && (refDoc.line_items?.length ?? 0) > 0) {
       setLineItems([{ key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
       setPickerOpen(true)
     }
-  }, [refDoc])
+  }, [refDoc?.id])  // ← stable dep: only re-trigger when a different refDoc is loaded
+
+  // FIX 5: auto-populate contact from linked interest doc
+  useEffect(() => {
+    if (!linkedDoc) return
+    if (linkedDoc.contact) setContactId(String(linkedDoc.contact))
+  }, [linkedDoc?.id])
 
   const handlePickerConfirm = (selected: LineItem[]) => {
     if (selected.length === 0) return
@@ -358,7 +353,6 @@ export function DocumentNewPage() {
   const handleRemoveAttachment = (idx: number) =>
     setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))
 
-  // Standard line item helpers
   const addLineItem    = () => setLineItems(p => [...p, { key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
   const removeLineItem = (key: string) => setLineItems(p => p.filter(l => l.key !== key))
   const updateLineItem = (key: string, field: keyof LineItemRow, value: string | number | null) =>
@@ -379,19 +373,16 @@ export function DocumentNewPage() {
     }))
   }
 
-  // Expense row helpers
   const addExpenseRow    = () => setExpenseRows(p => [...p, { key: crypto.randomUUID(), name: '', amount: '' }])
   const removeExpenseRow = (key: string) => setExpenseRows(p => p.filter(r => r.key !== key))
   const updateExpenseRow = (key: string, field: 'name' | 'amount', value: string) =>
     setExpenseRows(p => p.map(r => r.key !== key ? r : { ...r, [field]: value }))
 
-  // Interest row helpers
   const addInterestRow    = () => setInterestRows(p => [...p, { key: crypto.randomUUID(), name: '', amount: '', type: 'charge' }])
   const removeInterestRow = (key: string) => setInterestRows(p => p.filter(r => r.key !== key))
   const updateInterestRow = (key: string, field: keyof InterestRow, value: string) =>
     setInterestRows(p => p.map(r => r.key !== key ? r : { ...r, [field]: value }))
 
-  // Charge/Tax helpers
   const addCharge    = () => setCharges(p => [...p, { name: '', amount: 0 }])
   const removeCharge = (i: number) => setCharges(p => p.filter((_, idx) => idx !== i))
   const updateCharge = (i: number, f: keyof Charge, v: string) =>
@@ -420,12 +411,12 @@ export function DocumentNewPage() {
       type: docType,
       contact: contactId ? Number(contactId) : undefined,
       date,
-      due_date: dueDate || undefined,
-      payment_terms: paymentTerms || undefined,
-      notes: notes || undefined,
-      reference: referenceId ? Number(referenceId) : undefined,
-      consignee: consigneeId ? Number(consigneeId) : undefined,
-      discount: discountAmt,
+      due_date:      dueDate       || undefined,
+      payment_terms: paymentTerms  || undefined,
+      notes:         notes         || undefined,
+      reference:     referenceId   ? Number(referenceId) : undefined,
+      consignee:     consigneeId   ? Number(consigneeId) : undefined,
+      discount:      discountAmt,
       attachment_urls: attachmentUrls,
     }
 
@@ -433,26 +424,27 @@ export function DocumentNewPage() {
       const validRows = expenseRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one entry with a name and amount'); return }
       if (!paymentAccountId) { toast.error('Select a payment account'); return }
-      payload.line_items    = validRows.map(r => ({ name: r.name, amount: Number(r.amount) }))
-      payload.total_amount  = expenseTotal
+      payload.line_items      = validRows.map(r => ({ name: r.name, amount: Number(r.amount) }))
+      payload.total_amount    = expenseTotal
       payload.payment_account = Number(paymentAccountId)
 
     } else if (docType === 'interest') {
       const validRows = interestRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one interest entry'); return }
       if (!paymentAccountId) { toast.error('Select a payment account'); return }
-      // Send each row with its type so backend can calculate the signed record f.txn
-      payload.line_items    = validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type }))
-      payload.total_amount  = Math.abs(interestCFImpact)
-      payload.payment_account = Number(paymentAccountId)
-      // interest_direction tells backend which sign to apply on the record f.txn
+      // FIX 6: standalone interest uses interest_lines, not line_items
+      payload.interest_lines     = validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type }))
+      payload.total_amount       = Math.abs(interestCFImpact)
+      payload.payment_account    = Number(paymentAccountId)
       payload.interest_direction = interestDirection
-      // Optional linked doc
       if (interestLinkedDoc) payload.reference = Number(interestLinkedDoc)
 
     } else if (isVoucher) {
-      if (!voucherAmount) { toast.error('Enter amount'); return }
-      payload.total_amount = voucherAmount
+      // FIX 1: vouchers require amount + payment account
+      if (!voucherAmount || Number(voucherAmount) === 0) { toast.error('Enter amount'); return }
+      if (!paymentAccountId) { toast.error('Select a payment account'); return }
+      payload.total_amount    = voucherAmount
+      payload.payment_account = Number(paymentAccountId)
 
     } else if (hasLineItems) {
       if (isFastMode) {
@@ -604,7 +596,6 @@ export function DocumentNewPage() {
       {docType === 'interest' && (
         <div className="space-y-6">
 
-          {/* Payment Direction — determines record f.txn sign */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">
               Payment Direction <span className="text-destructive">*</span>
@@ -646,7 +637,6 @@ export function DocumentNewPage() {
             </div>
           </div>
 
-          {/* Hint */}
           <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">
             <span className="mt-0.5">💡</span>
             <span>
@@ -655,7 +645,6 @@ export function DocumentNewPage() {
             </span>
           </div>
 
-          {/* Interest entry rows with Charge / Discount toggle */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -668,7 +657,6 @@ export function DocumentNewPage() {
 
             {interestRows.map(row => (
               <div key={row.key} className="space-y-2 p-3 rounded-xl border bg-muted/20">
-                {/* Name + Amount row */}
                 <div className="flex gap-2 items-center">
                   <Input
                     placeholder="e.g. Late fee, Processing charge, Early payment..."
@@ -687,8 +675,6 @@ export function DocumentNewPage() {
                     </button>
                   )}
                 </div>
-
-                {/* Charge / Discount toggle pills */}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -717,7 +703,6 @@ export function DocumentNewPage() {
             ))}
           </div>
 
-          {/* CF Impact Preview — shown when at least one row has valid amount */}
           {interestRows.some(r => Number(r.amount) > 0) && (
             <div className="rounded-xl border p-4 bg-muted/20 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -758,7 +743,6 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Payment Account */}
           <div className="space-y-1.5">
             <Label>
               Payment Account <span className="text-destructive">*</span>
@@ -768,7 +752,7 @@ export function DocumentNewPage() {
               placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." clearable />
           </div>
 
-          {/* Link Document — optional */}
+          {/* FIX 5: Link Document — auto-fills contact when selected */}
           <div className="space-y-1.5">
             <Label>
               Link Document
@@ -839,11 +823,34 @@ export function DocumentNewPage() {
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* VOUCHER MODE                                                          */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* FIX 1 & 2: vouchers need amount + payment account + notes + attachments */}
       {!isExpenseType && isVoucher && (
-        <div className="space-y-1.5">
-          <Label>Amount <span className="text-destructive">*</span></Label>
-          <Input type="number" placeholder="0.00" className="text-2xl font-bold h-14 rounded-xl px-4"
-            value={voucherAmount} onChange={e => setVoucherAmount(e.target.value)} />
+        <div className="space-y-6">
+          <div className="space-y-1.5">
+            <Label>Amount <span className="text-destructive">*</span></Label>
+            <Input type="number" placeholder="0.00" className="text-2xl font-bold h-14 rounded-xl px-4"
+              value={voucherAmount} onChange={e => setVoucherAmount(e.target.value)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>
+              Payment Account <span className="text-destructive">*</span>
+              <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited/credited</span>
+            </Label>
+            <SearchableSelect
+              options={accountOptions.filter(o => o.value !== '')}
+              value={paymentAccountId} onChange={setPaymentAccountId}
+              placeholder="Select account" title="Select Payment Account"
+              searchPlaceholder="Search accounts..."
+            />
+          </div>
+
+          {renderAttachmentsSection()}
+
+          <div className="space-y-1.5">
+            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+            <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+          </div>
         </div>
       )}
 
@@ -865,7 +872,9 @@ export function DocumentNewPage() {
               <Label>Reference Document <span className="text-xs text-muted-foreground ml-1">optional</span></Label>
               {(docType === 'cn' || docType === 'dn') && (
                 <p className="text-xs text-muted-foreground -mt-0.5">
-                  {docType === 'cn' ? 'Select the Invoice being returned — contact and items auto-fill' : 'Select the Bill being returned — contact and items auto-fill'}
+                  {docType === 'cn'
+                    ? 'Select the Invoice being returned — contact and items auto-fill'
+                    : 'Select the Bill being returned — contact and items auto-fill'}
                 </p>
               )}
               <SearchableSelect options={refDocOptions} value={referenceId} onChange={setReferenceId}
@@ -879,10 +888,15 @@ export function DocumentNewPage() {
                   <div className="flex-1 min-w-0">
                     <span className="font-semibold text-foreground/90">{getDocLabel(refDoc.type)} {refDoc.doc_id}</span>
                     {refDoc.total_amount && <span className="text-muted-foreground"> · {fmtAmount(refDoc.total_amount)}</span>}
-                    {(refDoc.line_items?.length ?? 0) > 0 && <span className="text-muted-foreground"> · {refDoc.line_items!.length} items</span>}
+                    {(refDoc.line_items?.length ?? 0) > 0 && (
+                      <span className="text-muted-foreground"> · {refDoc.line_items!.length} items</span>
+                    )}
                   </div>
                   {(refDoc.line_items?.length ?? 0) > 0 && (
-                    <Button variant="outline" size="sm" className="h-7 text-[10px] px-2" onClick={() => setPickerOpen(true)}>Copy Items</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] px-2"
+                      onClick={() => setPickerOpen(true)}>
+                      Copy Items
+                    </Button>
                   )}
                 </div>
               )}
@@ -960,7 +974,6 @@ export function DocumentNewPage() {
             ))}
           </div>
 
-          {/* Taxes, Discounts & Charges */}
           {docType !== 'challan' && (
             <div className="pt-2">
               <button className="flex items-center justify-between w-full p-3 rounded-xl border bg-muted/20 text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
@@ -1019,7 +1032,6 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Total Summary */}
           <Card className="mt-4 bg-muted/30 border-transparent">
             <CardContent className="p-4 space-y-2 text-sm">
               <div className="flex justify-between text-muted-foreground font-medium">

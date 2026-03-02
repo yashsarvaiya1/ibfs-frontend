@@ -1,4 +1,3 @@
-// components/shared/TransactionSheet.tsx
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
@@ -14,8 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
-import { SearchableSelect } from '@/components/shared/SearchableSelect'
-import type { SearchableSelectGroup } from '@/components/shared/SearchableSelect'
+import { SearchableSelect } from '@/components/shared/common/SearchableSelect'
+import type { SearchableSelectGroup } from '@/components/shared/common/SearchableSelect'
 import { fmtAmount, fmtDate } from '@/lib/utils'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { toast } from 'sonner'
@@ -253,25 +252,23 @@ export function TransactionSheet() {
 
   // ── Documents for contact — only fetch when contact is selected ─────────────
   const { data: docsData } = useDocuments(
-  contactId ? { contact: Number(contactId), page_size: 50 } : undefined
-)
+    contactId ? { contact: Number(contactId), page_size: 50 } : undefined
+  )
 
-  // Split docs into unpaid/partially-paid vs fully-paid groups for SearchableSelect
   const docGroups = useMemo((): SearchableSelectGroup[] => {
     const docs = docsData?.results ?? []
     if (docs.length === 0) return []
 
-    // A doc is "paid" if it has NO pending record f.txn
-    // Backend should annotate has_pending_record — fallback: check if total_amount > 0
-    // We use the simpler heuristic: docs with is_paid flag if available, else show all as unpaid
-    const unpaid = docs.filter(d => !d.is_paid)
-    const paid   = docs.filter(d =>  d.is_paid)
+    // payment_status is null for no-payment types (po, pi, quotation, challan, interest, expense)
+    // is_paid lives inside payment_status object per DocumentListSerializer
+    const unpaid = docs.filter(d => !d.payment_status?.is_paid)
+    const paid   = docs.filter(d =>  d.payment_status?.is_paid)
 
     const toOption = (d: typeof docs[0]) => ({
       value:    d.id.toString(),
-      label:    `${DOC_TYPE_LABELS[d.type]} #${d.doc_id}`,
+      label:    `${DOC_TYPE_LABELS[d.type] ?? d.type.toUpperCase()} · ${d.doc_id}`,
       sublabel: fmtDate(d.date),
-      meta:     d.total_amount ? fmtAmount(d.total_amount) : undefined,
+      meta:     d.total_amount ? fmtAmount(Number(d.total_amount)) : undefined,
     })
 
     const groups: SearchableSelectGroup[] = []

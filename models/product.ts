@@ -1,5 +1,3 @@
-// models/product.ts
-
 export interface Product {
   id: number
   name: string
@@ -15,7 +13,7 @@ export interface Product {
   updated_at: string
 }
 
-// Matches ProductListSerializer fields exactly
+// Updated to exactly match ProductListSerializer output
 export interface ProductListItem {
   id: number
   name: string
@@ -25,6 +23,8 @@ export interface ProductListItem {
   hsn_code: string | null
   unit: string
   is_active: boolean
+  image_url: string | null
+  image_url_full: string | null
 }
 
 export type ProductCreate = Omit<Product, 'id' | 'created_at' | 'updated_at'>
@@ -38,13 +38,12 @@ export interface AdjustStockPayload {
   date?: string
 }
 
-// Payload for POST /products/{id}/set_stock/
+// Payload for direct manual edit on product (PUT/PATCH)
 export interface SetStockPayload {
   current_stock: string
 }
 
 // Response from GET /products/{id}/pending_moves/
-// Matches inventory/views.py ProductViewSet.pending_moves exactly
 export interface PendingMove {
   document_id: number
   doc_id: string

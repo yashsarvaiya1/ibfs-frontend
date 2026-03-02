@@ -1,7 +1,6 @@
-// hooks/useAccount.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountService } from '@/services/accountService'
-import type { AccountCreate, AccountUpdate, TransferPayload, AdjustBalancePayload } from '@/models/account'
+import type { AccountCreate, AccountUpdate, TransferPayload, AdjustBalancePayload, SetBalancePayload } from '@/models/account'
 
 export const ACCOUNTS_KEY = ['accounts'] as const
 export const accountKey = (id: number) => ['accounts', id] as const
@@ -44,7 +43,7 @@ export function useUpdateAccount(id: number) {
 export function useSetBalance(id: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (balance: string) => accountService.setBalance(id, balance),
+    mutationFn: (data: SetBalancePayload) => accountService.setBalance(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: accountKey(id) })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })

@@ -1,5 +1,3 @@
-// models/account.ts
-
 export type AccountType = 'bank' | 'upi' | 'cash'
 
 export interface PaymentAccount {
@@ -29,4 +27,9 @@ export interface AdjustBalancePayload {
   amount: string
   notes?: string
   date?: string
+}
+
+// Matches backend: action(detail=True, methods=['post']) def set_balance(...)
+export interface SetBalancePayload {
+  current_balance: string | number
 }

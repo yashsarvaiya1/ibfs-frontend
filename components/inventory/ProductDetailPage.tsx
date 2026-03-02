@@ -1,4 +1,3 @@
-// components/inventory/ProductDetailPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -301,7 +300,7 @@ export function ProductDetailPage({ id }: Props) {
           </p>
         ) : (
           stockTxns.map(txn => (
-            <StockTransactionCard key={txn.id} txn={txn} showProduct={false} />
+            <StockTransactionCard key={txn.id} txn={txn} />
           ))
         )}
       </div>

@@ -1,4 +1,3 @@
-// components/contacts/ContactLedger.tsx
 'use client'
 
 import { useMemo } from 'react'
@@ -13,7 +12,6 @@ import { ExternalLink } from 'lucide-react'
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
 
-// FIX 1: null guard added
 function fmtShortDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const [, mm, dd] = dateStr.split('-')
@@ -24,20 +22,24 @@ function fmtShortDate(dateStr: string | null | undefined): string {
 interface ContactLedgerProps {
   transactions:   FinancialTransaction[]
   openingBalance: number
+  onEditTxn?:     (txn: FinancialTransaction) => void
 }
 
-export function ContactLedger({ transactions, openingBalance }: ContactLedgerProps) {
+export function ContactLedger({ transactions, openingBalance, onEditTxn }: ContactLedgerProps) {
   const router = useRouter()
 
   const ledgerRows = useMemo(() => {
+    // Backend returns ordered by date, created_at — we sort here as safety net
     const sorted = [...transactions].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     )
     let running = openingBalance
     return sorted.map(txn => {
+      // Expense and contra txns don't affect CF (MCD=0 / no contact effect)
+      const affectsCF = txn.document_type !== 'expense' && txn.type !== 'contra'
       const amt = Number(txn.amount)
-      running += amt
-      return { ...txn, numericAmount: amt, runningBalance: running }
+      if (affectsCF) running += amt
+      return { ...txn, numericAmount: amt, runningBalance: running, affectsCF }
     })
   }, [transactions, openingBalance])
 
@@ -77,6 +79,7 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                 <div>
                   <span className="font-bold text-primary/80 text-[11px]">Opening Balance</span>
                 </div>
+                {/* + opening = we owe them = Dr, − = they owe us = Cr */}
                 <div className="text-right font-bold text-red-600/80 tabular-nums">
                   {openingBalance > 0 ? fmtAmount(openingBalance) : ''}
                 </div>
@@ -102,11 +105,18 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
               const absBal    = Math.abs(row.runningBalance)
               const balSuffix = row.runningBalance > 0 ? 'Dr'
                 : row.runningBalance < 0 ? 'Cr' : ''
+              const isActual  = row.type === 'actual'
+              const isExpense = row.document_type === 'expense'
 
               return (
                 <div
                   key={row.id}
-                  className="grid grid-cols-[70px_1fr_90px_90px_110px] gap-x-3 px-3 py-3 text-xs items-center hover:bg-muted/25 transition-colors cursor-default"
+                  onClick={() => onEditTxn?.(row)}
+                  className={cn(
+                    'grid grid-cols-[70px_1fr_90px_90px_110px] gap-x-3 px-3 py-3 text-xs items-center transition-colors',
+                    isExpense ? 'bg-muted/20 opacity-60' : '',
+                    onEditTxn && isActual ? 'cursor-pointer hover:bg-muted/25 active:bg-muted/40' : 'cursor-default',
+                  )}
                 >
                   {/* Date */}
                   <div className="text-muted-foreground font-semibold text-[11px] tabular-nums">
@@ -122,18 +132,26 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                       >
                         {row.type}
                       </Badge>
+                      {isExpense && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5 rounded-sm text-amber-600 border-amber-300">
+                          expense
+                        </Badge>
+                      )}
                       {row.document && (
                         <button
-                          onClick={() => router.push(`/documents/${row.document}`)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/documents/${row.document}`)
+                          }}
                           className="flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md hover:bg-primary/20 transition-colors"
                         >
                           {getDocLabel(row.document_type)} #{row.document}
                           <ExternalLink className="h-2.5 w-2.5 ml-0.5" />
                         </button>
                       )}
-                      {row.is_doc_deleted && (
+                      {row.is_document_deleted && (
                         <Badge variant="destructive" className="text-[9px] h-4 px-1 rounded-sm">
-                          orphan
+                          doc deleted
                         </Badge>
                       )}
                     </div>
@@ -144,17 +162,18 @@ export function ContactLedger({ transactions, openingBalance }: ContactLedgerPro
                     )}
                   </div>
 
-                  {/* Debit */}
+                  {/* Debit — positive amount = Dr (we owe them / money going to them) */}
                   <div className="text-right font-bold tabular-nums text-red-600/90">
-                    {isDebit ? fmtAmount(absAmt) : ''}
+                    {isDebit && !isExpense ? fmtAmount(absAmt) : ''}
+                    {isExpense ? <span className="text-amber-500">{fmtAmount(absAmt)}</span> : ''}
                   </div>
 
-                  {/* Credit */}
+                  {/* Credit — negative amount = Cr (they owe us / money coming in) */}
                   <div className="text-right font-bold tabular-nums text-emerald-600/90">
-                    {!isDebit ? fmtAmount(absAmt) : ''}
+                    {!isDebit && !isExpense ? fmtAmount(absAmt) : ''}
                   </div>
 
-                  {/* Running balance */}
+                  {/* Running balance — only updates for CF-affecting txns */}
                   <div className={cn(
                     'text-right font-black tabular-nums text-[11px]',
                     row.runningBalance > 0 ? 'text-red-600'

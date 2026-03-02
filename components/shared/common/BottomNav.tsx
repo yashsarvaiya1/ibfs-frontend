@@ -3,13 +3,11 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
-import { useSettings } from '@/hooks/useSettings'
 import { cn } from '@/lib/utils'
 import { LayoutDashboard, Users, FileText, Package, Plus } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 
 const NAV_LEFT = [
-  { label: 'Home',     href: '/',         icon: LayoutDashboard },
+  { label: 'Home',     href: '/',        icon: LayoutDashboard },
   { label: 'Contacts', href: '/contacts', icon: Users },
 ]
 const NAV_RIGHT = [
@@ -18,19 +16,12 @@ const NAV_RIGHT = [
 ]
 
 export function BottomNav() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const { data: settings } = useSettings()
+  const pathname        = usePathname()
   const openQuickAction = useUIStore((s) => s.openQuickAction)
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
     return pathname === href || pathname.startsWith(`${href}/`)
-  }
-
-  const handleQuickAction = () => {
-    // Direct to quick action drawer - no options, no map
-    openQuickAction('transfer') // or whatever the system doc specifies as default
   }
 
   return (
@@ -43,7 +34,7 @@ export function BottomNav() {
         <div className="flex flex-col items-center -mt-5">
           <button
             type="button"
-            onClick={handleQuickAction}
+            onClick={() => openQuickAction()}  // no type — sheet shows full grid
             aria-label="Quick Action"
             className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-lg active:scale-95 transition-transform"
           >
@@ -64,7 +55,13 @@ function NavItem({ href, label, icon: Icon, active }: {
   href: string; label: string; icon: React.ElementType; active: boolean
 }) {
   return (
-    <Link href={href} className={cn('flex flex-col items-center justify-center gap-1 w-16 py-1 transition-colors', active ? 'text-primary' : 'text-muted-foreground')}>
+    <Link
+      href={href}
+      className={cn(
+        'flex flex-col items-center justify-center gap-1 w-16 py-1 transition-colors',
+        active ? 'text-primary' : 'text-muted-foreground'
+      )}
+    >
       <Icon className="h-5 w-5" />
       <span className="text-[10px] font-medium">{label}</span>
     </Link>

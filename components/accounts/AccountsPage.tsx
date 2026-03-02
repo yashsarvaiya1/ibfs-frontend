@@ -1,10 +1,8 @@
-// components/accounts/AccountsPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
-// BUG13 FIX: single import — both hooks from same file
 import { useAccounts, useCreateAccount } from '@/hooks/useAccount'
 import { fmtAmount } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,7 +28,6 @@ export function AccountsPage() {
   const setPageTitle = useUIStore((s) => s.setPageTitle)
   useEffect(() => setPageTitle('Accounts'), [setPageTitle])
 
-  // BUG15 FIX: pass is_active: true to only fetch active accounts
   const { data, isLoading } = useAccounts({ is_active: true })
   const accounts = data?.results ?? []
 
@@ -75,8 +72,6 @@ export function AccountsPage() {
     (s, a) => s + Number(a.current_balance), 0
   )
 
-  // BUG14 FIX: correct account number masking
-  // Shows last 4 digits, rest replaced with bullets — no padStart bug
   const maskAccountNumber = (num: string) => {
     if (num.length <= 4) return num
     return '•'.repeat(num.length - 4) + num.slice(-4)
@@ -134,7 +129,6 @@ export function AccountsPage() {
                     <p className="font-semibold truncate">{acc.name}</p>
                     <p className="text-xs text-muted-foreground capitalize">
                       {acc.type}
-                      {/* BUG14 FIX: proper masking */}
                       {acc.account_number && ` · ${maskAccountNumber(acc.account_number)}`}
                       {acc.upi_id && ` · ${acc.upi_id}`}
                     </p>

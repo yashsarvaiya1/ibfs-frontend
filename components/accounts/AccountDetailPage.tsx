@@ -1,7 +1,7 @@
-// components/accounts/AccountDetailPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import {
   useAccount,
@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AccountType } from '@/models/account'
+import type { SetBalancePayload } from '@/models/account'
 import { TransactionCard } from '@/components/shared/TransactionCard'
 
 const ACCOUNT_ICONS: Record<AccountType, typeof Landmark> = {
@@ -48,26 +49,22 @@ export function AccountDetailPage({ id }: Props) {
   const setPageTitle = useUIStore((s) => s.setPageTitle)
 
   const { data: account,      isLoading } = useAccount(id)
-  const { data: txnsData }               = useTransactions({ account: id })
-  const { data: allAccountsData }        = useAccounts({ is_active: true })
+  const { data: txnsData }                = useTransactions({ account: id })
+  const { data: allAccountsData }         = useAccounts({ is_active: true })
 
   const txns          = txnsData?.results ?? []
   const otherAccounts = (allAccountsData?.results ?? []).filter(a => a.id !== id)
 
-  // ── Sheet open states ───────────────────────────────────────────────────────
   const [transferOpen,    setTransferOpen]    = useState(false)
   const [adjustOpen,      setAdjustOpen]      = useState(false)
   const [editBalanceOpen, setEditBalanceOpen] = useState(false)
 
-  // ── Transfer state ──────────────────────────────────────────────────────────
   const [toAccountId,    setToAccountId]    = useState('')
   const [transferAmount, setTransferAmount] = useState('')
 
-  // ── Adjust state ────────────────────────────────────────────────────────────
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustNotes,  setAdjustNotes]  = useState('')
 
-  // ── Direct balance state ────────────────────────────────────────────────────
   const [directBalance, setDirectBalance] = useState('')
 
   const transferMutation   = useTransfer()
@@ -93,8 +90,6 @@ export function AccountDetailPage({ id }: Props) {
 
   const Icon    = ACCOUNT_ICONS[account.type as AccountType] ?? Wallet
   const balance = Number(account.current_balance)
-
-  // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleTransfer = async () => {
     if (!toAccountId || !transferAmount || Number(transferAmount) <= 0) {
@@ -134,7 +129,8 @@ export function AccountDetailPage({ id }: Props) {
   const handleSetBalance = async () => {
     if (directBalance === '') { toast.error('Enter a balance'); return }
     try {
-      await setBalanceMutation.mutateAsync(directBalance)
+      const payload: SetBalancePayload = { current_balance: directBalance }
+      await setBalanceMutation.mutateAsync(payload)
       toast.success('Balance updated')
       setEditBalanceOpen(false)
     } catch {
@@ -142,7 +138,6 @@ export function AccountDetailPage({ id }: Props) {
     }
   }
 
-  // ── Delete transaction — no confirm(), toast only ───────────────────────────
   const handleDeleteTxn = async (txnId: number) => {
     try {
       await deleteMutation.mutateAsync(txnId)
@@ -154,7 +149,6 @@ export function AccountDetailPage({ id }: Props) {
 
   return (
     <div className="pb-10">
-
       {/* ── Balance card ──────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-4">
         <Card className="bg-primary text-primary-foreground overflow-hidden rounded-2xl shadow-md">
@@ -423,7 +417,6 @@ export function AccountDetailPage({ id }: Props) {
           </div>
         </SheetContent>
       </Sheet>
-
     </div>
   )
 }

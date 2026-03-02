@@ -1,4 +1,3 @@
-// services/transactionService.ts
 import api from '@/lib/axios'
 import type {
   FinancialTransaction,
@@ -26,4 +25,8 @@ export const transactionService = {
 
   linkDocument: (id: number, data: LinkDocumentPayload) =>
     api.post<FinancialTransaction>(`/transactions/${id}/link_document/`, data).then(r => r.data),
+
+  // GET /transactions/print/ — returns PDF blob. Pass ?contact={id} for Ledger view
+  print: (params?: TransactionListParams) =>
+    api.get('/transactions/print/', { params, responseType: 'blob' }).then(r => r.data),
 }

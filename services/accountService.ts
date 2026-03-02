@@ -1,8 +1,7 @@
-// services/accountService.ts
 import api from '@/lib/axios'
 import type {
   PaymentAccount, AccountCreate, AccountUpdate,
-  TransferPayload, AdjustBalancePayload,
+  TransferPayload, AdjustBalancePayload, SetBalancePayload
 } from '@/models/account'
 import type { PaginatedResponse } from '@/models/pagination'
 
@@ -19,13 +18,15 @@ export const accountService = {
   update: (id: number, data: AccountUpdate) =>
     api.patch<PaymentAccount>(`/accounts/${id}/`, data).then(r => r.data),
 
-  // Direct balance overwrite — plain PATCH, no f.txn created (matches spec B1)
-  setBalance: (id: number, current_balance: string) =>
-    api.patch<PaymentAccount>(`/accounts/${id}/`, { current_balance }).then(r => r.data),
+  // POST /accounts/{id}/set_balance/ — direct overwrite, no f.txn (spec B1)
+  setBalance: (id: number, data: SetBalancePayload) =>
+    api.post<PaymentAccount>(`/accounts/${id}/set_balance/`, data).then(r => r.data),
 
+  // POST /accounts/transfer/ — two contra f.txns (spec B2)
   transfer: (data: TransferPayload) =>
     api.post('/accounts/transfer/', data).then(r => r.data),
 
+  // POST /accounts/{id}/adjust/ — actual f.txn, no contact (spec B3)
   adjust: (id: number, data: AdjustBalancePayload) =>
     api.post(`/accounts/${id}/adjust/`, data).then(r => r.data),
 }

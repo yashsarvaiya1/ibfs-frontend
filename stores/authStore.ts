@@ -1,3 +1,4 @@
+// stores/authStore.ts
 import { create } from 'zustand'
 
 interface AuthState {
@@ -8,8 +9,6 @@ interface AuthState {
   logout: () => void
 }
 
-export const SESSION_KEY = 'ibfs_auth'
-
 export const useAuthStore = create<AuthState>()((set) => ({
   isAuthenticated: false,
   username: null,
@@ -17,16 +16,12 @@ export const useAuthStore = create<AuthState>()((set) => ({
 
   login: (username, password) => {
     const credentials = btoa(`${username}:${password}`)
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ username, credentials }))
-    }
+    // In-memory only — per spec "In-memory session post-login"
+    // No sessionStorage, no localStorage — credentials live in Zustand only
     set({ isAuthenticated: true, username, credentials })
   },
 
   logout: () => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem(SESSION_KEY)
-    }
     set({ isAuthenticated: false, username: null, credentials: null })
   },
 }))

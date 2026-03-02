@@ -1,4 +1,3 @@
-// hooks/useTransaction.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactionService } from '@/services/transactionService'
 import type {
@@ -71,5 +70,11 @@ export function useDeleteTransaction(contactId?: number) {
         qc.invalidateQueries({ queryKey: ['contacts'] })
       }
     },
+  })
+}
+
+export function usePrintTransactions() {
+  return useMutation({
+    mutationFn: (params?: TransactionListParams) => transactionService.print(params),
   })
 }

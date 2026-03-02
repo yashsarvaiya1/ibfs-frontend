@@ -1,4 +1,3 @@
-// services/productService.ts
 import api from '@/lib/axios'
 import type {
   Product, ProductCreate, ProductUpdate,
@@ -29,9 +28,10 @@ export const productService = {
   adjustStock: (id: number, data: AdjustStockPayload) =>
     api.post(`/products/${id}/adjust_stock/`, data).then(r => r.data),
 
-  // Direct overwrite — NO s.txn created (matches spec 3.3 Direct Edit)
+  // Direct overwrite — NO s.txn created (matches spec 6.3 Direct Edit)
+  // Backend has no set_stock action, so we use standard PATCH
   setStock: (id: number, data: SetStockPayload) =>
-    api.post<Product>(`/products/${id}/set_stock/`, data).then(r => r.data),
+    api.patch<Product>(`/products/${id}/`, data).then(r => r.data),
 
   // GET /products/{id}/pending_moves/ — grouped by document
   pendingMoves: (id: number) =>

@@ -1,4 +1,3 @@
-// components/inventory/InventoryPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -26,7 +25,8 @@ export function InventoryPage() {
   const [showLowStock, setShowLowStock] = useState(false)
   const [createOpen,   setCreateOpen]   = useState(false)
 
-  const { data: allData } = useProducts({ is_active: true })
+  // FIX: Using backend low_stock filter to accurately get count across all pages
+  const { data: lowStockData } = useProducts({ is_active: true, low_stock: true })
   const { data, isLoading } = useProducts({
     search:    search || undefined,
     low_stock: showLowStock || undefined, 
@@ -34,10 +34,7 @@ export function InventoryPage() {
   })
 
   const products = data?.results ?? []
-
-  const lowStockCount = (allData?.results ?? []).filter(
-    p => Number(p.current_stock) <= Number(p.min_stock)
-  ).length
+  const lowStockCount = lowStockData?.count ?? 0
 
   // ── Create form ────────────────────────────────────────────────────────────
   const [name,         setName]         = useState('')
@@ -107,7 +104,7 @@ export function InventoryPage() {
         >
           <AlertTriangle className="h-4 w-4" />
           {showLowStock ? 'Showing Low Stock' : 'Filter Low Stock'} 
-          {lowStockCount > 0 && `(${lowStockCount})`}
+          {lowStockCount > 0 && ` (${lowStockCount})`}
         </button>
       </div>
 

@@ -1,8 +1,7 @@
-// services/contactService.ts
 import api from '@/lib/axios'
 import type { Contact, ContactCreate, ContactUpdate } from '@/models/contact'
 import type { FinancialTransaction, SendReceivePayload, TransactionListParams } from '@/models/transaction'
-import type { DocumentListItem, DocumentListParams } from './documentService'
+import type { DocumentListParams, DocumentListItem } from './documentService'
 import type { PaginatedResponse } from '@/models/pagination'
 
 export const contactService = {
@@ -21,21 +20,18 @@ export const contactService = {
   remove: (id: number) =>
     api.delete(`/contacts/${id}/`),
 
-  // Ledger = financial transactions filtered by contact
-  // Passes through to GET /transactions/?contact={id}
-  // Backend auto-hides record txns when auto_transaction=ON unless include_records=true
-  ledger: (id: number, params?: Omit<TransactionListParams, 'contact'>) =>
-    api.get<PaginatedResponse<FinancialTransaction>>(
-      '/transactions/', { params: { contact: id,include_records: true, ...params } }
-    ).then(r => r.data),
+  // GET /contacts/{id}/ledger/ — dedicated backend action, returns full non-paginated list
+  // ordered by date, created_at. Use this for the contact ledger page.
+  ledger: (id: number) =>
+    api.get<FinancialTransaction[]>(`/contacts/${id}/ledger/`).then(r => r.data),
 
-  // Documents tab on contact page — GET /documents/?contact={id}
+  // GET /documents/?contact={id} — paginated document list filtered by contact
   documents: (id: number, params?: Omit<DocumentListParams, 'contact'>) =>
     api.get<PaginatedResponse<DocumentListItem>>(
       '/documents/', { params: { contact: id, ...params } }
     ).then(r => r.data),
 
-  // POST /contacts/{id}/send/  — direction derived server-side
+  // POST /contacts/{id}/send/
   send: (id: number, data: SendReceivePayload) =>
     api.post(`/contacts/${id}/send/`, data).then(r => r.data),
 

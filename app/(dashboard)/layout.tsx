@@ -1,6 +1,6 @@
 // app/(dashboard)/layout.tsx
 
-import { AppShell } from '@/components/shared/AppShell'
+import { AppShell } from '@/components/shared/common/AppShell'
 
 export default function DashboardLayout({
   children,

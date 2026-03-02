@@ -1,4 +1,3 @@
-// components/shared/SearchableSelect.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -21,7 +20,6 @@ export interface SearchableSelectOption {
 }
 
 // Optional grouped mode — renders labeled sections with dividers
-// e.g. groups={[{ label: 'Unpaid', options: [...] }, { label: 'Paid', options: [...] }]}
 export interface SearchableSelectGroup {
   label:   string
   options: SearchableSelectOption[]

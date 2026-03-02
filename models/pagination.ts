@@ -1,5 +1,3 @@
-// models/pagination.ts
-
 export interface PaginatedResponse<T> {
   count: number
   next: string | null

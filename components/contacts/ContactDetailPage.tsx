@@ -1,4 +1,3 @@
-// components/contacts/ContactDetailPage.tsx
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
@@ -38,23 +37,20 @@ import { ContactEditSheet } from './ContactEditSheet'
 import { SendReceiveSheet } from './SendReceiveSheet'
 import { ContactLedger } from './ContactLedger'
 import { DOC_TYPE_LABELS } from '@/models/document'
-import { SearchableSelect, SearchableSelectOption } from '@/components/shared/SearchableSelect'
+import { SearchableSelect, SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 import { toast } from 'sonner'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
 
-// MCD-based running CF — uses last txn per month (map.set overwrites = last wins = correct)
-function computeRunningCF(openingBalance: number, txns: any[]): number {
-  if (txns.length === 0) return openingBalance
-  const monthMap = new Map<string, number>()
-  for (const t of txns) {
-    if (t.document_type === 'expense') continue
-    const key = (t.date as string).slice(0, 7)
-    monthMap.set(key, Number(t.monthly_cumulative_delta))
-  }
-  const monthlySum = Array.from(monthMap.values()).reduce((s, v) => s + v, 0)
-  return openingBalance + monthlySum
+// Simple cumulative sum — backend already returns txns ordered by date, created_at
+// Expense txns have MCD=0 so they don't affect CF — we exclude them here too
+function computeRunningCF(openingBalance: number, txns: FinancialTransaction[]): number {
+  return txns.reduce((cf, t) => {
+    if (t.document_type === 'expense') return cf  // MCD forced to 0, never affects CF
+    if (t.type === 'contra') return cf             // contra txns never affect contact CF
+    return cf + Number(t.amount)
+  }, openingBalance)
 }
 
 interface Props { id: number }
@@ -70,12 +66,11 @@ export function ContactDetailPage({ id }: Props) {
   const { data: accountsData }                      = useAccounts({ is_active: true })
 
   const updateTxn = useUpdateTransaction(id)
-  // FIX 3: useDeleteTransaction takes no argument — contactId not needed as hook param
-  const deleteTxn = useDeleteTransaction()
+  const deleteTxn = useDeleteTransaction(id)
 
-  const [editOpen,   setEditOpen]   = useState(false)
-  const [activeTab,  setActiveTab]  = useState<'docs' | 'ledger'>('ledger')
-  const [srSheet,    setSrSheet]    = useState<{ open: boolean; mode: 'send' | 'receive' }>({
+  const [editOpen,  setEditOpen]  = useState(false)
+  const [activeTab, setActiveTab] = useState<'ledger' | 'docs'>('ledger')
+  const [srSheet,   setSrSheet]   = useState<{ open: boolean; mode: 'send' | 'receive' }>({
     open: false, mode: 'send',
   })
 
@@ -98,10 +93,11 @@ export function ContactDetailPage({ id }: Props) {
     if (contact) setPageTitle(getContactDisplayName(contact))
   }, [contact, setPageTitle])
 
-  const docs     = docsData?.results     ?? []
-  const txns     = ledger?.results       ?? []
+  const docs     = docsData?.results ?? []
+  const txns     = ledger            ?? []
   const accounts = accountsData?.results ?? []
 
+  // Running CF computed from all non-expense, non-contra txns + opening balance
   const runningCF = useMemo(() => {
     if (!contact) return 0
     return computeRunningCF(Number(contact.opening_balance ?? 0), txns)
@@ -120,8 +116,9 @@ export function ContactDetailPage({ id }: Props) {
     if (!editTxn || !txnAmount || Number(txnAmount) <= 0) {
       toast.error('Enter a valid amount'); return
     }
-    const origAmt   = Number(editTxn.amount)
-    const newAmount = String(origAmt >= 0 ? Number(txnAmount) : -Number(txnAmount))
+    // Preserve original sign — user enters absolute value, we restore sign
+    const origSign  = Number(editTxn.amount) >= 0 ? 1 : -1
+    const newAmount = String(origSign * Number(txnAmount))
     try {
       await updateTxn.mutateAsync({
         id:              editTxn.id,
@@ -279,7 +276,7 @@ export function ContactDetailPage({ id }: Props) {
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
       <div className="px-4">
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)} className="w-full">
+        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'ledger' | 'docs')} className="w-full">
           <TabsList className="w-full h-12 bg-muted/60 p-1 rounded-xl mb-4">
             <TabsTrigger
               value="ledger"
@@ -305,9 +302,18 @@ export function ContactDetailPage({ id }: Props) {
                     <AlertCircle className="h-3.5 w-3.5" /> Horizontal scroll for details
                   </span>
                 </div>
+                {/* Pass onEdit so rows are tappable — only actual txns are editable */}
                 <ContactLedger
-                  transactions={txns.filter(t => t.document_type !== 'expense')}
+                  transactions={txns}
                   openingBalance={Number(contact.opening_balance ?? 0)}
+                  onEditTxn={(txn) => {
+                    // Only actual txns can be edited/deleted per spec
+                    if (txn.type !== 'actual') {
+                      toast.info('Only settled (actual) transactions can be edited')
+                      return
+                    }
+                    setEditTxn(txn)
+                  }}
                 />
               </>
             )}
@@ -385,7 +391,7 @@ export function ContactDetailPage({ id }: Props) {
               <SheetHeader className="mb-5">
                 <div className="flex items-center justify-between">
                   <SheetTitle className="text-left flex items-center gap-2">
-                    <Pencil className="h-4 w-4" /> Edit Record
+                    <Pencil className="h-4 w-4" /> Edit Transaction
                   </SheetTitle>
                   <button
                     onClick={() => setConfirmDelOpen(true)}
@@ -400,19 +406,19 @@ export function ContactDetailPage({ id }: Props) {
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge
-                      variant={editTxn.type === 'actual' ? 'default' : 'secondary'}
+                      variant="default"
                       className="text-[10px] uppercase font-bold tracking-wider rounded-md h-5 px-1.5"
                     >
-                      {editTxn.type}
+                      actual
                     </Badge>
                     {editTxn.document && (
                       <span className="text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
                         {getDocLabel(editTxn.document_type)} #{editTxn.document}
                       </span>
                     )}
-                    {editTxn.is_doc_deleted && (
+                    {editTxn.is_document_deleted && (
                       <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5">
-                        orphan
+                        doc deleted
                       </Badge>
                     )}
                   </div>
@@ -420,14 +426,17 @@ export function ContactDetailPage({ id }: Props) {
                     Recorded {fmtDate(editTxn.date)}
                   </p>
                 </div>
-                <p className={`text-lg font-black shrink-0 ${Number(editTxn.amount) >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                <p className={cn(
+                  'text-lg font-black shrink-0',
+                  Number(editTxn.amount) >= 0 ? 'text-red-600' : 'text-emerald-600'
+                )}>
                   {Number(editTxn.amount) >= 0 ? '+' : ''}{fmtAmount(editTxn.amount)}
                 </p>
               </div>
 
-              {editTxn.document && !editTxn.is_doc_deleted && (
+              {editTxn.document && !editTxn.is_document_deleted && (
                 <div className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-5 flex gap-2 items-start">
-                  <span className="mt-0.5 text-amber-500">⚠️</span>
+                  <span className="mt-0.5">⚠️</span>
                   <span>
                     This is linked to a document. Editing the amount here may cause a
                     discrepancy with the document total.
@@ -440,7 +449,7 @@ export function ContactDetailPage({ id }: Props) {
                   <Label>
                     Amount
                     <span className="text-[10px] text-muted-foreground ml-2 font-normal uppercase tracking-wider">
-                      ({Number(editTxn.amount) >= 0 ? 'outgoing' : 'incoming'} — sign preserved)
+                      ({Number(editTxn.amount) >= 0 ? 'outgoing / Dr' : 'incoming / Cr'} — sign preserved)
                     </span>
                   </Label>
                   <Input
@@ -460,20 +469,18 @@ export function ContactDetailPage({ id }: Props) {
                     onChange={e => setTxnDate(e.target.value)}
                   />
                 </div>
-                {editTxn.type === 'actual' && (
-                  <div className="space-y-1.5">
-                    <Label>Payment Account</Label>
-                    <SearchableSelect
-                      options={accountOptions}
-                      value={txnAccountId}
-                      onChange={setTxnAccountId}
-                      placeholder="Select account"
-                      title="Select Account"
-                      searchPlaceholder="Search accounts..."
-                      clearable
-                    />
-                  </div>
-                )}
+                <div className="space-y-1.5">
+                  <Label>Payment Account</Label>
+                  <SearchableSelect
+                    options={accountOptions}
+                    value={txnAccountId}
+                    onChange={setTxnAccountId}
+                    placeholder="Select account"
+                    title="Select Account"
+                    searchPlaceholder="Search accounts..."
+                    clearable
+                  />
+                </div>
                 <div className="space-y-1.5">
                   <Label>
                     Notes <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span>
@@ -486,7 +493,7 @@ export function ContactDetailPage({ id }: Props) {
                   />
                 </div>
                 <Button
-                  className="w-full h-12 mt-2 rounded-xl text-md font-bold shadow-lg shadow-primary/20"
+                  className="w-full h-12 mt-2 rounded-xl text-md font-bold"
                   onClick={handleUpdateTxn}
                   disabled={updateTxn.isPending}
                 >
@@ -502,26 +509,24 @@ export function ContactDetailPage({ id }: Props) {
       <AlertDialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
         <AlertDialogContent className="rounded-2xl max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl font-black">Delete Record?</AlertDialogTitle>
+            <AlertDialogTitle className="text-xl font-black">Delete Transaction?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2.5 text-sm font-medium pt-2">
                 <p>
-                  Permanently delete this{' '}
-                  <strong className="text-foreground">{editTxn?.type}</strong> of{' '}
+                  Permanently delete this actual transaction of{' '}
                   <strong className="text-foreground">
-                    {editTxn ? fmtAmount(editTxn.amount) : ''}
+                    {editTxn ? fmtAmount(Math.abs(Number(editTxn.amount))) : ''}
                   </strong>
-                  {editTxn ? ` on ${fmtDate(editTxn.date).split(',')[0]}` : ''}.
+                  {editTxn ? ` on ${fmtDate(editTxn.date)}` : ''}.
                 </p>
-                {editTxn?.type === 'actual' && editTxn.payment_account && (
+                {editTxn?.payment_account && (
                   <p className="text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100 leading-tight">
                     ⚠️ The linked account balance will be reversed automatically.
                   </p>
                 )}
-                {editTxn?.document && !editTxn.is_doc_deleted && (
+                {editTxn?.document && !editTxn.is_document_deleted && (
                   <p className="text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100 leading-tight">
-                    ⚠️ This is linked to a document. If you delete it, the document balance
-                    will become unpaid again.
+                    ⚠️ This is linked to a document. The document balance will become unpaid again.
                   </p>
                 )}
               </div>
@@ -532,7 +537,7 @@ export function ContactDetailPage({ id }: Props) {
             <AlertDialogAction
               onClick={handleDeleteTxn}
               disabled={deleteTxn.isPending}
-              className="h-11 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold shadow-sm"
+              className="h-11 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold"
             >
               {deleteTxn.isPending ? 'Deleting...' : 'Yes, Delete'}
             </AlertDialogAction>

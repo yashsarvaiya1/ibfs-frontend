@@ -1,4 +1,3 @@
-// services/stockService.ts
 import api from '@/lib/axios'
 import type {
   StockTransaction,

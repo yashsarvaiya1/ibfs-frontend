@@ -1,7 +1,6 @@
-// components/contacts/SendReceiveSheet.tsx
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useSend, useReceive } from '@/hooks/useContact'
 import { useAccounts } from '@/hooks/useAccount'
 import { useSettings } from '@/hooks/useSettings'
@@ -19,7 +18,6 @@ import { fmtAmount } from '@/lib/utils'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { toast } from 'sonner'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface InterestLine { name: string; amount: string; type: 'charge' | 'discount' }
 interface VoucherLine  { name: string; amount: string }
 
@@ -30,7 +28,6 @@ interface Props {
   onClose:   () => void
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 const NONE_VAL = '__none__'
 const safeVal  = (v: string | null | undefined) => v || NONE_VAL
 const realVal  = (v: string) => v === NONE_VAL ? '' : v
@@ -40,15 +37,14 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
   const { data: settings } = useSettings()
   const { data: docsData } = useDocuments({ contact: contactId })
 
-  // ── Form state ──────────────────────────────────────────────────────────────
   const [amount,    setAmount]    = useState('')
   const [accountId, setAccountId] = useState('')
   const [date,      setDate]      = useState(new Date().toISOString().split('T')[0])
   const [notes,     setNotes]     = useState('')
   const [linkedDoc, setLinkedDoc] = useState('')
 
-  const [isExpense,    setIsExpense]    = useState(false)
-  const [addInterest,  setAddInterest]  = useState(false)
+  const [isExpense,   setIsExpense]   = useState(false)
+  const [addInterest, setAddInterest] = useState(false)
 
   const [interestLines, setInterestLines] = useState<InterestLine[]>([
     { name: '', amount: '', type: 'charge' },
@@ -66,8 +62,6 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
   const isCash          = selectedAccount?.type === 'cash'
   const showVoucherLines = settings?.enable_vouchers && isCash && !isExpense
 
-  // FIX 3: added `mode` to dependency array so form resets when sheet is
-  // reused across send ↔ receive without unmounting (prevents isExpense stale state)
   useEffect(() => {
     if (!open) return
     setAmount(''); setAccountId(''); setNotes(''); setLinkedDoc('')
@@ -75,9 +69,8 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     setDate(new Date().toISOString().split('T')[0])
     setInterestLines([{ name: '', amount: '', type: 'charge' }])
     setVoucherLines([{ name: '', amount: '' }])
-  }, [open, mode]) // ← mode added
+  }, [open, mode])
 
-  // ── Interest line helpers ───────────────────────────────────────────────────
   const addInterestLine    = () =>
     setInterestLines(p => [...p, { name: '', amount: '', type: 'charge' }])
   const removeInterestLine = (i: number) =>
@@ -85,14 +78,16 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
   const updateInterestLine = (i: number, field: keyof InterestLine, value: string) =>
     setInterestLines(p => p.map((l, idx) => idx === i ? { ...l, [field]: value } : l))
 
-  // ── Voucher / Expense line helpers ──────────────────────────────────────────
   const addVoucherLine    = () => setVoucherLines(p => [...p, { name: '', amount: '' }])
   const removeVoucherLine = (i: number) =>
     setVoucherLines(p => p.filter((_, idx) => idx !== i))
   const updateVoucherLine = (i: number, field: keyof VoucherLine, value: string) =>
     setVoucherLines(p => p.map((l, idx) => idx === i ? { ...l, [field]: value } : l))
 
-  // ── CF Impact Preview ───────────────────────────────────────────────────────
+  const voucherTotal = voucherLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const actualAmount = showVoucherLines ? voucherTotal : (Number(amount) || 0)
+
+  // Per spec: net_interest = sum(charges) − sum(discounts)
   const interestNet = useMemo(() => {
     if (!addInterest) return 0
     return interestLines.reduce((s, l) => {
@@ -101,21 +96,15 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     }, 0)
   }, [addInterest, interestLines])
 
-  const actualAmount   = Number(amount) || 0
-  const signedActual   = mode === 'receive' ? actualAmount : -actualAmount
-  const interestRecord = addInterest
-    ? interestNet * (mode === 'receive' ? -1 : 1)
-    : 0
-  const netCFChange    = signedActual + interestRecord
+  // Per spec: Original Debt Settled = payment − net interest charges
+  // Receive: actual = +payment, interest record = −net_interest → original debt settled = payment − net_interest
+  // Send:    actual = −payment, interest record = +net_interest → original debt settled = payment − net_interest
+  // In both cases: originalDebtSettled = actualAmount − interestNet
+  const originalDebtSettled = actualAmount - interestNet
 
-  // ── Voucher total ───────────────────────────────────────────────────────────
-  const voucherTotal = voucherLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
-
-  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!accountId) { toast.error('Select an account'); return }
 
-    // Expense mode
     if (isExpense) {
       const total = voucherLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
       if (total <= 0) { toast.error('Add at least one expense item'); return }
@@ -135,15 +124,13 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
       return
     }
 
-    // Normal send/receive
-    const payAmount = showVoucherLines ? voucherTotal.toString() : amount
-
-    if (!payAmount || Number(payAmount) <= 0) {
+    const payAmount = actualAmount
+    if (!payAmount || payAmount <= 0) {
       toast.error('Enter a valid amount'); return
     }
 
-    const payload: any = {
-      amount:          payAmount,
+    const payload: Parameters<typeof sendMutation.mutateAsync>[0] = {
+      amount:          payAmount.toString(),
       payment_account: Number(accountId),
       date,
       notes:           notes || undefined,
@@ -178,7 +165,6 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     } catch { toast.error('Transaction failed') }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent
@@ -272,7 +258,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                   )}
                 </div>
               ))}
-              {(isExpense || showVoucherLines) && voucherTotal > 0 && (
+              {voucherTotal > 0 && (
                 <div className="flex justify-end text-sm font-medium text-muted-foreground pr-9">
                   Total: {fmtAmount(voucherTotal)}
                 </div>
@@ -364,7 +350,6 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
               {addInterest && (
                 <div className="space-y-3 rounded-xl border p-3 bg-muted/20">
 
-                  {/* Header hint */}
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">
                     <span className="mt-0.5">💡</span>
                     <span>
@@ -374,7 +359,6 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                     </span>
                   </div>
 
-                  {/* Interest line rows */}
                   <div className="space-y-2">
                     {interestLines.map((line, i) => (
                       <div key={i} className="space-y-1.5">
@@ -426,54 +410,56 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                     <Plus className="h-3.5 w-3.5" /> Add Line
                   </Button>
 
-                  {/* ── CF Impact Preview ────────────────────────────────── */}
-                  {(actualAmount > 0 || voucherTotal > 0) && (
+                  {/* ── Interest Preview — per spec ──────────────────────── */}
+                  {actualAmount > 0 && (
                     <>
                       <Separator />
                       <div className="space-y-2 text-sm">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          CF Impact Preview
+                          Payment Preview
                         </p>
 
+                        {/* Row 1 — Payment amount */}
                         <div className="flex justify-between items-center">
                           <span className="text-muted-foreground">
-                            {mode === 'receive' ? 'Payment In (actual)' : 'Payment Out (actual)'}
+                            {mode === 'receive' ? 'Payment Received' : 'Payment Sent'}
                           </span>
-                          <span className={mode === 'receive' ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
-                            {mode === 'receive' ? '+' : '−'}
-                            {fmtAmount(showVoucherLines ? voucherTotal : actualAmount)}
+                          <span className="font-medium">
+                            {fmtAmount(actualAmount)}
                           </span>
                         </div>
 
-                        {interestLines.filter(l => l.name && Number(l.amount) > 0).map((l, i) => {
-                          const lineAmt = Number(l.amount)
-                          const lineNet = l.type === 'charge' ? lineAmt : -lineAmt
-                          const lineRec = lineNet * (mode === 'receive' ? -1 : 1)
-                          const isNeg   = lineRec < 0
-                          return (
-                            <div key={i} className="flex justify-between items-center">
-                              <span className="text-muted-foreground flex items-center gap-1.5">
-                                {l.name || 'Interest'}
-                                <Badge variant="outline" className="text-[10px] h-4">record</Badge>
-                              </span>
-                              <span className={isNeg ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
-                                {isNeg ? '−' : '+'}{fmtAmount(Math.abs(lineRec))}
-                              </span>
-                            </div>
-                          )
-                        })}
+                        {/* Row 2 — Each interest line */}
+                        {interestLines.filter(l => l.name && Number(l.amount) > 0).map((l, i) => (
+                          <div key={i} className="flex justify-between items-center">
+                            <span className="text-muted-foreground flex items-center gap-1.5">
+                              {l.name || 'Interest'}
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] h-4 ${l.type === 'charge' ? 'text-red-600 border-red-200' : 'text-green-600 border-green-200'}`}
+                              >
+                                {l.type}
+                              </Badge>
+                            </span>
+                            <span className={l.type === 'charge' ? 'text-red-500' : 'text-green-600'}>
+                              {l.type === 'charge' ? '+' : '−'}{fmtAmount(Number(l.amount))}
+                            </span>
+                          </div>
+                        ))}
 
                         <Separator />
 
+                        {/* Row 3 — Original Debt Settled (per spec) */}
                         <div className="flex justify-between items-center font-semibold">
-                          <span>Net CF Change</span>
-                          <span className={netCFChange >= 0 ? 'text-red-500' : 'text-green-600'}>
-                            {netCFChange >= 0 ? '+' : ''}
-                            {fmtAmount(netCFChange)}
+                          <span>Original Debt Settled</span>
+                          <span className="text-primary">
+                            {fmtAmount(Math.max(0, originalDebtSettled))}
                           </span>
                         </div>
                         <p className="text-[10px] text-muted-foreground">
-                          Red = we owe them more · Green = they owe us more
+                          {mode === 'receive'
+                            ? 'Amount of original debt actually cleared after interest'
+                            : 'Amount of original debt actually settled after interest'}
                         </p>
                       </div>
                     </>

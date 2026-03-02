@@ -1,4 +1,3 @@
-// hooks/useProduct.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productService } from '@/services/productService'
 import type {
@@ -71,7 +70,7 @@ export function useAdjustStock(id: number) {
   })
 }
 
-// Direct overwrite — NO s.txn created (spec 3.3 Direct Edit)
+// Direct overwrite — NO s.txn created (spec 6.3 Direct Edit)
 export function useSetStock(id: number) {
   const qc = useQueryClient()
   return useMutation({

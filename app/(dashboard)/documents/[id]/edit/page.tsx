@@ -1,4 +1,4 @@
-// app/documents/[id]/edit/page.tsx
+//app/(dashboard)/documents/[id]/edit/page.tsx
 import { DocumentEditPage } from '@/components/documents/DocumentEditPage'
 
 interface Props {

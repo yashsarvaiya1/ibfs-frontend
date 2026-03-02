@@ -1,16 +1,15 @@
-// components/transactions/TransactionsPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
-import { useTransactions, useDeleteTransaction } from '@/hooks/useTransaction'
+import { useTransactions, useDeleteTransaction, usePrintTransactions } from '@/hooks/useTransaction'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TransactionCard } from '@/components/shared/TransactionCard'
 import { cn } from '@/lib/utils'
-import { SlidersHorizontal, X } from 'lucide-react'
+import { SlidersHorizontal, X, Printer } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TransactionType } from '@/models/transaction' 
 
@@ -30,20 +29,23 @@ export function TransactionsPage() {
   const contactFilter = searchParams.get('contact')
   const accountFilter = searchParams.get('account')
 
-  // Date range filter — local state (not persisted, resets on nav)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo,   setDateTo]   = useState('')
   const [showDates, setShowDates] = useState(false)
 
-  const { data, isLoading } = useTransactions({
+  const activeParams = {
     type:      (globalTxnFilter || undefined) as TransactionType | undefined,
     contact:   contactFilter ? Number(contactFilter) : undefined,
     account:   accountFilter ? Number(accountFilter) : undefined,
     date_from: dateFrom || undefined,
     date_to:   dateTo   || undefined,
-  })
+  }
 
-  const deleteMutation = useDeleteTransaction()
+  const { data, isLoading } = useTransactions(activeParams)
+  
+  // Pass contactId if it exists to invalidate specific ledger
+  const deleteMutation = useDeleteTransaction(activeParams.contact)
+  const printMutation = usePrintTransactions()
 
   const handleDelete = async (id: number) => {
     try {
@@ -54,14 +56,40 @@ export function TransactionsPage() {
     }
   }
 
+  const handlePrint = async () => {
+    try {
+      toast.loading('Generating PDF...', { id: 'print-txns' })
+      const blob = await printMutation.mutateAsync(activeParams)
+      const url = window.URL.createObjectURL(blob as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Transactions_${new Date().toISOString().split('T')[0]}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      toast.success('PDF Downloaded', { id: 'print-txns' })
+    } catch {
+      toast.error('Failed to generate PDF', { id: 'print-txns' })
+    }
+  }
+
   const txns          = data?.results ?? []
   const hasDateFilter = dateFrom || dateTo
 
   return (
     <div className="pb-6">
+      {/* ── Header Actions (Print) ────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-1">
+        <h2 className="text-sm font-semibold">All Transactions</h2>
+        <Button variant="outline" size="sm" onClick={handlePrint} disabled={printMutation.isPending || txns.length === 0} className="h-8">
+          <Printer className="h-3.5 w-3.5 mr-2" />
+          {printMutation.isPending ? 'Generating...' : 'Print PDF'}
+        </Button>
+      </div>
 
       {/* ── Type filter chips ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-4 py-3">
+      <div className="flex items-center gap-2 px-4 py-2">
         <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1">
           {TYPE_FILTERS.map(f => (
             <button
@@ -80,7 +108,6 @@ export function TransactionsPage() {
           ))}
         </div>
 
-        {/* Date range toggle */}
         <button
           type="button"
           onClick={() => setShowDates(p => !p)}
@@ -100,21 +127,11 @@ export function TransactionsPage() {
         <div className="px-4 pb-3 flex gap-2 items-center">
           <div className="flex-1 space-y-1">
             <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">From</p>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="h-9 text-sm"
-            />
+            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 text-sm" />
           </div>
           <div className="flex-1 space-y-1">
             <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">To</p>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="h-9 text-sm"
-            />
+            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 text-sm" />
           </div>
           {hasDateFilter && (
             <button
@@ -128,7 +145,7 @@ export function TransactionsPage() {
         </div>
       )}
 
-      {/* ── Active context banner (contact / account filter from URL) ─── */}
+      {/* ── Active context banner ─── */}
       {(contactFilter || accountFilter) && (
         <div className="mx-4 mb-3 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-xs font-medium text-primary flex items-center justify-center gap-1">
           {contactFilter && <span>Contact #{contactFilter}</span>}
@@ -145,18 +162,14 @@ export function TransactionsPage() {
             {dateFrom && dateTo && ' → '}
             {dateTo && `To ${dateTo}`}
           </span>
-          <button
-            type="button"
-            onClick={() => { setDateFrom(''); setDateTo('') }}
-            className="text-amber-600"
-          >
+          <button type="button" onClick={() => { setDateFrom(''); setDateTo('') }} className="text-amber-600">
             <X className="h-3 w-3" />
           </button>
         </div>
       )}
 
       {/* ── Transaction list ──────────────────────────────────────────── */}
-      <div className="px-4 space-y-1">
+      <div className="px-4 space-y-1 mt-2">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-24 rounded-xl w-full mb-2" />

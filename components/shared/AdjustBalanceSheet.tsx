@@ -1,4 +1,3 @@
-// components/shared/AdjustBalanceSheet.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -49,6 +48,7 @@ export function AdjustBalanceSheet() {
     try {
       await adjustMut.mutateAsync({
         amount,
+        date,
         notes: notes || undefined,
       })
       toast.success('Balance adjusted')
