@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { useUIStore } from '@/stores/uiStore'
 import {
   useProduct,
@@ -13,6 +14,7 @@ import {
   useDeleteStockTransaction,
 } from '@/hooks/useStock'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
+import { getMediaUrl } from '@/lib/media'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,16 +34,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   MoreVertical, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle2, MoveRight,
+  AlertTriangle, CheckCircle2, MoveRight, ImageIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { StockTransactionCard } from '@/components/shared/StockTransactionCard'
-import { AdjustStockSheet }     from '@/components/shared/AdjustStockSheet'    // ← ADD
-import type { StockTransaction } from '@/models/stock-transaction'              // ← ADD
-
+import { AdjustStockSheet }     from '@/components/shared/AdjustStockSheet'
+import { UploadInput }          from '@/components/shared/common/UploadInput'
+import type { StockTransaction } from '@/models/stock-transaction'
 
 interface Props { id: number }
-
 
 export function ProductDetailPage({ id }: Props) {
   const router = useRouter()
@@ -69,6 +70,7 @@ export function ProductDetailPage({ id }: Props) {
   const [editHsn,      setEditHsn]      = useState('')
   const [editDesc,     setEditDesc]     = useState('')
   const [editStock,    setEditStock]    = useState('')
+  const [editImageUrl, setEditImageUrl] = useState<string[]>([])   // ✅ image
 
   const updateProduct = useUpdateProduct(id)
 
@@ -89,6 +91,8 @@ export function ProductDetailPage({ id }: Props) {
       setEditHsn(product.hsn_code ?? '')
       setEditDesc(product.description ?? '')
       setEditStock(product.current_stock)
+      // ✅ seed image — wrap single path into array for UploadInput
+      setEditImageUrl(product.image_url ? [product.image_url] : [])
     }
   }, [product, setPageTitle])
 
@@ -114,6 +118,8 @@ export function ProductDetailPage({ id }: Props) {
         hsn_code:      editHsn || null,
         description:   editDesc || null,
         current_stock: editStock,
+        // ✅ unwrap array → single path (or null to clear)
+        image_url:     editImageUrl[0] ?? null,
       })
       toast.success('Product updated')
       setEditSheet(false)
@@ -122,7 +128,6 @@ export function ProductDetailPage({ id }: Props) {
     }
   }
 
-  // ── Stock txn handlers ─────────────────────────────────────────────────────
   const handleEditStockTxn = (txnId: number) => {
     const txn = stockTxns.find(t => t.id === txnId)
     if (!txn) return
@@ -148,45 +153,71 @@ export function ProductDetailPage({ id }: Props) {
     }
   }
 
-
   return (
     <div className="pb-10">
 
       {/* ── Product header ────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold">{product.name}</h1>
-            {product.description && (
-              <p className="text-sm text-muted-foreground mt-0.5">{product.description}</p>
+        <div className="flex items-start gap-3">
+
+          {/* ✅ Product image */}
+          <div
+            className="shrink-0 w-16 h-16 rounded-xl border border-border/60 bg-muted overflow-hidden cursor-pointer"
+            onClick={() => setEditSheet(true)}
+          >
+            {product.image_url ? (
+              <Image
+                src={getMediaUrl(product.image_url)}
+                alt={product.name}
+                width={64}
+                height={64}
+                className="w-full h-full object-cover"
+                unoptimized
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
+              </div>
             )}
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <Badge variant="secondary" className="rounded-md">{product.unit}</Badge>
-              {product.hsn_code && (
-                <Badge variant="outline" className="rounded-md">HSN: {product.hsn_code}</Badge>
-              )}
-              {isLow && (
-                <Badge variant="destructive" className="gap-1 rounded-md">
-                  <AlertTriangle className="h-3 w-3" /> Low Stock
-                </Badge>
-              )}
+          </div>
+
+          {/* Name + badges */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold leading-tight">{product.name}</h1>
+                {product.description && (
+                  <p className="text-sm text-muted-foreground mt-0.5 truncate">{product.description}</p>
+                )}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <Badge variant="secondary" className="rounded-md">{product.unit}</Badge>
+                  {product.hsn_code && (
+                    <Badge variant="outline" className="rounded-md">HSN: {product.hsn_code}</Badge>
+                  )}
+                  {isLow && (
+                    <Badge variant="destructive" className="gap-1 rounded-md">
+                      <AlertTriangle className="h-3 w-3" /> Low Stock
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2 shrink-0">
+                    <MoreVertical className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => setEditSheet(true)}>
+                    Edit Details & Stock
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/transactions?product=${id}`)}>
+                    View All Transactions
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2">
-                <MoreVertical className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => setEditSheet(true)}>
-                Edit Details & Stock
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push(`/transactions?product=${id}`)}>
-                View All Transactions
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
@@ -247,7 +278,6 @@ export function ProductDetailPage({ id }: Props) {
             </h2>
           </div>
           <div className="px-4 space-y-3">
-
             {pending.length > 0 && (
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold text-orange-600 flex items-center gap-1">
@@ -336,15 +366,12 @@ export function ProductDetailPage({ id }: Props) {
       </div>
       <div className="px-4 space-y-2 pb-4">
         {stockTxns.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm py-8">
-            No stock history yet
-          </p>
+          <p className="text-center text-muted-foreground text-sm py-8">No stock history yet</p>
         ) : (
           stockTxns.map(txn => (
             <StockTransactionCard
               key={txn.id}
               txn={txn}
-              // ✅ Wire onEdit and onDelete — only rendered for actual type by the card
               onEdit={handleEditStockTxn}
               onDelete={handleDeletePrompt}
             />
@@ -354,11 +381,29 @@ export function ProductDetailPage({ id }: Props) {
 
       {/* ── Product edit sheet ────────────────────────────────────────────── */}
       <Sheet open={editSheet} onOpenChange={setEditSheet}>
-        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
+        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[92vh] overflow-y-auto">
           <SheetHeader className="mb-5">
             <SheetTitle className="text-left">Edit Product</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
+
+            {/* ✅ Product image upload */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                Product Image
+                <span className="text-xs text-muted-foreground font-normal ml-1">optional</span>
+              </Label>
+              <UploadInput
+                value={editImageUrl}
+                onChange={setEditImageUrl}
+                context="product"
+                maxFiles={1}
+              />
+            </div>
+
+            <Separator />
+
             <div className="space-y-1.5">
               <Label>Name <span className="text-destructive">*</span></Label>
               <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 rounded-xl" />
@@ -377,15 +422,23 @@ export function ProductDetailPage({ id }: Props) {
                 <Input value={editUnit} onChange={e => setEditUnit(e.target.value)} className="h-11 rounded-xl" />
               </div>
             </div>
+
+            {/* Direct stock override warning box */}
             <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800">
               <div className="space-y-1.5">
                 <Label className="flex justify-between items-center">
                   <span>Direct Stock Override</span>
                   <span className="text-[10px] text-amber-700 font-normal">⚠️ No transaction created</span>
                 </Label>
-                <Input type="number" value={editStock} onChange={e => setEditStock(e.target.value)} className="h-11 rounded-xl bg-background" />
+                <Input
+                  type="number"
+                  value={editStock}
+                  onChange={e => setEditStock(e.target.value)}
+                  className="h-11 rounded-xl bg-background"
+                />
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Min Stock Alert</Label>
@@ -396,6 +449,7 @@ export function ProductDetailPage({ id }: Props) {
                 <Input value={editHsn} onChange={e => setEditHsn(e.target.value)} className="h-11 rounded-xl" />
               </div>
             </div>
+
             <Button
               className="w-full h-12 mt-2 rounded-xl"
               onClick={handleUpdate}
@@ -407,13 +461,13 @@ export function ProductDetailPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ✅ Stock txn edit — AdjustStockSheet in edit mode */}
+      {/* Stock txn edit */}
       <AdjustStockSheet
         editTxn={editStockTxn}
         onEditClose={() => setEditStockTxn(null)}
       />
 
-      {/* ✅ Stock txn delete confirmation */}
+      {/* Stock txn delete confirmation */}
       <AlertDialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
         <AlertDialogContent className="rounded-2xl max-w-sm">
           <AlertDialogHeader>
@@ -432,7 +486,7 @@ export function ProductDetailPage({ id }: Props) {
                 <p className="text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100 leading-tight">
                   ⚠️ Product current stock will be reversed automatically.
                 </p>
-                {deleteTarget?.is_document_deleted === false && deleteTarget?.document && (
+                {deleteTarget?.document && (
                   <p className="text-muted-foreground bg-muted/50 p-2 rounded-lg border leading-tight text-xs">
                     This transaction is linked to a document. The document record will remain — only this actual movement is deleted.
                   </p>
