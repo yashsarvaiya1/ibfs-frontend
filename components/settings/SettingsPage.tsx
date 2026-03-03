@@ -7,13 +7,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { UploadInput } from '@/components/shared/common/UploadInput'
+import { UploadInput }      from '@/components/shared/common/UploadInput'
+import { FilePreviewSheet } from '@/components/shared/FilePreviewSheet'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { LogOut } from 'lucide-react'
-
-// ─── Toggle row ───────────────────────────────────────────────────────────────
 
 interface ToggleRowProps {
   label:       string
@@ -35,17 +34,16 @@ function ToggleRow({ label, description, checked, onToggle, disabled }: ToggleRo
   )
 }
 
-// ─── Image preview row ────────────────────────────────────────────────────────
-
 interface ImageUploadRowProps {
   label:       string
   description: string
   value:       string[]
   onChange:    (urls: string[]) => void
+  onPreview:   (idx: number) => void   // ✅ added
   disabled?:   boolean
 }
 
-function ImageUploadRow({ label, description, value, onChange, disabled }: ImageUploadRowProps) {
+function ImageUploadRow({ label, description, value, onChange, onPreview, disabled }: ImageUploadRowProps) {
   return (
     <div className="py-3 space-y-2">
       <div>
@@ -58,12 +56,11 @@ function ImageUploadRow({ label, description, value, onChange, disabled }: Image
         context="settings"
         maxFiles={1}
         disabled={disabled}
+        onPreview={onPreview}       // ✅ wired
       />
     </div>
   )
 }
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function SettingsPage() {
   const router       = useRouter()
@@ -77,19 +74,21 @@ export function SettingsPage() {
 
   const isPending = updateSettings.isPending
 
-  // ── Image URL state — array of 0-1 GCS URLs ────────────────────────────────
-  // UploadInput works with string[], settings model stores single string
   const [headerUrls, setHeaderUrls] = useState<string[]>([])
   const [signUrls,   setSignUrls]   = useState<string[]>([])
+
+  // ✅ Single shared preview state — tracks which image set is being previewed
+  const [previewFiles, setPreviewFiles] = useState<string[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [previewOpen,  setPreviewOpen]  = useState(false)
 
   useEffect(() => {
     if (settings) {
       setHeaderUrls(settings.header_image ? [settings.header_image] : [])
-      setSignUrls(settings.sign_image   ? [settings.sign_image]   : [])
+      setSignUrls(settings.sign_image     ? [settings.sign_image]   : [])
     }
   }, [settings])
 
-  // ── Auto-save image to settings on upload (onChange fires after GCS upload) ─
   const handleHeaderChange = useCallback(async (urls: string[]) => {
     setHeaderUrls(urls)
     try {
@@ -110,7 +109,13 @@ export function SettingsPage() {
     }
   }, [updateSettings])
 
-  // ── Toggle ──────────────────────────────────────────────────────────────────
+  // ✅ Open preview for the specific image set
+  const openPreview = (files: string[], idx: number) => {
+    setPreviewFiles(files)
+    setPreviewIndex(idx)
+    setPreviewOpen(true)
+  }
+
   const toggle = async (field: string, value: boolean) => {
     try {
       await updateSettings.mutateAsync({ [field]: value })
@@ -183,110 +188,62 @@ export function SettingsPage() {
         </h2>
         <Card>
           <CardContent className="p-4 divide-y">
-            <ToggleRow
-              label="Purchase Orders"
-              description="Enable PO document type"
-              checked={settings.enable_po}
-              onToggle={v => toggle('enable_po', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Proforma Invoice"
-              description="Enable PI document type"
-              checked={settings.enable_pi}
-              onToggle={v => toggle('enable_pi', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Quotation"
-              description="Enable Quotation document type"
-              checked={settings.enable_quotation}
-              onToggle={v => toggle('enable_quotation', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Challan"
-              description="Enable delivery challan — Bills/Invoices won't generate stock entries"
-              checked={settings.enable_challan}
-              onToggle={v => toggle('enable_challan', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Credit Note"
-              description="Enable CN — return of sale"
-              checked={settings.enable_cn}
-              onToggle={v => toggle('enable_cn', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Debit Note"
-              description="Enable DN — return of purchase"
-              checked={settings.enable_dn}
-              onToggle={v => toggle('enable_dn', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Cash Vouchers"
-              description="Replace amount input with line items when Cash account is selected"
-              checked={settings.enable_vouchers}
-              onToggle={v => toggle('enable_vouchers', v)}
-              disabled={isPending}
-            />
-            <ToggleRow
-              label="Interest"
-              description="Enable standalone interest/charge documents from Quick Actions"
-              checked={settings.enable_interest}
-              onToggle={v => toggle('enable_interest', v)}
-              disabled={isPending}
-            />
+            <ToggleRow label="Purchase Orders"  description="Enable PO document type"                                                          checked={settings.enable_po}        onToggle={v => toggle('enable_po', v)}        disabled={isPending} />
+            <ToggleRow label="Proforma Invoice"  description="Enable PI document type"                                                          checked={settings.enable_pi}        onToggle={v => toggle('enable_pi', v)}        disabled={isPending} />
+            <ToggleRow label="Quotation"         description="Enable Quotation document type"                                                    checked={settings.enable_quotation} onToggle={v => toggle('enable_quotation', v)} disabled={isPending} />
+            <ToggleRow label="Challan"           description="Enable delivery challan — Bills/Invoices won't generate stock entries"             checked={settings.enable_challan}   onToggle={v => toggle('enable_challan', v)}   disabled={isPending} />
+            <ToggleRow label="Credit Note"       description="Enable CN — return of sale"                                                        checked={settings.enable_cn}        onToggle={v => toggle('enable_cn', v)}        disabled={isPending} />
+            <ToggleRow label="Debit Note"        description="Enable DN — return of purchase"                                                    checked={settings.enable_dn}        onToggle={v => toggle('enable_dn', v)}        disabled={isPending} />
+            <ToggleRow label="Cash Vouchers"     description="Replace amount input with line items when Cash account is selected"                checked={settings.enable_vouchers}  onToggle={v => toggle('enable_vouchers', v)}  disabled={isPending} />
+            <ToggleRow label="Interest"          description="Enable standalone interest/charge documents from Quick Actions"                    checked={settings.enable_interest}  onToggle={v => toggle('enable_interest', v)}  disabled={isPending} />
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Print customization — GCS upload ──────────────────────────── */}
+      {/* ── Print customization ───────────────────────────────────────── */}
       <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
           Print Customization
         </h2>
         <Card>
           <CardContent className="p-4 divide-y">
-
-            {/* Letterhead */}
             <ImageUploadRow
               label="Letterhead"
-              description="Shown at the top of printed documents. Upload via camera or file."
+              description="Shown at the top of printed documents. Tap thumbnail to preview."
               value={headerUrls}
               onChange={handleHeaderChange}
+              onPreview={idx => openPreview(headerUrls, idx)}   // ✅
               disabled={isPending}
             />
-
-            {/* Signature */}
             <div className="pt-3">
               <ImageUploadRow
                 label="Signature"
-                description="Shown at the bottom of printed documents."
+                description="Shown at the bottom of printed documents. Tap thumbnail to preview."
                 value={signUrls}
                 onChange={handleSignChange}
+                onPreview={idx => openPreview(signUrls, idx)}   // ✅
                 disabled={isPending}
               />
             </div>
-
           </CardContent>
         </Card>
-
         <p className="text-[11px] text-muted-foreground mt-2 px-1">
-          Images are uploaded to cloud storage. Tap the thumbnail to remove and re-upload.
+          Images are stored on the server. Tap the thumbnail to preview, X to remove and re-upload.
         </p>
       </div>
 
       {/* ── Logout ────────────────────────────────────────────────────── */}
-      <Button
-        variant="destructive"
-        className="w-full h-12 gap-2"
-        onClick={handleLogout}
-      >
+      <Button variant="destructive" className="w-full h-12 gap-2" onClick={handleLogout}>
         <LogOut className="h-4 w-4" /> Logout
       </Button>
+
+      {/* ✅ Shared preview sheet for header + sign images */}
+      <FilePreviewSheet
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        files={previewFiles}
+        initialIndex={previewIndex}
+      />
 
     </div>
   )

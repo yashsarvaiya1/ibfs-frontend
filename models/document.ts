@@ -84,6 +84,9 @@ export interface Document {
   transactions?: FinancialTransaction[]
   payment_status: PaymentStatusDetail | null
   stock_status: StockStatusItem[] | null
+
+  contact_display?:   ContactDisplay | null
+  consignee_display?: ConsigneeDisplay | null
 }
 
 export interface DocumentListItem {
@@ -212,3 +215,17 @@ export const HAS_PAYMENT_STATUS: DocumentType[] = [
 export const HAS_STOCK_STATUS: DocumentType[] = [
   'bill', 'invoice', 'cn', 'dn', 'challan',
 ]
+
+export interface ContactDisplay {
+  name:       string
+  phone?:     string | null
+  gstin?:     string | null
+  address?:   string | null
+  all_phones?: Array<{ name: string; number: string; role: string }>
+}
+
+export interface ConsigneeDisplay {
+  name:     string
+  phone?:   string | null
+  address?: string | null
+}

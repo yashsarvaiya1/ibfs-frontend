@@ -5,10 +5,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocument, useUpdateDocument } from '@/hooks/useDocument'
-import { useSettings } from '@/hooks/useSettings'
 import { useContacts } from '@/hooks/useContact'
 import { useProducts } from '@/hooks/useProduct'
-import { useAccounts } from '@/hooks/useAccount'
 import {
   DocumentType, DOC_TYPE_LABELS,
   LineItem, Charge, Tax, DocumentCreate
@@ -21,23 +19,26 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { X, Plus, ChevronDown, ChevronUp, FileText, Package, Link as LinkIcon, AlertCircle } from 'lucide-react'
+import { X, Plus, ChevronDown, ChevronUp, Package, AlertCircle, Paperclip } from 'lucide-react'
 import { fmtAmount } from '@/lib/utils'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
-import { Skeleton } from '@/components/ui/skeleton'
+import { UploadInput }       from '@/components/shared/common/UploadInput'      // ✅
+import { FilePreviewSheet }  from '@/components/shared/FilePreviewSheet'  // ✅
+
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined) => t ? (DOC_LABELS[t] ?? t) : ''
 
 const WITH_LINE_ITEMS: DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotation', 'challan', 'cn', 'dn']
 const WITH_CONSIGNEE:  DocumentType[] = ['challan', 'invoice', 'bill']
-// FIX 1: same list as DocumentNewPage
 const CONTACT_REQUIRED: DocumentType[] = [
   'bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher'
 ]
 
 interface LineItemRow extends LineItem { _key: string }
+
 
 function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
   open: boolean; products: any[]; onConfirm: (s: any[]) => void; onClose: () => void
@@ -67,32 +68,44 @@ function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
         <SheetHeader className="mb-4">
           <SheetTitle className="text-left flex justify-between items-center pr-6">
             <span>Select Products</span>
-            <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">{selected.size} selected</span>
+            <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
+              {selected.size} selected
+            </span>
           </SheetTitle>
         </SheetHeader>
-        <Input placeholder="Search inventory..." value={search} onChange={e => setSearch(e.target.value)} className="mb-3 h-11 rounded-xl" />
+        <Input
+          placeholder="Search inventory..." value={search}
+          onChange={e => setSearch(e.target.value)} className="mb-3 h-11 rounded-xl"
+        />
         <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
           {filtered.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground py-10 bg-muted/30 rounded-xl border border-dashed">No products found</p>
-          ) : (
-            filtered.map(p => (
-              <div
-                key={p.id} onClick={() => toggle(p.id)}
-                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                  selected.has(p.id) ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'
-                }`}
-              >
-                <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggle(p.id)} onClick={e => e.stopPropagation()} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{p.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Stock: {p.current_stock} {p.unit} · ₹{p.rate}</p>
-                </div>
+            <p className="text-center text-sm text-muted-foreground py-10 bg-muted/30 rounded-xl border border-dashed">
+              No products found
+            </p>
+          ) : filtered.map(p => (
+            <div
+              key={p.id} onClick={() => toggle(p.id)}
+              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                selected.has(p.id) ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'
+              }`}
+            >
+              <Checkbox
+                checked={selected.has(p.id)} onCheckedChange={() => toggle(p.id)}
+                onClick={e => e.stopPropagation()}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{p.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Stock: {p.current_stock} {p.unit} · ₹{p.rate}
+                </p>
               </div>
-            ))
-          )}
+            </div>
+          ))}
         </div>
         <div className="flex gap-3 mt-4 pt-2 border-t border-border/50">
-          <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             className="flex-1 h-12 rounded-xl" disabled={selected.size === 0}
             onClick={() => { onConfirm(products.filter(p => selected.has(p.id))); onClose() }}
@@ -104,6 +117,7 @@ function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
     </Sheet>
   )
 }
+
 
 export function DocumentEditPage({ id }: { id: number }) {
   const router       = useRouter()
@@ -125,7 +139,6 @@ export function DocumentEditPage({ id }: { id: number }) {
   const [notes,              setNotes]              = useState('')
   const [discount,           setDiscount]           = useState('')
   const [attachmentUrls,     setAttachmentUrls]     = useState<string[]>([])
-  const [currentLink,        setCurrentLink]        = useState('')
   const [fastAmountOverride, setFastAmountOverride] = useState('')
   const [showCharges,        setShowCharges]        = useState(false)
   const [productPickerOpen,  setProductPickerOpen]  = useState(false)
@@ -133,17 +146,17 @@ export function DocumentEditPage({ id }: { id: number }) {
   const [charges,            setCharges]            = useState<Charge[]>([])
   const [taxes,              setTaxes]              = useState<Tax[]>([])
 
-  // FIX 2a: page title — updates if doc metadata changes
+  // ✅ FilePreviewSheet state
+  const [previewOpen,  setPreviewOpen]  = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
+
   useEffect(() => {
     if (!doc) return
     setPageTitle(`Edit ${getDocLabel(doc.type)} #${doc.doc_id}`)
   }, [doc?.id, doc?.doc_id, doc?.type, setPageTitle])
 
-  // FIX 2b: form population — only on doc.id change (different document)
-  // prevents mid-edit reset on background refetch
   useEffect(() => {
     if (!doc) return
-
     setContactId(doc.contact ? String(doc.contact) : '')
     setConsigneeId(doc.consignee ? String(doc.consignee) : '')
     setReferenceId(doc.reference ? String(doc.reference) : '')
@@ -154,7 +167,6 @@ export function DocumentEditPage({ id }: { id: number }) {
     setDiscount(doc.discount ? String(doc.discount) : '')
     setAttachmentUrls(doc.attachment_urls || [])
 
-    // FIX 3: safe null-guard on line_items
     const items = doc.line_items ?? []
     if (items.length === 0 && Number(doc.total_amount) > 0) {
       setFastAmountOverride(String(doc.total_amount))
@@ -173,7 +185,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     if ((doc.charges?.length ?? 0) > 0 || (doc.taxes?.length ?? 0) > 0 || Number(doc.discount) > 0) {
       setShowCharges(true)
     }
-  }, [doc?.id])  // ← only re-init when navigating to a different document
+  }, [doc?.id])
 
   if (docLoading || !doc) {
     return (
@@ -193,7 +205,6 @@ export function DocumentEditPage({ id }: { id: number }) {
   const hasLineItems = WITH_LINE_ITEMS.includes(docType)
   const hasConsignee = WITH_CONSIGNEE.includes(docType)
 
-  // ── Options ──────────────────────────────────────────────────────────────────
   const contactOptions: SearchableSelectOption[] = contacts.map(c => ({
     value: String(c.id), label: getContactDisplayName(c),
     sublabel: c.phone, badge: c.gstin ? 'GST' : undefined,
@@ -213,17 +224,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     })),
   ]
 
-  // ── Attachment handlers ───────────────────────────────────────────────────────
-  const handleAddAttachment = () => {
-    if (currentLink.trim() === '') return
-    setAttachmentUrls(prev => [...prev, currentLink.trim()])
-    setCurrentLink('')
-  }
-  const handleRemoveAttachment = (idx: number) => {
-    setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  // ── Line item helpers ─────────────────────────────────────────────────────────
+  // ── Line item helpers ───────────────────────────────────────────────────────
   const handleProductPickerConfirm = (selected: any[]) => {
     if (selected.length === 0) return
     const newItems = selected.map(p => ({
@@ -237,7 +238,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     })
   }
 
-  const addLineItem = () => setLineItems(p => [...p, {
+  const addLineItem    = () => setLineItems(p => [...p, {
     _key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null,
   }])
   const removeLineItem = (key: string) => setLineItems(p => p.filter(l => l._key !== key))
@@ -266,7 +267,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     }))
   }
 
-  // ── Totals ────────────────────────────────────────────────────────────────────
+  // ── Totals ──────────────────────────────────────────────────────────────────
   const lineTotal   = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0)
   const chargeTotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0)
   const discountAmt = Number(discount) || 0
@@ -284,9 +285,8 @@ export function DocumentEditPage({ id }: { id: number }) {
   const updateTax = (i: number, f: keyof Tax, v: string) =>
     setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
 
-  // ── Submit ────────────────────────────────────────────────────────────────────
+  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    // FIX 1: only enforce contact for types that require it
     if (CONTACT_REQUIRED.includes(docType) && !contactId) {
       toast.error('Select a contact'); return
     }
@@ -300,7 +300,7 @@ export function DocumentEditPage({ id }: { id: number }) {
       reference:       referenceId  ? Number(referenceId) : undefined,
       consignee:       consigneeId  ? Number(consigneeId) : undefined,
       discount:        discountAmt,
-      attachment_urls: attachmentUrls,
+      attachment_urls: attachmentUrls,   // ✅ stored relative paths from UploadInput
     }
 
     if (hasLineItems) {
@@ -388,7 +388,7 @@ export function DocumentEditPage({ id }: { id: number }) {
           </div>
         </div>
 
-        {/* Fast mode fallback amount */}
+        {/* Fast mode fallback */}
         {hasLineItems && lineItems.filter(l => l.name.trim()).length === 0 && Number(fastAmountOverride) > 0 && (
           <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
             <Label className="text-primary font-semibold">Total Amount (Fast Mode)</Label>
@@ -407,12 +407,22 @@ export function DocumentEditPage({ id }: { id: number }) {
         {hasLineItems && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Line Items</Label>
+              <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Line Items
+              </Label>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 border-primary/30 text-primary hover:bg-primary/10" onClick={() => setProductPickerOpen(true)}>
+                <Button
+                  variant="outline" size="sm"
+                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 border-primary/30 text-primary hover:bg-primary/10"
+                  onClick={() => setProductPickerOpen(true)}
+                >
                   <Package className="h-3.5 w-3.5" /> Bulk Add
                 </Button>
-                <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40" onClick={addLineItem}>
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40"
+                  onClick={addLineItem}
+                >
                   <Plus className="h-3.5 w-3.5" /> Empty Row
                 </Button>
               </div>
@@ -457,7 +467,10 @@ export function DocumentEditPage({ id }: { id: number }) {
                   </div>
                   {lineItems.length > 1 && (
                     <div className="flex justify-end pt-1">
-                      <button onClick={() => removeLineItem(item._key)} className="flex items-center gap-1.5 text-xs font-medium text-destructive/80 hover:text-destructive transition-colors py-1">
+                      <button
+                        onClick={() => removeLineItem(item._key)}
+                        className="flex items-center gap-1.5 text-xs font-medium text-destructive/80 hover:text-destructive transition-colors py-1"
+                      >
                         <X className="h-3.5 w-3.5" /> Remove Row
                       </button>
                     </div>
@@ -479,38 +492,51 @@ export function DocumentEditPage({ id }: { id: number }) {
                   <div className="space-y-5 p-4 mt-2 border rounded-xl bg-background/50">
                     <div className="space-y-1.5">
                       <Label>Overall Discount (₹)</Label>
-                      <Input type="number" placeholder="0.00" value={discount} className="h-11 rounded-lg" onChange={e => setDiscount(e.target.value)} />
+                      <Input type="number" placeholder="0.00" value={discount} className="h-11 rounded-lg"
+                        onChange={e => setDiscount(e.target.value)} />
                     </div>
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Additional Charges</Label>
+                        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">
+                          Additional Charges
+                        </Label>
                         <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={addCharge}>
                           <Plus className="h-3 w-3" /> Add Charge
                         </Button>
                       </div>
                       {charges.map((c, i) => (
                         <div key={i} className="flex gap-2 items-center">
-                          <Input placeholder="e.g. Freight" className="flex-1 h-10" value={c.name} onChange={e => updateCharge(i, 'name', e.target.value)} />
-                          <Input type="number" placeholder="₹" className="w-24 h-10 font-medium" value={c.amount || ''} onChange={e => updateCharge(i, 'amount', e.target.value)} />
-                          <button onClick={() => removeCharge(i)} className="p-2 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                          <Input placeholder="e.g. Freight" className="flex-1 h-10" value={c.name}
+                            onChange={e => updateCharge(i, 'name', e.target.value)} />
+                          <Input type="number" placeholder="₹" className="w-24 h-10 font-medium" value={c.amount || ''}
+                            onChange={e => updateCharge(i, 'amount', e.target.value)} />
+                          <button onClick={() => removeCharge(i)} className="p-2 text-muted-foreground hover:text-destructive">
+                            <X className="h-4 w-4" />
+                          </button>
                         </div>
                       ))}
                     </div>
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Taxes</Label>
+                        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">
+                          Taxes
+                        </Label>
                         <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={addTax}>
                           <Plus className="h-3 w-3" /> Add Tax
                         </Button>
                       </div>
                       {taxes.map((t, i) => (
                         <div key={i} className="flex gap-2 items-center">
-                          <Input placeholder="e.g. IGST 18%" className="flex-1 h-10" value={t.name} onChange={e => updateTax(i, 'name', e.target.value)} />
+                          <Input placeholder="e.g. IGST 18%" className="flex-1 h-10" value={t.name}
+                            onChange={e => updateTax(i, 'name', e.target.value)} />
                           <div className="relative w-24">
-                            <Input type="number" placeholder="0" className="w-full h-10 font-medium pr-6" value={t.percentage || ''} onChange={e => updateTax(i, 'percentage', e.target.value)} />
+                            <Input type="number" placeholder="0" className="w-full h-10 font-medium pr-6"
+                              value={t.percentage || ''} onChange={e => updateTax(i, 'percentage', e.target.value)} />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
                           </div>
-                          <button onClick={() => removeTax(i)} className="p-2 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                          <button onClick={() => removeTax(i)} className="p-2 text-muted-foreground hover:text-destructive">
+                            <X className="h-4 w-4" />
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -519,12 +545,28 @@ export function DocumentEditPage({ id }: { id: number }) {
                 {lineItems.filter(l => l.name.trim()).length > 0 && (
                   <Card className="mt-4 bg-muted/30 border-transparent">
                     <CardContent className="p-4 space-y-2 text-sm">
-                      <div className="flex justify-between text-muted-foreground font-medium"><span>Subtotal</span><span>{fmtAmount(lineTotal)}</span></div>
-                      {chargeTotal > 0 && <div className="flex justify-between text-muted-foreground font-medium"><span>Charges</span><span>+{fmtAmount(chargeTotal)}</span></div>}
-                      {discountAmt > 0 && <div className="flex justify-between text-emerald-600 font-medium"><span>Discount</span><span>−{fmtAmount(discountAmt)}</span></div>}
-                      {taxTotal > 0 && <div className="flex justify-between text-muted-foreground font-medium"><span>Tax</span><span>+{fmtAmount(taxTotal)}</span></div>}
+                      <div className="flex justify-between text-muted-foreground font-medium">
+                        <span>Subtotal</span><span>{fmtAmount(lineTotal)}</span>
+                      </div>
+                      {chargeTotal > 0 && (
+                        <div className="flex justify-between text-muted-foreground font-medium">
+                          <span>Charges</span><span>+{fmtAmount(chargeTotal)}</span>
+                        </div>
+                      )}
+                      {discountAmt > 0 && (
+                        <div className="flex justify-between text-emerald-600 font-medium">
+                          <span>Discount</span><span>−{fmtAmount(discountAmt)}</span>
+                        </div>
+                      )}
+                      {taxTotal > 0 && (
+                        <div className="flex justify-between text-muted-foreground font-medium">
+                          <span>Tax</span><span>+{fmtAmount(taxTotal)}</span>
+                        </div>
+                      )}
                       <Separator className="my-2" />
-                      <div className="flex justify-between font-black text-xl text-foreground"><span>Total</span><span>{fmtAmount(grandTotal)}</span></div>
+                      <div className="flex justify-between font-black text-xl text-foreground">
+                        <span>Total</span><span>{fmtAmount(grandTotal)}</span>
+                      </div>
                     </CardContent>
                   </Card>
                 )}
@@ -533,47 +575,39 @@ export function DocumentEditPage({ id }: { id: number }) {
           </div>
         )}
 
-        {/* Attachments */}
-        <div className="space-y-3">
+        {/* ✅ REPLACED: UploadInput instead of link-text input */}
+        <div className="space-y-2">
           <Label className="flex items-center gap-1.5">
-            <LinkIcon className="h-3.5 w-3.5 text-muted-foreground" /> Attachments
+            <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+            Attachments
+            <span className="text-xs text-muted-foreground font-normal ml-1">(photos, PDFs)</span>
           </Label>
-          <div className="flex gap-2">
-            <Input
-              placeholder="https://drive.google.com/..." value={currentLink}
-              onChange={e => setCurrentLink(e.target.value)} className="h-11 rounded-xl flex-1"
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAttachment() } }}
-            />
-            <Button variant="secondary" className="h-11 px-4 rounded-xl shrink-0 font-semibold" onClick={handleAddAttachment} disabled={!currentLink.trim()}>
-              Add
-            </Button>
-          </div>
-          {attachmentUrls.length > 0 && (
-            <div className="space-y-2 mt-2">
-              {attachmentUrls.map((url, index) => (
-                <div key={index} className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/20">
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <FileText className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-sm truncate font-medium text-foreground/80">{url}</span>
-                  </div>
-                  <button onClick={() => handleRemoveAttachment(index)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          <UploadInput
+            value={attachmentUrls}
+            onChange={setAttachmentUrls}
+            context="document"
+            maxFiles={5}
+            onPreview={idx => {
+              setPreviewIndex(idx)
+              setPreviewOpen(true)
+            }}
+          />
         </div>
 
         {/* Notes */}
         <div className="space-y-1.5">
           <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span></Label>
-          <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+          <Input
+            placeholder="Internal remarks..." value={notes}
+            onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl"
+          />
         </div>
       </div>
 
       <div className="pt-4 pb-8 flex gap-3">
-        <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>Cancel</Button>
+        <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>
+          Cancel
+        </Button>
         <Button
           className="flex-1 h-14 text-lg font-bold rounded-2xl shadow-lg shadow-primary/20"
           onClick={handleSubmit} disabled={updateDocument.isPending}
@@ -584,7 +618,17 @@ export function DocumentEditPage({ id }: { id: number }) {
 
       <ProductMultiPickerSheet
         open={productPickerOpen} products={products}
-        onConfirm={handleProductPickerConfirm} onClose={() => setProductPickerOpen(false)}
+        onConfirm={handleProductPickerConfirm}
+        onClose={() => setProductPickerOpen(false)}
+      />
+
+      {/* ✅ FilePreviewSheet — with onRemove since this is edit context */}
+      <FilePreviewSheet
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        files={attachmentUrls}
+        initialIndex={previewIndex}
+        onRemove={path => setAttachmentUrls(prev => prev.filter(p => p !== path))}
       />
     </div>
   )

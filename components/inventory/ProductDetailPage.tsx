@@ -8,7 +8,10 @@ import {
   useUpdateProduct,
   usePendingMoves,
 } from '@/hooks/useProduct'
-import { useStockTransactions } from '@/hooks/useStock'
+import {
+  useStockTransactions,
+  useDeleteStockTransaction,
+} from '@/hooks/useStock'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +22,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   DropdownMenu, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -28,27 +36,31 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { StockTransactionCard } from '@/components/shared/StockTransactionCard'
+import { AdjustStockSheet }     from '@/components/shared/AdjustStockSheet'    // ← ADD
+import type { StockTransaction } from '@/models/stock-transaction'              // ← ADD
+
 
 interface Props { id: number }
 
+
 export function ProductDetailPage({ id }: Props) {
-  const router       = useRouter()
+  const router = useRouter()
   const {
     setPageTitle,
     openAdjustStockSheet,
     openMoveStockSheet,
   } = useUIStore()
 
-  const { data: product,   isLoading } = useProduct(id)
-  const { data: stockData }            = useStockTransactions({ product: id })
-  const { data: pendingMoves }         = usePendingMoves(id)
+  const { data: product,  isLoading } = useProduct(id)
+  const { data: stockData }           = useStockTransactions({ product: id })
+  const { data: pendingMoves }        = usePendingMoves(id)
 
   const stockTxns = stockData?.results ?? []
   const moves     = pendingMoves ?? []
   const pending   = moves.filter(m => Number(m.remaining_qty) > 0)
   const completed = moves.filter(m => Number(m.remaining_qty) <= 0)
 
-  // ── Edit sheet — stays inline, not global ──────────────────────────────────
+  // ── Product edit sheet ─────────────────────────────────────────────────────
   const [editSheet,    setEditSheet]    = useState(false)
   const [editName,     setEditName]     = useState('')
   const [editRate,     setEditRate]     = useState('')
@@ -56,9 +68,16 @@ export function ProductDetailPage({ id }: Props) {
   const [editMinStock, setEditMinStock] = useState('')
   const [editHsn,      setEditHsn]      = useState('')
   const [editDesc,     setEditDesc]     = useState('')
-  const [editStock,    setEditStock]    = useState('') // direct overwrite — no s.txn
+  const [editStock,    setEditStock]    = useState('')
 
   const updateProduct = useUpdateProduct(id)
+
+  // ── Stock txn edit / delete ────────────────────────────────────────────────
+  const [editStockTxn,   setEditStockTxn]   = useState<StockTransaction | null>(null)
+  const [deleteTarget,   setDeleteTarget]   = useState<StockTransaction | null>(null)
+  const [confirmDelOpen, setConfirmDelOpen] = useState(false)
+
+  const deleteMut = useDeleteStockTransaction(deleteTarget?.id ?? 0)
 
   useEffect(() => {
     if (product) {
@@ -94,7 +113,7 @@ export function ProductDetailPage({ id }: Props) {
         min_stock:     editMinStock,
         hsn_code:      editHsn || null,
         description:   editDesc || null,
-        current_stock: editStock, // direct overwrite — no s.txn created
+        current_stock: editStock,
       })
       toast.success('Product updated')
       setEditSheet(false)
@@ -102,6 +121,33 @@ export function ProductDetailPage({ id }: Props) {
       toast.error('Update failed')
     }
   }
+
+  // ── Stock txn handlers ─────────────────────────────────────────────────────
+  const handleEditStockTxn = (txnId: number) => {
+    const txn = stockTxns.find(t => t.id === txnId)
+    if (!txn) return
+    setEditStockTxn(txn)
+  }
+
+  const handleDeletePrompt = (txnId: number) => {
+    const txn = stockTxns.find(t => t.id === txnId)
+    if (!txn) return
+    setDeleteTarget(txn)
+    setConfirmDelOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    try {
+      await deleteMut.mutateAsync()
+      toast.success('Stock transaction deleted')
+      setConfirmDelOpen(false)
+      setDeleteTarget(null)
+    } catch {
+      toast.error('Delete failed')
+    }
+  }
+
 
   return (
     <div className="pb-10">
@@ -173,7 +219,7 @@ export function ProductDetailPage({ id }: Props) {
         </div>
       </div>
 
-      {/* ── Adjust buttons → global AdjustStockSheet ─────────────────────── */}
+      {/* ── Adjust buttons ────────────────────────────────────────────────── */}
       <div className="px-4 pb-4 grid grid-cols-2 gap-3">
         <Button
           className="h-11 gap-2 rounded-xl"
@@ -202,7 +248,6 @@ export function ProductDetailPage({ id }: Props) {
           </div>
           <div className="px-4 space-y-3">
 
-            {/* Pending — ACTION REQUIRED */}
             {pending.length > 0 && (
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold text-orange-600 flex items-center gap-1">
@@ -215,7 +260,6 @@ export function ProductDetailPage({ id }: Props) {
                   >
                     <CardContent className="p-3">
                       <div className="flex items-center justify-between gap-2">
-                        {/* Left — tap to nav to doc */}
                         <button
                           type="button"
                           className="flex-1 text-left"
@@ -231,8 +275,6 @@ export function ProductDetailPage({ id }: Props) {
                             {move.remaining_qty} {product.unit} remaining
                           </p>
                         </button>
-
-                        {/* Right — Move Stock → global MoveStockSheet */}
                         <Button
                           size="sm"
                           variant="outline"
@@ -248,7 +290,6 @@ export function ProductDetailPage({ id }: Props) {
               </div>
             )}
 
-            {/* Completed — FULFILLED */}
             {completed.length > 0 && (
               <div className="space-y-2 pt-2">
                 <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
@@ -270,10 +311,7 @@ export function ProductDetailPage({ id }: Props) {
                             {move.contact ?? 'No contact'}
                           </p>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] h-5 bg-emerald-100/50 text-emerald-700 border-emerald-200"
-                        >
+                        <Badge variant="outline" className="text-[10px] h-5 bg-emerald-100/50 text-emerald-700 border-emerald-200">
                           Moved
                         </Badge>
                       </div>
@@ -288,10 +326,13 @@ export function ProductDetailPage({ id }: Props) {
       )}
 
       {/* ── Stock transaction ledger ──────────────────────────────────────── */}
-      <div className="px-4 pt-5 pb-2">
+      <div className="px-4 pt-5 pb-2 flex items-center justify-between">
         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
           Ledger History
         </h2>
+        {stockTxns.some(t => t.type === 'actual') && (
+          <p className="text-[10px] text-muted-foreground">Tap Moved entries to edit</p>
+        )}
       </div>
       <div className="px-4 space-y-2 pb-4">
         {stockTxns.length === 0 ? (
@@ -300,95 +341,61 @@ export function ProductDetailPage({ id }: Props) {
           </p>
         ) : (
           stockTxns.map(txn => (
-            <StockTransactionCard key={txn.id} txn={txn} />
+            <StockTransactionCard
+              key={txn.id}
+              txn={txn}
+              // ✅ Wire onEdit and onDelete — only rendered for actual type by the card
+              onEdit={handleEditStockTxn}
+              onDelete={handleDeletePrompt}
+            />
           ))
         )}
       </div>
 
-      {/* ── Edit product sheet — stays inline, not global ────────────────── */}
+      {/* ── Product edit sheet ────────────────────────────────────────────── */}
       <Sheet open={editSheet} onOpenChange={setEditSheet}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
           <SheetHeader className="mb-5">
             <SheetTitle className="text-left">Edit Product</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
-
             <div className="space-y-1.5">
               <Label>Name <span className="text-destructive">*</span></Label>
-              <Input
-                value={editName}
-                onChange={e => setEditName(e.target.value)}
-                className="h-11 rounded-xl"
-              />
+              <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 rounded-xl" />
             </div>
-
             <div className="space-y-1.5">
               <Label>Description</Label>
-              <Input
-                value={editDesc}
-                onChange={e => setEditDesc(e.target.value)}
-                className="h-11 rounded-xl"
-              />
+              <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="h-11 rounded-xl" />
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Rate (₹) <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  value={editRate}
-                  onChange={e => setEditRate(e.target.value)}
-                  className="h-11 rounded-xl"
-                />
+                <Input type="number" value={editRate} onChange={e => setEditRate(e.target.value)} className="h-11 rounded-xl" />
               </div>
               <div className="space-y-1.5">
                 <Label>Unit</Label>
-                <Input
-                  value={editUnit}
-                  onChange={e => setEditUnit(e.target.value)}
-                  className="h-11 rounded-xl"
-                />
+                <Input value={editUnit} onChange={e => setEditUnit(e.target.value)} className="h-11 rounded-xl" />
               </div>
             </div>
-
-            {/* Direct stock overwrite — no s.txn created */}
             <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800">
               <div className="space-y-1.5">
                 <Label className="flex justify-between items-center">
                   <span>Direct Stock Override</span>
-                  <span className="text-[10px] text-amber-700 font-normal">
-                    ⚠️ No transaction created
-                  </span>
+                  <span className="text-[10px] text-amber-700 font-normal">⚠️ No transaction created</span>
                 </Label>
-                <Input
-                  type="number"
-                  value={editStock}
-                  onChange={e => setEditStock(e.target.value)}
-                  className="h-11 rounded-xl bg-background"
-                />
+                <Input type="number" value={editStock} onChange={e => setEditStock(e.target.value)} className="h-11 rounded-xl bg-background" />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Min Stock Alert</Label>
-                <Input
-                  type="number"
-                  value={editMinStock}
-                  onChange={e => setEditMinStock(e.target.value)}
-                  className="h-11 rounded-xl"
-                />
+                <Input type="number" value={editMinStock} onChange={e => setEditMinStock(e.target.value)} className="h-11 rounded-xl" />
               </div>
               <div className="space-y-1.5">
                 <Label>HSN Code</Label>
-                <Input
-                  value={editHsn}
-                  onChange={e => setEditHsn(e.target.value)}
-                  className="h-11 rounded-xl"
-                />
+                <Input value={editHsn} onChange={e => setEditHsn(e.target.value)} className="h-11 rounded-xl" />
               </div>
             </div>
-
             <Button
               className="w-full h-12 mt-2 rounded-xl"
               onClick={handleUpdate}
@@ -399,6 +406,52 @@ export function ProductDetailPage({ id }: Props) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ✅ Stock txn edit — AdjustStockSheet in edit mode */}
+      <AdjustStockSheet
+        editTxn={editStockTxn}
+        onEditClose={() => setEditStockTxn(null)}
+      />
+
+      {/* ✅ Stock txn delete confirmation */}
+      <AlertDialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
+        <AlertDialogContent className="rounded-2xl max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-black">Delete Stock Transaction?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2.5 text-sm font-medium pt-2">
+                <p>
+                  Permanently delete this{' '}
+                  <strong className="text-foreground">
+                    {deleteTarget
+                      ? `${Number(deleteTarget.quantity) > 0 ? 'Stock In' : 'Stock Out'} of ${Math.abs(Number(deleteTarget.quantity))} ${product.unit}`
+                      : ''}
+                  </strong>
+                  {deleteTarget ? ` on ${fmtDate(deleteTarget.date)}` : ''}.
+                </p>
+                <p className="text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100 leading-tight">
+                  ⚠️ Product current stock will be reversed automatically.
+                </p>
+                {deleteTarget?.is_document_deleted === false && deleteTarget?.document && (
+                  <p className="text-muted-foreground bg-muted/50 p-2 rounded-lg border leading-tight text-xs">
+                    This transaction is linked to a document. The document record will remain — only this actual movement is deleted.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 gap-2">
+            <AlertDialogCancel className="h-11 rounded-xl">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={deleteMut.isPending}
+              className="h-11 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold"
+            >
+              {deleteMut.isPending ? 'Deleting...' : 'Yes, Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   )

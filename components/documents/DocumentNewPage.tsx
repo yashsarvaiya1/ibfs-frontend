@@ -28,20 +28,22 @@ import {
 } from 'lucide-react'
 import { fmtAmount } from '@/lib/utils'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
+// ✅ ADD: UploadInput + FilePreviewSheet
+import { UploadInput }      from '@/components/shared/common/UploadInput'
+import { FilePreviewSheet } from '@/components/shared/FilePreviewSheet'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined) => t ? DOC_LABELS[t] ?? t : ''
 
 // ── Document type constants ───────────────────────────────────────────────────
-const WITH_LINE_ITEMS:  DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotation', 'challan', 'cn', 'dn']
-const WITH_REFERENCE:   DocumentType[] = ['po', 'pi', 'quotation', 'cn', 'dn', 'challan', 'bill', 'invoice']
-const WITH_CONSIGNEE:   DocumentType[] = ['challan', 'invoice', 'bill']
-const WITH_PAYMENT:     DocumentType[] = ['bill', 'invoice', 'cn', 'dn']
-const IS_VOUCHER:       DocumentType[] = ['cash_payment_voucher', 'cash_receipt_voucher']
-const FAST_BILL_TYPES:  DocumentType[] = ['bill', 'invoice']
-const CONTACT_REQUIRED: DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher']
-const IS_EXPENSE_TYPE:  DocumentType[] = ['expense', 'interest']
-// FIX 3: only CN/DN auto-open the item picker on reference selection
+const WITH_LINE_ITEMS:     DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotation', 'challan', 'cn', 'dn']
+const WITH_REFERENCE:      DocumentType[] = ['po', 'pi', 'quotation', 'cn', 'dn', 'challan', 'bill', 'invoice']
+const WITH_CONSIGNEE:      DocumentType[] = ['challan', 'invoice', 'bill']
+const WITH_PAYMENT:        DocumentType[] = ['bill', 'invoice', 'cn', 'dn']
+const IS_VOUCHER:          DocumentType[] = ['cash_payment_voucher', 'cash_receipt_voucher']
+const FAST_BILL_TYPES:     DocumentType[] = ['bill', 'invoice']
+const CONTACT_REQUIRED:    DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher']
+const IS_EXPENSE_TYPE:     DocumentType[] = ['expense', 'interest']
 const AUTO_COPY_REF_TYPES: DocumentType[] = ['cn', 'dn']
 
 const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType>> = {
@@ -53,19 +55,8 @@ const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType>> = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface LineItemRow extends LineItem { key: string }
-
-interface ExpenseRow {
-  key:    string
-  name:   string
-  amount: string
-}
-
-interface InterestRow {
-  key:    string
-  name:   string
-  amount: string
-  type:   'charge' | 'discount'
-}
+interface ExpenseRow  { key: string; name: string; amount: string }
+interface InterestRow { key: string; name: string; amount: string; type: 'charge' | 'discount' }
 
 
 // ── Line Item Picker Sheet ────────────────────────────────────────────────────
@@ -199,26 +190,29 @@ export function DocumentNewPage() {
 
   const createDocument = useCreateDocument()
 
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const [contactId,         setContactId]         = useState(preContactId)
-  const [consigneeId,       setConsigneeId]        = useState('')
-  const [referenceId,       setReferenceId]        = useState('')
-  const [date,              setDate]               = useState(new Date().toISOString().split('T')[0])
-  const [dueDate,           setDueDate]            = useState('')
-  const [paymentTerms,      setPaymentTerms]       = useState('')
-  const [notes,             setNotes]              = useState('')
-  const [paymentAccountId,  setPaymentAccountId]   = useState('')
-  const [discount,          setDiscount]           = useState('')
-  const [fastAmount,        setFastAmount]         = useState('')
-  const [voucherAmount,     setVoucherAmount]      = useState('')
-  const [attachmentUrls,    setAttachmentUrls]     = useState<string[]>([])
-  const [currentLink,       setCurrentLink]        = useState('')
-  const [billMode,          setBillMode]           = useState<'fast' | 'detailed'>(
+  // ── Form state ─────────────────────────────────────────────────────────────
+  const [contactId,        setContactId]        = useState(preContactId)
+  const [consigneeId,      setConsigneeId]       = useState('')
+  const [referenceId,      setReferenceId]       = useState('')
+  const [date,             setDate]              = useState(new Date().toISOString().split('T')[0])
+  const [dueDate,          setDueDate]           = useState('')
+  const [paymentTerms,     setPaymentTerms]      = useState('')
+  const [notes,            setNotes]             = useState('')
+  const [paymentAccountId, setPaymentAccountId]  = useState('')
+  const [discount,         setDiscount]          = useState('')
+  const [fastAmount,       setFastAmount]        = useState('')
+  const [voucherAmount,    setVoucherAmount]     = useState('')
+  const [attachmentUrls,   setAttachmentUrls]    = useState<string[]>([])  // ✅ KEPT — now fed by UploadInput
+  const [billMode,         setBillMode]          = useState<'fast' | 'detailed'>(
     FAST_BILL_TYPES.includes(docType) ? 'fast' : 'detailed'
   )
-  const [showCharges,       setShowCharges]        = useState(false)
-  const [pickerOpen,        setPickerOpen]         = useState(false)
-  const [productPickerOpen, setProductPickerOpen]  = useState(false)
+  const [showCharges,       setShowCharges]       = useState(false)
+  const [pickerOpen,        setPickerOpen]        = useState(false)
+  const [productPickerOpen, setProductPickerOpen] = useState(false)
+
+  // ✅ ADD: FilePreviewSheet state
+  const [previewOpen,  setPreviewOpen]  = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
 
   const [lineItems, setLineItems] = useState<LineItemRow[]>([
     { key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null },
@@ -244,11 +238,10 @@ export function DocumentNewPage() {
   const refDocId = referenceId ? Number(referenceId) : undefined
   const { data: refDoc } = useDocument(refDocId as number)
 
-  // FIX 5: fetch linked doc for interest to inherit contact
   const linkedDocId = interestLinkedDoc ? Number(interestLinkedDoc) : undefined
   const { data: linkedDoc } = useDocument(linkedDocId as number)
 
-  // ── Computed flags ──────────────────────────────────────────────────────────
+  // ── Computed flags ─────────────────────────────────────────────────────────
   const isVoucher      = IS_VOUCHER.includes(docType)
   const hasLineItems   = WITH_LINE_ITEMS.includes(docType)
   const hasReference   = WITH_REFERENCE.includes(docType)
@@ -261,7 +254,7 @@ export function DocumentNewPage() {
     || IS_VOUCHER.includes(docType)
     || isExpenseType
 
-  // ── Interest CF preview ─────────────────────────────────────────────────────
+  // ── Interest CF preview ────────────────────────────────────────────────────
   const interestNet = useMemo(() => {
     if (docType !== 'interest') return 0
     return interestRows.reduce((s, r) => {
@@ -272,7 +265,7 @@ export function DocumentNewPage() {
 
   const interestCFImpact = interestDirection === 'pay' ? interestNet : -interestNet
 
-  // ── Select options ──────────────────────────────────────────────────────────
+  // ── Select options ─────────────────────────────────────────────────────────
   const contactOptions: SearchableSelectOption[] = contacts.map(c => ({
     value: String(c.id), label: getContactDisplayName(c),
     sublabel: c.phone, badge: c.gstin ? 'GST' : undefined,
@@ -311,9 +304,7 @@ export function DocumentNewPage() {
     })),
   ]
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
-
-  // FIX 3: only auto-open picker for CN/DN — for others, use the "Copy Items" button
+  // ── Handlers ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!refDoc) return
     if (refDoc.contact) setContactId(String(refDoc.contact))
@@ -321,9 +312,8 @@ export function DocumentNewPage() {
       setLineItems([{ key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
       setPickerOpen(true)
     }
-  }, [refDoc?.id])  // ← stable dep: only re-trigger when a different refDoc is loaded
+  }, [refDoc?.id])
 
-  // FIX 5: auto-populate contact from linked interest doc
   useEffect(() => {
     if (!linkedDoc) return
     if (linkedDoc.contact) setContactId(String(linkedDoc.contact))
@@ -345,13 +335,6 @@ export function DocumentNewPage() {
       return [...filtered, ...newItems]
     })
   }
-  const handleAddAttachment = () => {
-    if (!currentLink.trim()) return
-    setAttachmentUrls(prev => [...prev, currentLink.trim()])
-    setCurrentLink('')
-  }
-  const handleRemoveAttachment = (idx: number) =>
-    setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))
 
   const addLineItem    = () => setLineItems(p => [...p, { key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
   const removeLineItem = (key: string) => setLineItems(p => p.filter(l => l.key !== key))
@@ -392,7 +375,7 @@ export function DocumentNewPage() {
   const updateTax = (i: number, f: keyof Tax, v: string) =>
     setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
 
-  // ── Totals ───────────────────────────────────────────────────────────────────
+  // ── Totals ─────────────────────────────────────────────────────────────────
   const lineTotal    = lineItems.reduce((s, l) => s + Number(l.amount), 0)
   const expenseTotal = expenseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
   const chargeTotal  = charges.reduce((s, c) => s + Number(c.amount), 0)
@@ -401,29 +384,29 @@ export function DocumentNewPage() {
   const taxTotal     = taxes.reduce((s, t) => s + (taxBase * Number(t.percentage) / 100), 0)
   const grandTotal   = lineTotal + chargeTotal - discountAmt + taxTotal
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (CONTACT_REQUIRED.includes(docType) && !contactId) {
       toast.error('Select a contact'); return
     }
 
     const payload: DocumentCreate = {
-      type: docType,
-      contact: contactId ? Number(contactId) : undefined,
+      type:            docType,
+      contact:         contactId  ? Number(contactId)  : undefined,
       date,
-      due_date:      dueDate       || undefined,
-      payment_terms: paymentTerms  || undefined,
-      notes:         notes         || undefined,
-      reference:     referenceId   ? Number(referenceId) : undefined,
-      consignee:     consigneeId   ? Number(consigneeId) : undefined,
-      discount:      discountAmt,
-      attachment_urls: attachmentUrls,
+      due_date:        dueDate       || undefined,
+      payment_terms:   paymentTerms  || undefined,
+      notes:           notes         || undefined,
+      reference:       referenceId   ? Number(referenceId) : undefined,
+      consignee:       consigneeId   ? Number(consigneeId) : undefined,
+      discount:        discountAmt,
+      attachment_urls: attachmentUrls,   // ✅ populated by UploadInput
     }
 
     if (docType === 'expense') {
       const validRows = expenseRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one entry with a name and amount'); return }
-      if (!paymentAccountId) { toast.error('Select a payment account'); return }
+      if (!paymentAccountId)      { toast.error('Select a payment account'); return }
       payload.line_items      = validRows.map(r => ({ name: r.name, amount: Number(r.amount) }))
       payload.total_amount    = expenseTotal
       payload.payment_account = Number(paymentAccountId)
@@ -431,8 +414,7 @@ export function DocumentNewPage() {
     } else if (docType === 'interest') {
       const validRows = interestRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one interest entry'); return }
-      if (!paymentAccountId) { toast.error('Select a payment account'); return }
-      // FIX 6: standalone interest uses interest_lines, not line_items
+      if (!paymentAccountId)      { toast.error('Select a payment account'); return }
       payload.interest_lines     = validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type }))
       payload.total_amount       = Math.abs(interestCFImpact)
       payload.payment_account    = Number(paymentAccountId)
@@ -440,9 +422,8 @@ export function DocumentNewPage() {
       if (interestLinkedDoc) payload.reference = Number(interestLinkedDoc)
 
     } else if (isVoucher) {
-      // FIX 1: vouchers require amount + payment account
       if (!voucherAmount || Number(voucherAmount) === 0) { toast.error('Enter amount'); return }
-      if (!paymentAccountId) { toast.error('Select a payment account'); return }
+      if (!paymentAccountId)                             { toast.error('Select a payment account'); return }
       payload.total_amount    = voucherAmount
       payload.payment_account = Number(paymentAccountId)
 
@@ -475,41 +456,30 @@ export function DocumentNewPage() {
     }
   }
 
-  // ── Attachments UI ───────────────────────────────────────────────────────────
+  // ── ✅ REPLACED: Attachments section now uses UploadInput ─────────────────
+  // Removed: currentLink state, handleAddAttachment, handleRemoveAttachment
+  // Now: UploadInput handles file upload to /api/upload/file/, returns relative paths
   const renderAttachmentsSection = () => (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <Label className="flex items-center gap-1.5">
         <LinkIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        Attachments <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>
+        Attachments
+        <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>
       </Label>
-      <div className="flex gap-2">
-        <Input placeholder="https://drive.google.com/... or paste link"
-          value={currentLink} onChange={e => setCurrentLink(e.target.value)}
-          className="h-11 rounded-xl flex-1"
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAttachment() } }} />
-        <Button variant="secondary" className="h-11 px-4 rounded-xl shrink-0 font-semibold"
-          onClick={handleAddAttachment} disabled={!currentLink.trim()}>Add</Button>
-      </div>
-      {attachmentUrls.length > 0 && (
-        <div className="space-y-2 mt-2">
-          {attachmentUrls.map((url, index) => (
-            <div key={index} className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/20">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <FileText className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-sm truncate font-medium text-foreground/80">{url}</span>
-              </div>
-              <button onClick={() => handleRemoveAttachment(index)}
-                className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <UploadInput
+        value={attachmentUrls}
+        onChange={setAttachmentUrls}
+        context="document"
+        maxFiles={10}
+        onPreview={(idx) => {
+          setPreviewIndex(idx)
+          setPreviewOpen(true)
+        }}
+      />
     </div>
   )
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="px-4 py-4 pb-10 space-y-6">
 
@@ -708,7 +678,6 @@ export function DocumentNewPage() {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 CF Impact Preview
               </p>
-
               {interestRows.filter(r => r.name && Number(r.amount) > 0).map((r, i) => {
                 const amt    = Number(r.amount)
                 const net    = r.type === 'charge' ? amt : -amt
@@ -728,9 +697,7 @@ export function DocumentNewPage() {
                   </div>
                 )
               })}
-
               <Separator />
-
               <div className="flex justify-between items-center font-semibold text-sm">
                 <span>Net CF Change</span>
                 <span className={interestCFImpact > 0 ? 'text-red-500' : 'text-green-600'}>
@@ -752,7 +719,6 @@ export function DocumentNewPage() {
               placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." clearable />
           </div>
 
-          {/* FIX 5: Link Document — auto-fills contact when selected */}
           <div className="space-y-1.5">
             <Label>
               Link Document
@@ -809,7 +775,10 @@ export function DocumentNewPage() {
               {' '}to add line items &amp; track inventory.
             </p>
           </div>
+
+          {/* ✅ Fast mode: Upload attachments (key USP from spec — 1-minute bill with photos) */}
           {renderAttachmentsSection()}
+
           {showPaymentAccount && (
             <div className="space-y-1.5">
               <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span></Label>
@@ -823,7 +792,6 @@ export function DocumentNewPage() {
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* VOUCHER MODE                                                          */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* FIX 1 & 2: vouchers need amount + payment account + notes + attachments */}
       {!isExpenseType && isVoucher && (
         <div className="space-y-6">
           <div className="space-y-1.5">
@@ -1084,13 +1052,25 @@ export function DocumentNewPage() {
         </Button>
       </div>
 
-      {/* Pickers */}
+      {/* ── Pickers ─────────────────────────────────────────────────────────── */}
       {(refDoc?.line_items?.length ?? 0) > 0 && (
         <LineItemPickerSheet open={pickerOpen} items={refDoc!.line_items!}
           onConfirm={handlePickerConfirm} onClose={() => setPickerOpen(false)} />
       )}
       <ProductMultiPickerSheet open={productPickerOpen} products={products}
         onConfirm={handleProductPickerConfirm} onClose={() => setProductPickerOpen(false)} />
+
+      {/* ✅ ADD: FilePreviewSheet — opens when user taps a thumbnail in UploadInput */}
+      <FilePreviewSheet
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        files={attachmentUrls}
+        initialIndex={previewIndex}
+        onRemove={(path) => {
+          setAttachmentUrls(prev => prev.filter(p => p !== path))
+          if (previewIndex >= attachmentUrls.length - 1) setPreviewIndex(0)
+        }}
+      />
     </div>
   )
 }

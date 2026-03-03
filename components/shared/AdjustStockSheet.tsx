@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/uiStore'
-import { useAdjustStock } from '@/hooks/useProduct'
+import {
+  useGlobalAdjustStock,
+  useUpdateStockTransaction,
+} from '@/hooks/useStock'
 import { useProduct } from '@/hooks/useProduct'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -10,8 +13,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import { toast } from 'sonner'
+import type { StockTransaction } from '@/models/stock-transaction'
 
-export function AdjustStockSheet() {
+
+interface AdjustStockSheetProps {
+  editTxn?:     StockTransaction | null
+  onEditClose?: () => void
+}
+
+
+export function AdjustStockSheet({ editTxn, onEditClose }: AdjustStockSheetProps = {}) {
   const {
     adjustStockSheetOpen,
     adjustStockProductId,
@@ -19,50 +30,98 @@ export function AdjustStockSheet() {
     closeAdjustStockSheet,
   } = useUIStore()
 
-  const productId = adjustStockProductId ?? 0
 
+  // ── Mode resolution ─────────────────────────────────────────────────────────
+  const isEditMode = !!editTxn
+  const isOpen     = isEditMode ? !!editTxn : adjustStockSheetOpen
+
+  // ✅ Fix: collapse null → 0 so productId is always number
+  const productId: number = (isEditMode ? editTxn!.product : adjustStockProductId) ?? 0
+
+
+  // ── Hooks ───────────────────────────────────────────────────────────────────
   const { data: product } = useProduct(productId)
-  const adjustMut         = useAdjustStock(productId)
+  const adjustMut         = useGlobalAdjustStock()
+  const updateMut         = useUpdateStockTransaction(editTxn?.id ?? 0)
 
+  const isPending = adjustMut.isPending || updateMut.isPending
+
+
+  // ── Form state ───────────────────────────────────────────────────────────────
   const [qty,   setQty]   = useState('')
   const [rate,  setRate]  = useState('')
   const [notes, setNotes] = useState('')
   const [date,  setDate]  = useState('')
 
+
+  // ── Pre-fill on open ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (adjustStockSheetOpen) {
-      setQty(''); setRate(''); setNotes('')
+    if (isEditMode && editTxn) {
+      setQty(Math.abs(Number(editTxn.quantity)).toString())
+      setRate(editTxn.rate?.toString() ?? '')
+      setNotes(editTxn.notes ?? '')
+      setDate(editTxn.date)
+    } else if (adjustStockSheetOpen) {
+      setQty('')
+      setRate('')
+      setNotes('')
       setDate(new Date().toISOString().split('T')[0])
     }
-  }, [adjustStockSheetOpen])
+  }, [isEditMode, editTxn, adjustStockSheetOpen])
 
-  const isAdd        = adjustStockMode === 'add'
-  const currentStock = Number(product?.current_stock ?? 0)
-  const delta        = Number(qty) || 0
-  const afterStock   = isAdd ? currentStock + delta : currentStock - delta
+
+  // ── Direction ────────────────────────────────────────────────────────────────
+  const isAdd = isEditMode
+    ? Number(editTxn!.quantity) > 0
+    : adjustStockMode === 'add'
+
+  const delta      = Number(qty) || 0
+  const afterStock = isAdd
+    ? Number(product?.current_stock ?? 0) + delta
+    : Number(product?.current_stock ?? 0) - delta
+
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+  const handleClose = () => {
+    if (isEditMode) onEditClose?.()
+    else closeAdjustStockSheet()
+  }
 
   const handleSubmit = async () => {
     if (!qty || Number(qty) <= 0) { toast.error('Enter a valid quantity'); return }
+    // ✅ Fix: guard against productId = 0 (no product selected / sheet not ready)
+    if (!productId)               { toast.error('No product selected');    return }
 
-    // Sign: add = positive, remove = negative
     const signed = isAdd ? qty : `-${qty}`
 
     try {
-      await adjustMut.mutateAsync({
-        quantity: signed,
-        rate:     rate  || undefined,
-        notes:    notes || undefined,
-        date,
-      })
-      toast.success(`Stock ${isAdd ? 'added' : 'removed'}`)
-      closeAdjustStockSheet()
+      if (isEditMode) {
+        await updateMut.mutateAsync({
+          quantity: signed,
+          rate:     rate  || undefined,
+          notes:    notes || undefined,
+          date,
+        })
+        toast.success('Stock transaction updated')
+      } else {
+        await adjustMut.mutateAsync({
+          product:  productId,   // ✅ now guaranteed number, never null
+          quantity: signed,
+          rate:     rate  || undefined,
+          notes:    notes || undefined,
+          date,
+        })
+        toast.success(`Stock ${isAdd ? 'added' : 'removed'}`)
+      }
+      handleClose()
     } catch {
-      toast.error('Stock adjustment failed')
+      toast.error(isEditMode ? 'Update failed' : 'Stock adjustment failed')
     }
   }
 
+
   return (
-    <Sheet open={adjustStockSheetOpen} onOpenChange={(open) => !open && closeAdjustStockSheet()}>
+    <Sheet open={isOpen} onOpenChange={(v) => { if (!v) handleClose() }}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
         <SheetHeader className="mb-4">
           <SheetTitle className="text-left flex items-center gap-2">
@@ -70,12 +129,16 @@ export function AdjustStockSheet() {
               ? <TrendingUp  className="h-4 w-4 text-emerald-600" />
               : <TrendingDown className="h-4 w-4 text-red-500" />
             }
-            {isAdd ? 'Add Stock' : 'Remove Stock'}
+            {isEditMode
+              ? `Edit Stock ${isAdd ? 'In' : 'Out'}`
+              : isAdd ? 'Add Stock' : 'Remove Stock'
+            }
           </SheetTitle>
         </SheetHeader>
 
         <div className="space-y-4">
-          {/* Product + current stock context */}
+
+          {/* Product context */}
           {product && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40">
               <div>
@@ -95,10 +158,25 @@ export function AdjustStockSheet() {
             </div>
           )}
 
+          {/* Edit mode: direction locked info badge */}
+          {isEditMode && (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border ${
+              isAdd
+                ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400'
+                : 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-400'
+            }`}>
+              {isAdd
+                ? <TrendingUp  className="h-3.5 w-3.5 shrink-0" />
+                : <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+              }
+              Direction locked — editing an existing {isAdd ? 'Stock In' : 'Stock Out'} transaction
+            </div>
+          )}
+
           {/* Quantity */}
           <div className="space-y-1.5">
             <Label>
-              Quantity ({product?.unit})
+              Quantity ({product?.unit ?? 'units'})
               <span className="text-destructive ml-1">*</span>
             </Label>
             <Input
@@ -112,7 +190,7 @@ export function AdjustStockSheet() {
             />
           </div>
 
-          {/* After preview */}
+          {/* Stock after preview */}
           {delta > 0 && product && (
             <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10">
               <span>Stock after</span>
@@ -125,13 +203,13 @@ export function AdjustStockSheet() {
           {/* Rate */}
           <div className="space-y-1.5">
             <Label>
-              Rate per {product?.unit}
+              Rate per {product?.unit ?? 'unit'}
               <span className="text-xs text-muted-foreground ml-1">(optional)</span>
             </Label>
             <Input
               type="number"
               inputMode="decimal"
-              placeholder={product?.rate ?? '0.00'}
+              placeholder={product?.rate?.toString() ?? '0.00'}
               value={rate}
               onChange={e => setRate(e.target.value)}
             />
@@ -140,12 +218,19 @@ export function AdjustStockSheet() {
           {/* Date */}
           <div className="space-y-1.5">
             <Label>Date</Label>
-            <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            <Input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+            />
           </div>
 
           {/* Notes */}
           <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            <Label>
+              Notes
+              <span className="text-xs text-muted-foreground ml-1">(optional)</span>
+            </Label>
             <Input
               placeholder="e.g. Physical count correction"
               value={notes}
@@ -156,13 +241,16 @@ export function AdjustStockSheet() {
           <Button
             className="w-full h-12"
             onClick={handleSubmit}
-            disabled={adjustMut.isPending}
+            disabled={isPending}
           >
-            {adjustMut.isPending
+            {isPending
               ? 'Saving...'
-              : `Confirm ${isAdd ? 'Add' : 'Remove'}`
+              : isEditMode
+                ? 'Save Changes'
+                : `Confirm ${isAdd ? 'Add' : 'Remove'}`
             }
           </Button>
+
         </div>
       </SheetContent>
     </Sheet>

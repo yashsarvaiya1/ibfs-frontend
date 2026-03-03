@@ -12,6 +12,7 @@ import { useDeleteTransaction } from '@/hooks/useTransaction'
 import { useSettings } from '@/hooks/useSettings'
 import { useAccounts } from '@/hooks/useAccount'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
+import { getMediaUrl, isImagePath, isPdfPath, getFileName } from '@/lib/media'   // ✅ ADD
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -32,25 +33,31 @@ import {
 import {
   MoreVertical, Banknote, Package,
   Trash2, ExternalLink, TrendingUp, TrendingDown,
-  Plus, X, Link as LinkIcon, Printer, Edit
+  Plus, X, FileText, Printer, Edit
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { MoveStockSheet } from './MoveStockSheet'
-import { TransactionCard } from '@/components/shared/TransactionCard'
+import { MoveStockSheet }     from './MoveStockSheet'
+import { TransactionCard }    from '@/components/shared/TransactionCard'
+import { FilePreviewSheet }   from '@/components/shared/FilePreviewSheet'    // ✅ ADD
+import Image from 'next/image'                                                // ✅ ADD
+
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined) => t ? (DOC_LABELS[t] ?? t) : ''
 
+
 interface InterestLine { name: string; amount: string; type: 'charge' | 'discount' }
+
 
 const PAYMENT_DOC_TYPES = new Set([
   'bill', 'invoice', 'cn', 'dn',
   'cash_payment_voucher', 'cash_receipt_voucher'
 ])
-// Outgoing = we pay them (Bill, CN, Cash Payment Voucher)
 const OUTGOING_TYPES = new Set(['bill', 'cn', 'cash_payment_voucher'])
 
+
 interface Props { id: number }
+
 
 export function DocumentDetailPage({ id }: Props) {
   const router       = useRouter()
@@ -70,6 +77,10 @@ export function DocumentDetailPage({ id }: Props) {
   const [moveStockSheet, setMoveStockSheet] = useState(false)
   const [deleteSheet,    setDeleteSheet]    = useState(false)
 
+  // ✅ ADD: attachment preview state
+  const [previewOpen,  setPreviewOpen]  = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
+
   const [payAmount,     setPayAmount]     = useState('')
   const [payAccount,    setPayAccount]    = useState('')
   const [payDate,       setPayDate]       = useState(new Date().toISOString().split('T')[0])
@@ -79,7 +90,6 @@ export function DocumentDetailPage({ id }: Props) {
     { name: '', amount: '', type: 'charge' }
   ])
 
-  // Spec: exactly 2 strategies — 'revert' and 'manual'
   const [deleteStrategy, setDeleteStrategy] = useState<DeleteStrategy>('revert')
 
   useEffect(() => {
@@ -91,7 +101,6 @@ export function DocumentDetailPage({ id }: Props) {
   const updateInterestLine = (i: number, f: keyof InterestLine, v: string) =>
     setInterestLines(p => p.map((l, idx) => idx === i ? { ...l, [f]: v } : l))
 
-  // Per spec: net_interest = sum(charges) − sum(discounts)
   const interestNet = interestLines.reduce((s, l) => {
     const amt = Number(l.amount) || 0
     return s + (l.type === 'charge' ? amt : -amt)
@@ -121,7 +130,6 @@ export function DocumentDetailPage({ id }: Props) {
   const hasStock      = (stockPreview?.length ?? 0) > 0
   const isPayableType = PAYMENT_DOC_TYPES.has(doc.type)
 
-  // Per spec: Original Debt Settled = payment − net_interest
   const payAmountNum        = Number(payAmount) || 0
   const originalDebtSettled = payAmountNum - interestNet
 
@@ -264,18 +272,54 @@ export function DocumentDetailPage({ id }: Props) {
           </div>
         </div>
 
+        {/* ✅ REPLACED: Rich attachment grid — tap to preview via FilePreviewSheet */}
         {attachmentUrls.length > 0 && (
-          <div className="mt-4 flex flex-col gap-2">
-            {attachmentUrls.map((url, idx) => (
-              <Button
-                key={idx} variant="outline" size="sm"
-                className="w-full h-10 rounded-xl bg-primary/5 text-primary border-primary/20 hover:bg-primary/10"
-                onClick={() => window.open(url, '_blank')}
-              >
-                <LinkIcon className="h-4 w-4 mr-2" />
-                View Attached File {attachmentUrls.length > 1 ? `#${idx + 1}` : ''}
-              </Button>
-            ))}
+          <div className="mt-4 space-y-2">
+            {/* Image thumbnails grid */}
+            {attachmentUrls.some(p => isImagePath(p)) && (
+              <div className="flex flex-wrap gap-2">
+                {attachmentUrls.map((path, idx) => {
+                  if (!isImagePath(path)) return null
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => { setPreviewIndex(idx); setPreviewOpen(true) }}
+                      className="w-20 h-20 rounded-xl overflow-hidden border border-border/60 bg-muted shrink-0 hover:opacity-90 transition-opacity"
+                    >
+                      <Image
+                        src={getMediaUrl(path)}    // ✅ absolute URL
+                        alt={`attachment ${idx + 1}`}
+                        width={80}
+                        height={80}
+                        className="w-full h-full object-cover"
+                        unoptimized
+                      />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Non-image file rows (PDFs, docs) */}
+            {attachmentUrls.map((path, idx) => {
+              if (isImagePath(path)) return null
+              const isPdf = isPdfPath(path)
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => { setPreviewIndex(idx); setPreviewOpen(true) }}
+                  className="w-full flex items-center gap-3 h-11 px-3 rounded-xl border border-border/60 bg-muted/30 hover:bg-muted/60 transition-colors text-left"
+                >
+                  <FileText className={cn('h-4 w-4 shrink-0', isPdf ? 'text-red-500' : 'text-primary')} />
+                  <span className="text-sm font-medium text-foreground/80 truncate flex-1">
+                    {getFileName(path)}
+                  </span>
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
@@ -629,20 +673,17 @@ export function DocumentDetailPage({ id }: Props) {
                   <Plus className="h-3 w-3" /> Add Another Line
                 </Button>
 
-                {/* ── Payment Preview per spec ─────────────────────────── */}
                 {payAmountNum > 0 && (
                   <div className="pt-3 border-t space-y-2 text-sm">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       Payment Preview
                     </p>
-
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">
                         {isOutgoing ? 'Payment Sent' : 'Payment Received'}
                       </span>
                       <span className="font-medium">{fmtAmount(payAmountNum)}</span>
                     </div>
-
                     {interestLines.filter(l => l.name && Number(l.amount) > 0).map((l, i) => (
                       <div key={i} className="flex justify-between items-center">
                         <span className="text-muted-foreground flex items-center gap-1.5">
@@ -664,10 +705,7 @@ export function DocumentDetailPage({ id }: Props) {
                         </span>
                       </div>
                     ))}
-
                     <Separator />
-
-                    {/* Per spec: Original Debt Settled = payment − net interest */}
                     <div className="flex justify-between items-center font-semibold">
                       <span>Original Debt Settled</span>
                       <span className="text-primary">
@@ -705,7 +743,7 @@ export function DocumentDetailPage({ id }: Props) {
         />
       )}
 
-      {/* ── Delete Sheet — exactly 2 strategies per spec ──────────────────── */}
+      {/* ── Delete Sheet ──────────────────────────────────────────────────── */}
       <Sheet open={deleteSheet} onOpenChange={setDeleteSheet}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
@@ -717,18 +755,17 @@ export function DocumentDetailPage({ id }: Props) {
             <p className="text-[13px] font-medium text-muted-foreground/80 leading-relaxed bg-muted/30 p-3 rounded-xl border border-muted">
               Choose how to handle existing transactions linked to this document.
             </p>
-
             <div className="space-y-2">
               {([
                 {
-                  value:  'revert' as DeleteStrategy,
-                  label:  'Revert & Delete',
-                  desc:   'Hard-delete all linked f.txns and s.txns, reverse account and stock balances',
+                  value: 'revert' as DeleteStrategy,
+                  label: 'Revert & Delete',
+                  desc:  'Hard-delete all linked f.txns and s.txns, reverse account and stock balances',
                 },
                 {
-                  value:  'manual' as DeleteStrategy,
-                  label:  'Keep as Manual',
-                  desc:   'Delete record txns only — keep actual txns intact as standalone entries with document reference preserved',
+                  value: 'manual' as DeleteStrategy,
+                  label: 'Keep as Manual',
+                  desc:  'Delete record txns only — keep actual txns intact as standalone entries with document reference preserved',
                 },
               ]).map(opt => (
                 <div
@@ -753,7 +790,6 @@ export function DocumentDetailPage({ id }: Props) {
                 </div>
               ))}
             </div>
-
             <Button
               variant="destructive"
               className="w-full h-12 text-md font-bold rounded-xl mt-2 shadow-lg shadow-destructive/20"
@@ -765,9 +801,19 @@ export function DocumentDetailPage({ id }: Props) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ✅ ADD: FilePreviewSheet — read-only on detail page (no onRemove) */}
+      <FilePreviewSheet
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        files={attachmentUrls}
+        initialIndex={previewIndex}
+      />
+
     </div>
   )
 }
+
 
 function DocDetailSkeleton() {
   return (

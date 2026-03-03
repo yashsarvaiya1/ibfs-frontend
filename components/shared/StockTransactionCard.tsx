@@ -4,16 +4,16 @@ import type { StockTransaction } from '@/models/stock-transaction'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Trash2, PackagePlus, PackageMinus, FileText } from 'lucide-react'
+import { Trash2, Edit, PackagePlus, PackageMinus, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface StockTransactionCardProps {
   txn:          StockTransaction
-  // Display strings resolved by the parent from stores/other queries — NOT from txn fields
-  productName?: string   // resolved from products store using txn.product
-  documentRef?: string   // e.g. "BILL-0001" — resolved from documents store using txn.document
-  contactName?: string   // resolved from documents/contacts store
+  productName?: string
+  documentRef?: string
+  contactName?: string
   onDelete?:    (id: number) => void
+  onEdit?:      (id: number) => void   // ← ADD THIS
 }
 
 export function StockTransactionCard({
@@ -22,8 +22,10 @@ export function StockTransactionCard({
   documentRef,
   contactName,
   onDelete,
+  onEdit,
 }: StockTransactionCardProps) {
   const isPositive = Number(txn.quantity) > 0
+  const canAct     = txn.type === 'actual'
 
   const formattedDate = new Date(txn.date).toLocaleDateString('en-IN', {
     month: 'short', day: '2-digit', year: 'numeric',
@@ -56,7 +58,6 @@ export function StockTransactionCard({
               >
                 {txn.type === 'record' ? 'Pending' : 'Moved'}
               </Badge>
-              {/* is_document_deleted — computed by backend, never stored */}
               {txn.is_document_deleted && (
                 <Badge variant="destructive" className="text-[10px] h-4">
                   Doc Deleted
@@ -75,14 +76,11 @@ export function StockTransactionCard({
             {isPositive ? '+' : ''}{Number(txn.quantity).toString()}
           </span>
           {txn.rate && (
-            <p className="text-[11px] text-muted-foreground">
-              @ {txn.rate}
-            </p>
+            <p className="text-[11px] text-muted-foreground">@ {txn.rate}</p>
           )}
         </div>
       </div>
 
-      {/* Meta row — only rendered when there's something to show */}
       {(productName || txn.document || contactName) && (
         <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-border/50 text-[11px] text-muted-foreground">
           {productName && (
@@ -108,16 +106,27 @@ export function StockTransactionCard({
         <p className="text-xs italic text-muted-foreground mt-2">"{txn.notes}"</p>
       )}
 
-      {onDelete && txn.type === 'actual' && (
-        <div className="flex justify-end mt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => onDelete(txn.id)}
-          >
-            <Trash2 className="h-3 w-3 mr-1" /> Delete
-          </Button>
+      {/* Actions — only for actual type */}
+      {canAct && (onEdit || onDelete) && (
+        <div className="flex justify-end gap-2 mt-2">
+          {onEdit && (
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => onEdit(txn.id)}
+            >
+              <Edit className="h-3 w-3 mr-1" /> Edit
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => onDelete(txn.id)}
+            >
+              <Trash2 className="h-3 w-3 mr-1" /> Delete
+            </Button>
+          )}
         </div>
       )}
     </Card>
