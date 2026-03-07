@@ -1,31 +1,22 @@
 // @/lib/media.ts
+import { env } from "next-runtime-env"
 
-/**
- * Media lives at the Django *origin* — never under /api.
- * NEXT_PUBLIC_API_URL may be "http://localhost:8000/api"
- * We extract only the origin: "http://localhost:8000"
- */
 function getOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
   try {
-    return new URL(raw).origin   // strips /api, trailing slashes, etc.
+    return new URL(raw).origin
   } catch {
-    return raw.replace(/\/+$/, '')
+    return raw.replace(/\/+$/, '').replace(/\/api$/, '')
   }
 }
 
-const ORIGIN = getOrigin()
-
-/**
- * Converts a stored relative path → full Django media URL.
- * "uploads/documents/abc.pdf" → "http://localhost:8000/media/uploads/documents/abc.pdf"
- * Already-absolute URLs are returned as-is.
- */
 export function getMediaUrl(path: string | null | undefined): string {
   if (!path) return ''
   if (path.startsWith('http://') || path.startsWith('https://')) return path
+  
+  const origin = getOrigin()
   const clean = path.startsWith('/') ? path.slice(1) : path
-  return `${ORIGIN}/media/${clean}`
+  return `${origin}/media/${clean}`
 }
 
 export function isImagePath(path: string): boolean {

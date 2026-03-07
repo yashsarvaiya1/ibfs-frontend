@@ -1,0 +1,30 @@
+# --- Docker Hub Images ---
+BACKEND_IMAGE=yashsarvaiya2002/ibfs-backend:latest
+FRONTEND_IMAGE=yashsarvaiya2002/ibfs-frontend:latest
+# --- Database Config ---
+DB_NAME=ibfs_db
+DB_USER=postgres
+DB_PASSWORD=postgres_secure_password
+DB_PORT=5432
+
+# --- Django Settings ---
+DEBUG=False
+SECRET_KEY=change-me-to-something-very-secret
+ALLOWED_HOSTS=localhost,127.0.0.1,backend
+CORS_ALLOWED_ORIGINS=http://localhost:4000,http://127.0.0.1:4000
+
+# --- Superuser Credentials ---
+DJANGO_SUPERUSER_USERNAME=admin
+DJANGO_SUPERUSER_PASSWORD=admin123
+DJANGO_SUPERUSER_EMAIL=admin@ibfs.com
+
+# --- Frontend Build Args & Runtime ---
+# Note: Use 'backend' as the host because they are in the same docker network
+NEXT_PUBLIC_API_URL=http://localhost:9000/api
+NEXT_PUBLIC_MEDIA_HOSTS=localhost:9000
+NEXT_PUBLIC_MEDIA_PROTOCOL=http
+
+# --- Upload Settings ---
+UPLOAD_IMAGE_QUALITY=75
+UPLOAD_MAX_IMAGE_SIZE_MB=10
+UPLOAD_MAX_PDF_SIZE_MB=20

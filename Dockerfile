@@ -5,12 +5,7 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
-# Updated syntax: ENV KEY=VALUE
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_MEDIA_HOSTS
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ENV NEXT_PUBLIC_MEDIA_HOSTS=${NEXT_PUBLIC_MEDIA_HOSTS}
-
+# Variables are no longer baked in here
 RUN npm run build
 
 FROM node:20-alpine AS runner
