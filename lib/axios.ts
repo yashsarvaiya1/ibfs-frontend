@@ -1,14 +1,15 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/authStore'
+import { env } from 'next-runtime-env' // Import this
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api',
+  // Use env() instead of process.env
+  baseURL: env('NEXT_PUBLIC_API_URL') || 'http://localhost:8000/api',
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// Read credentials from in-memory Zustand store — never localStorage
 api.interceptors.request.use((config) => {
   const credentials = useAuthStore.getState().credentials
   if (credentials) {
@@ -17,14 +18,11 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 globally — clear auth, stop all retries, redirect to login
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       const { credentials, logout } = useAuthStore.getState()
-
-      // Only logout + redirect if we were actually logged in
       if (credentials) {
         logout()
         if (typeof window !== 'undefined') {
@@ -32,7 +30,7 @@ api.interceptors.response.use(
         }
       }
     }
-    return Promise.reject(error)    // always reject, never retry
+    return Promise.reject(error)
   }
 )
 
