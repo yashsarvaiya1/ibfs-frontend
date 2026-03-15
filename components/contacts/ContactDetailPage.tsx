@@ -34,17 +34,17 @@ import {
   DropdownMenu, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ContactEditSheet }  from './ContactEditSheet'
-import { SendReceiveSheet }  from './SendReceiveSheet'
-import { ContactLedger }     from './ContactLedger'
-import { TransactionCard }   from '@/components/shared/TransactionCard'   // ← ADD
-import { DOC_TYPE_LABELS }   from '@/models/document'
+import { ContactEditSheet } from './ContactEditSheet'
+import { SendReceiveSheet } from './SendReceiveSheet'
+import { ContactLedger }    from './ContactLedger'
+import { TransactionCard }  from '@/components/shared/TransactionCard'
+import { DOC_TYPE_LABELS }  from '@/models/document'
 import { SearchableSelect, SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 import { toast } from 'sonner'
 
 
-const DOC_LABELS   = DOC_TYPE_LABELS as Record<string, string>
-const getDocLabel  = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
+const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
+const getDocLabel = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
 
 
 function computeRunningCF(openingBalance: number, txns: FinancialTransaction[]): number {
@@ -74,8 +74,6 @@ export function ContactDetailPage({ id }: Props) {
 
   const [editOpen,  setEditOpen]  = useState(false)
   const [activeTab, setActiveTab] = useState<'ledger' | 'docs'>('ledger')
-
-  // ── Ledger view mode toggle ──────────────────────────────────────────────────
   const [ledgerView, setLedgerView] = useState<'ledger' | 'list'>('ledger')
 
   const [srSheet, setSrSheet] = useState<{ open: boolean; mode: 'send' | 'receive' }>({
@@ -101,14 +99,13 @@ export function ContactDetailPage({ id }: Props) {
     if (contact) setPageTitle(getContactDisplayName(contact))
   }, [contact, setPageTitle])
 
-  const docs     = docsData?.results   ?? []
-  const txns     = ledger              ?? []
+  const docs     = docsData?.results    ?? []
+  const txns     = ledger               ?? []
   const accounts = accountsData?.results ?? []
 
-  // Account lookup map — for resolving account name in TransactionCard
   const accountMap = useMemo(() =>
     Object.fromEntries(accounts.map(a => [a.id, a.name])),
-    [accounts]
+    [accounts],
   )
 
   const runningCF = useMemo(() => {
@@ -116,10 +113,9 @@ export function ContactDetailPage({ id }: Props) {
     return computeRunningCF(Number(contact.opening_balance ?? 0), txns)
   }, [contact, txns])
 
-  // Running CF per-row for list view (same logic as ContactLedger)
   const txnsWithRunningCF = useMemo(() => {
     const sorted = [...txns].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     )
     let running = Number(contact?.opening_balance ?? 0)
     return sorted.map(txn => {
@@ -138,7 +134,7 @@ export function ContactDetailPage({ id }: Props) {
     })),
   ]
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleEditTxn = (txn: FinancialTransaction) => {
     if (txn.type !== 'actual') {
       toast.info('Only settled (actual) transactions can be edited')
@@ -147,7 +143,6 @@ export function ContactDetailPage({ id }: Props) {
     setEditTxn(txn)
   }
 
-  // Called from TransactionCard onDelete — skip the edit sheet, go straight to confirm
   const handleDeletePrompt = (txnId: number) => {
     const found = txns.find(t => t.id === txnId)
     if (!found) return
@@ -186,7 +181,6 @@ export function ContactDetailPage({ id }: Props) {
 
   if (isLoading) return <ContactDetailSkeleton />
   if (!contact)  return null
-
 
   return (
     <div className="pb-10">
@@ -265,10 +259,10 @@ export function ContactDetailPage({ id }: Props) {
               </p>
               <p className="text-sm font-medium text-muted-foreground mt-1.5 flex items-center gap-1">
                 {runningCF > 0
-                  ? <><TrendingUp   className="h-4 w-4 text-red-500"          /> You owe them</>
+                  ? <><TrendingUp   className="h-4 w-4 text-red-500"           /> You owe them</>
                   : runningCF < 0
-                    ? <><TrendingDown className="h-4 w-4 text-emerald-500"    /> They owe you</>
-                    : <><Minus        className="h-4 w-4 text-muted-foreground"/> Fully settled</>
+                    ? <><TrendingDown className="h-4 w-4 text-emerald-500"     /> They owe you</>
+                    : <><Minus        className="h-4 w-4 text-muted-foreground" /> Fully settled</>
                 }
               </p>
             </div>
@@ -336,17 +330,19 @@ export function ContactDetailPage({ id }: Props) {
             </TabsTrigger>
           </TabsList>
 
-          {/* ── Ledger Tab ──────────────────────────────────────────────── */}
+          {/* ── Ledger Tab ────────────────────────────────────────────── */}
           <TabsContent value="ledger" className="space-y-3 outline-none">
             {loadingLedger ? (
-              <Skeleton className="h-[300px] w-full rounded-xl" />
+              <Skeleton className="h-75 w-full rounded-xl" />
             ) : (
               <>
-                {/* ── View mode toggle ──────────────────────────────────── */}
+                {/* View mode toggle */}
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    {ledgerView === 'ledger' ? 'Scroll horizontally for details' : 'Tap a transaction to edit'}
+                    {ledgerView === 'ledger'
+                      ? 'Scroll horizontally for details'
+                      : 'Use ⋮ menu on each row to edit or delete'}
                   </span>
                   <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
                     <button
@@ -376,7 +372,7 @@ export function ContactDetailPage({ id }: Props) {
                   </div>
                 </div>
 
-                {/* ── Ledger View ───────────────────────────────────────── */}
+                {/* Ledger View */}
                 {ledgerView === 'ledger' && (
                   <ContactLedger
                     transactions={txns}
@@ -385,9 +381,9 @@ export function ContactDetailPage({ id }: Props) {
                   />
                 )}
 
-                {/* ── List View ─────────────────────────────────────────── */}
+                {/* List View */}
                 {ledgerView === 'list' && (
-                  <div className="space-y-0">
+                  <div className="space-y-2">
                     {txnsWithRunningCF.length === 0 ? (
                       <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
                         <p className="text-sm font-medium text-muted-foreground">No transactions yet</p>
@@ -401,7 +397,6 @@ export function ContactDetailPage({ id }: Props) {
                           key={txn.id}
                           txn={txn}
                           runningCf={
-                            // Only show running CF for CF-affecting txns
                             txn.document_type !== 'expense' && txn.type !== 'contra'
                               ? txn.runningCf
                               : undefined
@@ -411,7 +406,7 @@ export function ContactDetailPage({ id }: Props) {
                               ? (accountMap[txn.payment_account] ?? `Account #${txn.payment_account}`)
                               : undefined
                           }
-                          onEdit={handleEditTxn.bind(null, txn)}   // TransactionCard calls onEdit(id), we already have txn
+                          onEdit={() => handleEditTxn(txn)}
                           onDelete={handleDeletePrompt}
                         />
                       ))
@@ -422,7 +417,7 @@ export function ContactDetailPage({ id }: Props) {
             )}
           </TabsContent>
 
-          {/* ── Documents Tab ──────────────────────────────────────────── */}
+          {/* ── Documents Tab ─────────────────────────────────────────── */}
           <TabsContent value="docs" className="space-y-3 outline-none">
             {docs.length === 0 ? (
               <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
@@ -487,7 +482,7 @@ export function ContactDetailPage({ id }: Props) {
         onClose={() => setSrSheet({ open: false, mode: 'send' })}
       />
 
-      {/* ── Transaction edit sheet ─────────────────────────────────────── */}
+      {/* ── Transaction edit sheet ────────────────────────────────────── */}
       <Sheet open={!!editTxn && !confirmDelOpen} onOpenChange={v => { if (!v) setEditTxn(null) }}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
           {editTxn && (
@@ -661,7 +656,7 @@ function ContactDetailSkeleton() {
       </div>
       <div className="mt-8 space-y-3">
         <Skeleton className="h-12 rounded-xl" />
-        <Skeleton className="h-[300px] rounded-xl" />
+        <Skeleton className="h-75 rounded-xl" />
       </div>
     </div>
   )

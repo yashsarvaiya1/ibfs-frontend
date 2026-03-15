@@ -128,15 +128,27 @@ export function ProductDetailPage({ id }: Props) {
     }
   }
 
-  const handleEditStockTxn = (txnId: number) => {
-    const txn = stockTxns.find(t => t.id === txnId)
-    if (!txn) return
+  const handleEditStockTxn = (txn: StockTransaction) => {
+    if (txn.type === 'record') {
+      // Record s.txns are managed via document — redirect there
+      if (txn.document) {
+        router.push(`/documents/${txn.document}`)
+      } else {
+        toast.info('No linked document to edit')
+      }
+      return
+    }
+    // actual → open AdjustStockSheet in edit mode
     setEditStockTxn(txn)
   }
 
   const handleDeletePrompt = (txnId: number) => {
     const txn = stockTxns.find(t => t.id === txnId)
     if (!txn) return
+    if (txn.type === 'record') {
+      toast.error('Record transactions are deleted via document deletion')
+      return
+    }
     setDeleteTarget(txn)
     setConfirmDelOpen(true)
   }

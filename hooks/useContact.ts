@@ -16,11 +16,12 @@ export function useContacts(params?: { search?: string; is_active?: boolean; pag
   })
 }
 
-export function useContact(id: number) {
+export function useContact(id: number | undefined) {
   return useQuery({
-    queryKey: contactKey(id),
-    queryFn: () => contactService.get(id),
-    enabled: !!id,
+    queryKey: contactKey(id ?? 0),
+    queryFn:  () => contactService.get(id!),
+    enabled:  !!id,   // query never fires when id is undefined/0
+    staleTime: 1000 * 60 * 5,
   })
 }
 

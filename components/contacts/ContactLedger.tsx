@@ -59,7 +59,7 @@ export function ContactLedger({ transactions, openingBalance, onEditTxn }: Conta
   return (
     <Card className="rounded-xl shadow-sm border-border/60 overflow-hidden">
       <div className="overflow-x-auto">
-        <div className="min-w-[540px]">
+        <div className="min-w-135">
 
           {/* ── Table Header ─────────────────────────────────────────── */}
           <div className="grid grid-cols-[70px_1fr_90px_90px_110px] gap-x-3 px-3 py-2.5 bg-muted/60 border-b text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
@@ -156,7 +156,7 @@ export function ContactLedger({ transactions, openingBalance, onEditTxn }: Conta
                       )}
                     </div>
                     {row.notes && (
-                      <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+                      <p className="text-[10px] text-muted-foreground truncate max-w-35">
                         {row.notes}
                       </p>
                     )}

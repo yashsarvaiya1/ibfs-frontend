@@ -1,158 +1,203 @@
 'use client'
 
-import type { FinancialTransaction } from '@/models/transaction'
+import { useRouter } from 'next/navigation'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Trash2, Edit, FileText, ArrowUpRight, ArrowDownLeft, RefreshCw } from 'lucide-react'
-import { cn, fmtAmount } from '@/lib/utils'
+import {
+  DropdownMenu, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { DOC_TYPE_LABELS } from '@/models/document'
-
-interface TransactionCardProps {
-  txn:          FinancialTransaction
-  showContact?: boolean
-  runningCf?:   number
-  contactName?: string
-  accountName?: string
-  onDelete?:    (id: number) => void
-  onEdit?:      (id: number) => void
-}
+import { FinancialTransaction } from '@/models/transaction'
+import { MoreVertical, Pencil, Trash2, ExternalLink } from 'lucide-react'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
+const getDocLabel = (t: string | null | undefined): string =>
+  t ? (DOC_LABELS[t] ?? t) : ''
 
-function getTxnLabel(txn: FinancialTransaction): string {
-  if (txn.type === 'contra')         return 'Transfer'
-  if (txn.is_document_deleted)       return 'Doc Deleted'
-  if (txn.document_type)             return DOC_LABELS[txn.document_type] ?? txn.document_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  if (txn.document)                  return 'Document'
-  if (txn.type === 'record')         return 'Pending'
-  return Number(txn.amount) >= 0 ? 'Received' : 'Sent'
+export interface TransactionCardProps {
+  txn:          FinancialTransaction
+  runningCf?:   number                           // optional running balance (Dr/Cr)
+  accountName?: string                           // resolved payment account name
+  contactName?: string                           // explicit contact name string
+  showContact?: boolean                          // auto-show txn.contact_name if available
+  onEdit?:      () => void                       // caller closes over txn — NO id arg
+  onDelete?:    (id: number) => void | Promise<void>
+  className?:   string
 }
 
 export function TransactionCard({
   txn,
-  showContact = false,
   runningCf,
-  contactName,
   accountName,
-  onDelete,
+  contactName,
+  showContact = false,
   onEdit,
+  onDelete,
+  className,
 }: TransactionCardProps) {
-  const amount     = Number(txn.amount)
-  const isPositive = amount > 0
-  const isPending  = txn.type === 'record'
-  const isContra   = txn.type === 'contra'
-  const canEdit    = txn.type === 'actual'
-  const label      = getTxnLabel(txn)
+  const router  = useRouter()
+  const amount  = Number(txn.amount)
+  const isIncoming = amount < 0   // negative = they owe us / incoming
+  const canEdit = txn.type === 'actual'
+  const hasMenu = !!(onEdit || onDelete)
 
-  const formattedDate = new Date(txn.date).toLocaleDateString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  })
+  // Resolve contact display: explicit prop wins, then txn.contact_name if showContact
+  const resolvedContact =
+    contactName ??
+    (showContact && 'contact_name' in txn && txn.contact_name
+      ? (txn as FinancialTransaction & { contact_name?: string }).contact_name
+      : undefined)
 
-  const Icon = isContra ? RefreshCw : isPositive ? ArrowDownLeft : ArrowUpRight
-
-  const amountColor = isPending || isContra
-    ? 'text-muted-foreground'
-    : isPositive ? 'text-emerald-600' : 'text-red-500'
-
-  const iconBg = isPending || isContra
-    ? 'bg-muted text-muted-foreground'
-    : isPositive
-      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-      : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+  const typeBadgeVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
+    actual:  'default',
+    record:  'secondary',
+    contra:  'outline',
+  }
 
   return (
-    <Card className={cn(
-      'p-3 mb-2 rounded-xl border bg-card hover:bg-muted/50 transition-colors shadow-sm',
-      txn.is_document_deleted && 'opacity-50',
-    )}>
-      <div className="flex justify-between items-start mb-1">
-        <div className="flex items-center gap-2">
-          <div className={cn('p-1.5 rounded-full shrink-0', iconBg)}>
-            <Icon className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-semibold text-sm">{label}</span>
-              {isPending && (
-                <Badge variant="outline" className="text-[10px] h-4 border-amber-400 text-amber-600">
-                  Pending
+    <Card
+      className={cn(
+        'rounded-xl border-border/60 shadow-sm transition-all',
+        className,
+      )}
+    >
+      <CardContent className="p-3.5">
+        <div className="flex items-start gap-2">
+
+          {/* ── Left: meta ───────────────────────────────────────────── */}
+          <div className="flex-1 min-w-0">
+
+            {/* Row 1: type badge · doc link · doc-deleted badge · contact */}
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+              <Badge
+                variant={typeBadgeVariant[txn.type] ?? 'outline'}
+                className="text-[9px] uppercase font-bold tracking-wider rounded-md h-4 px-1.5 shrink-0"
+              >
+                {txn.type}
+              </Badge>
+
+              {txn.document && (
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation()
+                    router.push(`/documents/${txn.document}`)
+                  }}
+                  className="flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md hover:bg-primary/20 transition-colors"
+                >
+                  {getDocLabel(txn.document_type)} #{txn.document}
+                  <ExternalLink className="h-2.5 w-2.5 ml-0.5 shrink-0" />
+                </button>
+              )}
+
+              {txn.is_document_deleted && (
+                <Badge variant="destructive" className="text-[9px] h-4 rounded-md px-1.5 shrink-0">
+                  doc deleted
                 </Badge>
               )}
-              {txn.type === 'actual' && !txn.is_document_deleted && (
-                <Badge variant="secondary" className="text-[10px] h-4">Settled</Badge>
-              )}
-              {txn.is_document_deleted && (
-                <Badge variant="destructive" className="text-[10px] h-4">Doc Deleted</Badge>
+
+              {resolvedContact && (
+                <span className="text-[10px] font-semibold text-muted-foreground truncate">
+                  {resolvedContact}
+                </span>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground">{formattedDate}</p>
+
+            {/* Row 2: date · account */}
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+              <span>{fmtDate(txn.date)}</span>
+              {accountName && (
+                <>
+                  <span className="text-muted-foreground/30">·</span>
+                  <span className="truncate">{accountName}</span>
+                </>
+              )}
+            </div>
+
+            {/* Row 3: notes */}
+            {txn.notes && (
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5 truncate italic">
+                {txn.notes}
+              </p>
+            )}
+          </div>
+
+          {/* ── Right: amount · running CF · menu ────────────────────── */}
+          <div className="flex flex-col items-end gap-0.5 shrink-0">
+
+            <div className="flex items-center gap-0.5">
+              <p className={cn(
+                'text-base font-black tabular-nums',
+                isIncoming ? 'text-emerald-600' : 'text-red-600',
+              )}>
+                {amount >= 0 ? '+' : ''}{fmtAmount(amount)}
+              </p>
+
+              {/* 3-dot menu — only shown if at least one action is provided */}
+              {hasMenu && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground -mr-1.5"
+                    >
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    {onEdit && (
+                      <DropdownMenuItem
+                        onClick={onEdit}
+                        disabled={!canEdit}
+                        className={cn(!canEdit && 'opacity-50 cursor-not-allowed')}
+                      >
+                        <Pencil className="mr-2 h-3.5 w-3.5" />
+                        Edit
+                        {!canEdit && (
+                          <span className="ml-auto text-[9px] text-muted-foreground capitalize">
+                            {txn.type}
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    )}
+                    {onDelete && (
+                      <DropdownMenuItem
+                        onClick={() => onDelete(txn.id)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        Delete
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+
+            {/* Running CF balance */}
+            {runningCf !== undefined && (
+              <p className={cn(
+                'text-[10px] font-bold tabular-nums',
+                runningCf > 0
+                  ? 'text-red-500'
+                  : runningCf < 0
+                    ? 'text-emerald-500'
+                    : 'text-muted-foreground',
+              )}>
+                {fmtAmount(Math.abs(runningCf))}
+                <span className="font-normal text-[9px] ml-0.5">
+                  {runningCf > 0 ? 'Dr' : runningCf < 0 ? 'Cr' : ''}
+                </span>
+              </p>
+            )}
+
           </div>
         </div>
-
-        <div className="text-right shrink-0">
-          <span className={cn('font-bold text-sm tabular-nums', amountColor)}>
-            {!isPending && !isContra && (isPositive ? '+' : '')}
-            {fmtAmount(amount)}
-          </span>
-          {runningCf !== undefined && (
-            <p className={cn(
-              'text-[11px] font-medium tabular-nums mt-0.5',
-              runningCf > 0  ? 'text-red-500'
-              : runningCf < 0 ? 'text-emerald-600'
-              : 'text-muted-foreground',
-            )}>
-              {fmtAmount(runningCf)}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {(showContact || txn.document || txn.payment_account) && (
-        <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-border/50 text-[11px] text-muted-foreground">
-          {showContact && txn.contact && (
-            <span className="bg-muted px-2 py-0.5 rounded-md truncate max-w-[120px]">
-              {contactName ?? `Contact #${txn.contact}`}
-            </span>
-          )}
-          {txn.payment_account && (
-            <span className="bg-muted px-2 py-0.5 rounded-md truncate max-w-[120px]">
-              {accountName ?? `Account #${txn.payment_account}`}
-            </span>
-          )}
-          {txn.document && (
-            <span className="flex items-center gap-1 bg-primary/5 text-primary px-2 py-0.5 rounded-md font-medium truncate max-w-[140px]">
-              <FileText className="h-3 w-3 shrink-0" />
-              {txn.document_type
-                ? `${DOC_LABELS[txn.document_type] ?? txn.document_type.toUpperCase()} #${txn.document}`
-                : `Doc #${txn.document}`}
-            </span>
-          )}
-        </div>
-      )}
-
-      {txn.notes && (
-        <p className="text-xs italic text-muted-foreground mt-2">"{txn.notes}"</p>
-      )}
-
-      {/* Actions — only for actual type */}
-      {canEdit && (onEdit || onDelete) && (
-        <div className="flex justify-end gap-2 mt-2">
-          {onEdit && (
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
-              onClick={() => onEdit(txn.id)}>
-              <Edit className="h-3 w-3 mr-1" /> Edit
-            </Button>
-          )}
-          {onDelete && (
-            <Button variant="ghost" size="sm"
-              className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => onDelete(txn.id)}>
-              <Trash2 className="h-3 w-3 mr-1" /> Delete
-            </Button>
-          )}
-        </div>
-      )}
+      </CardContent>
     </Card>
   )
 }

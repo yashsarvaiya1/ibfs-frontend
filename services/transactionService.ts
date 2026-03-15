@@ -1,3 +1,4 @@
+// services/transactionService.ts
 import api from '@/lib/axios'
 import type {
   FinancialTransaction,
@@ -19,14 +20,13 @@ export const transactionService = {
     api.patch<FinancialTransaction>(`/transactions/${id}/`, data).then(r => r.data),
 
   // Only actual f.txns — backend blocks record deletes with 400
-  // Reverses account balance automatically on backend
   delete: (id: number) =>
     api.delete(`/transactions/${id}/`),
 
+  // FIX: DRF hyphenates action names — link_document → link-document
   linkDocument: (id: number, data: LinkDocumentPayload) =>
-    api.post<FinancialTransaction>(`/transactions/${id}/link_document/`, data).then(r => r.data),
+    api.post<FinancialTransaction>(`/transactions/${id}/link-document/`, data).then(r => r.data),
 
-  // GET /transactions/print/ — returns PDF blob. Pass ?contact={id} for Ledger view
   print: (params?: TransactionListParams) =>
     api.get('/transactions/print/', { params, responseType: 'blob' }).then(r => r.data),
 }
