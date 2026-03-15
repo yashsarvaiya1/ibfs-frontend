@@ -1,8 +1,10 @@
+// components/shared/common/AppShell.tsx
 'use client'
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
+import { useVerifyAuth } from '@/hooks/useVerifyAuth'
 import { Header } from '@/components/shared/common/Header'
 import { BottomNav } from '@/components/shared/common/BottomNav'
 import { QuickActionSheet } from '@/components/shared/common/QuickActionSheet'
@@ -18,15 +20,22 @@ import { AdjustStockSheet } from '@/components/shared/AdjustStockSheet'
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router          = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const hasHydrated     = useAuthStore((s) => s._hasHydrated)
 
-  // No rehydration — auth lives in Zustand memory only (per spec)
+  // Verify stored credentials are still valid — runs once per session
+  useVerifyAuth()
+
   useEffect(() => {
+    // Wait for sessionStorage to be read before redirecting
+    if (!hasHydrated) return
     if (!isAuthenticated) {
       router.replace('/login')
     }
-  }, [isAuthenticated, router])
+  }, [hasHydrated, isAuthenticated, router])
 
-  if (!isAuthenticated) return null
+  // HydrationGate in Providers already shows the spinner — this just
+  // prevents the shell from flashing before the redirect fires
+  if (!hasHydrated || !isAuthenticated) return null
 
   return (
     <div className="flex flex-col h-screen bg-background">
