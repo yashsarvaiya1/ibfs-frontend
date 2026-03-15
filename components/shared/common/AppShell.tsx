@@ -13,8 +13,6 @@ import { TransactionSheet } from '@/components/shared/TransactionSheet'
 import { DeleteDocSheet } from '@/components/shared/DeleteDocSheet'
 import { RecordPaymentSheet } from '@/components/shared/RecordPaymentSheet'
 import { AddDetailsSheet } from '@/components/shared/AddDetailsSheet'
-import { TransferSheet } from '@/components/shared/TransferSheet'
-import { AdjustBalanceSheet } from '@/components/shared/AdjustBalanceSheet'
 import { AdjustStockSheet } from '@/components/shared/AdjustStockSheet'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -51,8 +49,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <DeleteDocSheet />
       <RecordPaymentSheet />
       <AddDetailsSheet />
-      <TransferSheet />
-      <AdjustBalanceSheet />
       <AdjustStockSheet />
     </div>
   )

@@ -1,18 +1,16 @@
+// components/accounts/AccountDetailPage.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import {
-  useAccount,
-  useTransfer,
-  useAdjustBalance,
-  useSetBalance,
-  useAccounts,
+  useAccount, useAccounts,
+  useUpdateAccount, useDeleteAccount,
+  useTransfer, useAdjustBalance, useSetBalance,
 } from '@/hooks/useAccount'
 import { useTransactions, useDeleteTransaction } from '@/hooks/useTransaction'
-import { fmtAmount } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { fmtAmount, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,16 +23,15 @@ import {
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  DropdownMenu, DropdownMenuContent,
-  DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  ArrowLeftRight, SlidersHorizontal,
-  MoreVertical, Pencil, Landmark, Smartphone, Wallet,
+  ArrowLeftRight, SlidersHorizontal, MoreVertical,
+  Pencil, Landmark, Smartphone, Wallet, Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AccountType } from '@/models/account'
-import type { SetBalancePayload } from '@/models/account'
+import type { AccountType, SetBalancePayload } from '@/models/account'
 import { TransactionCard } from '@/components/shared/TransactionCard'
 
 const ACCOUNT_ICONS: Record<AccountType, typeof Landmark> = {
@@ -46,19 +43,27 @@ const ACCOUNT_ICONS: Record<AccountType, typeof Landmark> = {
 interface Props { id: number }
 
 export function AccountDetailPage({ id }: Props) {
+  const router       = useRouter()
   const setPageTitle = useUIStore((s) => s.setPageTitle)
 
-  const { data: account,      isLoading } = useAccount(id)
-  const { data: txnsData }                = useTransactions({ account: id })
-  const { data: allAccountsData }         = useAccounts({ is_active: true })
+  const { data: account,       isLoading } = useAccount(id)
+  const { data: txnsData }                 = useTransactions({ account: id })
+  const { data: allAccountsData }          = useAccounts({ is_active: true })
 
-  const txns          = txnsData?.results ?? []
+  // Latest first — sort client-side (backend default is ascending)
+  const txns = [...(txnsData?.results ?? [])].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id - a.id
+  )
   const otherAccounts = (allAccountsData?.results ?? []).filter(a => a.id !== id)
 
+  // ── Sheet states ──────────────────────────────────────────────────────────
   const [transferOpen,    setTransferOpen]    = useState(false)
   const [adjustOpen,      setAdjustOpen]      = useState(false)
   const [editBalanceOpen, setEditBalanceOpen] = useState(false)
+  const [editAccountOpen, setEditAccountOpen] = useState(false)
+  const [deleteConfirm,   setDeleteConfirm]   = useState(false)
 
+  // ── Form state ────────────────────────────────────────────────────────────
   const [toAccountId,    setToAccountId]    = useState('')
   const [transferAmount, setTransferAmount] = useState('')
 
@@ -67,14 +72,34 @@ export function AccountDetailPage({ id }: Props) {
 
   const [directBalance, setDirectBalance] = useState('')
 
+  const [editName,    setEditName]    = useState('')
+  const [editType,    setEditType]    = useState<AccountType>('bank')
+  const [editAccNum,  setEditAccNum]  = useState('')
+  const [editIfsc,    setEditIfsc]    = useState('')
+  const [editUpiId,   setEditUpiId]   = useState('')
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
   const transferMutation   = useTransfer()
   const adjustMutation     = useAdjustBalance(id)
   const setBalanceMutation = useSetBalance(id)
-  const deleteMutation     = useDeleteTransaction()
+  const updateMutation     = useUpdateAccount(id)
+  const deleteMutation     = useDeleteAccount()
+  const deleteTxnMutation  = useDeleteTransaction()
 
   useEffect(() => {
     if (account) setPageTitle(account.name)
   }, [account, setPageTitle])
+
+  // Pre-populate edit form every time the sheet opens
+  useEffect(() => {
+    if (editAccountOpen && account) {
+      setEditName(account.name)
+      setEditType(account.type as AccountType)
+      setEditAccNum(account.account_number ?? '')
+      setEditIfsc(account.ifsc_code ?? '')
+      setEditUpiId(account.upi_id ?? '')
+    }
+  }, [editAccountOpen, account])
 
   if (isLoading) return (
     <div className="px-4 py-4 space-y-3">
@@ -91,6 +116,7 @@ export function AccountDetailPage({ id }: Props) {
   const Icon    = ACCOUNT_ICONS[account.type as AccountType] ?? Wallet
   const balance = Number(account.current_balance)
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleTransfer = async () => {
     if (!toAccountId || !transferAmount || Number(transferAmount) <= 0) {
       toast.error('Select an account and enter a valid amount'); return
@@ -129,8 +155,7 @@ export function AccountDetailPage({ id }: Props) {
   const handleSetBalance = async () => {
     if (directBalance === '') { toast.error('Enter a balance'); return }
     try {
-      const payload: SetBalancePayload = { current_balance: directBalance }
-      await setBalanceMutation.mutateAsync(payload)
+      await setBalanceMutation.mutateAsync({ current_balance: directBalance } as SetBalancePayload)
       toast.success('Balance updated')
       setEditBalanceOpen(false)
     } catch {
@@ -138,9 +163,36 @@ export function AccountDetailPage({ id }: Props) {
     }
   }
 
+  const handleUpdateAccount = async () => {
+    if (!editName.trim()) { toast.error('Account name is required'); return }
+    try {
+      await updateMutation.mutateAsync({
+        name:           editName.trim(),
+        type:           editType,
+        account_number: editType === 'bank' ? (editAccNum || null) : null,
+        ifsc_code:      editType === 'bank' ? (editIfsc  || null) : null,
+        upi_id:         editType === 'upi'  ? (editUpiId || null) : null,
+      })
+      toast.success('Account updated')
+      setEditAccountOpen(false)
+    } catch {
+      toast.error('Failed to update account')
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    try {
+      await deleteMutation.mutateAsync(id)
+      toast.success(`"${account.name}" deleted`)
+      router.replace('/accounts')
+    } catch {
+      toast.error('Failed to delete account')
+    }
+  }
+
   const handleDeleteTxn = async (txnId: number) => {
     try {
-      await deleteMutation.mutateAsync(txnId)
+      await deleteTxnMutation.mutateAsync(txnId)
       toast.success('Transaction deleted')
     } catch {
       toast.error('Failed to delete transaction')
@@ -149,7 +201,8 @@ export function AccountDetailPage({ id }: Props) {
 
   return (
     <div className="pb-10">
-      {/* ── Balance card ──────────────────────────────────────────────────── */}
+
+      {/* ── Balance card ─────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-4">
         <Card className="bg-primary text-primary-foreground overflow-hidden rounded-2xl shadow-md">
           <CardContent className="p-5">
@@ -177,24 +230,32 @@ export function AccountDetailPage({ id }: Props) {
                   <p className="text-xs opacity-70 mt-0.5 font-mono">IFSC: {account.ifsc_code}</p>
                 )}
               </div>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    variant="ghost"
-                    size="icon"
+                    variant="ghost" size="icon"
                     className="text-primary-foreground hover:bg-primary-foreground/20 -mr-2"
                   >
                     <MoreVertical className="h-5 w-5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setEditAccountOpen(true)}>
+                    <Pencil className="mr-2 h-4 w-4" /> Edit Account
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {
+                    setDirectBalance(account.current_balance)
+                    setEditBalanceOpen(true)
+                  }}>
+                    <SlidersHorizontal className="mr-2 h-4 w-4" /> Set Balance Directly
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => {
-                      setDirectBalance(account.current_balance)
-                      setEditBalanceOpen(true)
-                    }}
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteConfirm(true)}
                   >
-                    <Pencil className="mr-2 h-4 w-4" /> Edit Balance Directly
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete Account
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -206,22 +267,14 @@ export function AccountDetailPage({ id }: Props) {
       {/* ── Action buttons ────────────────────────────────────────────────── */}
       <div className="px-4 pb-4 grid grid-cols-2 gap-3">
         <Button
-          variant="outline"
-          className="h-12 gap-2 rounded-xl"
-          onClick={() => {
-            setTransferAmount(''); setToAccountId('')
-            setTransferOpen(true)
-          }}
+          variant="outline" className="h-12 gap-2 rounded-xl"
+          onClick={() => { setTransferAmount(''); setToAccountId(''); setTransferOpen(true) }}
         >
           <ArrowLeftRight className="h-4 w-4" /> Transfer
         </Button>
         <Button
-          variant="outline"
-          className="h-12 gap-2 rounded-xl"
-          onClick={() => {
-            setAdjustAmount(''); setAdjustNotes('')
-            setAdjustOpen(true)
-          }}
+          variant="outline" className="h-12 gap-2 rounded-xl"
+          onClick={() => { setAdjustAmount(''); setAdjustNotes(''); setAdjustOpen(true) }}
         >
           <SlidersHorizontal className="h-4 w-4" /> Adjust
         </Button>
@@ -237,9 +290,7 @@ export function AccountDetailPage({ id }: Props) {
       </div>
       <div className="px-4 space-y-2 pb-4">
         {txns.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm py-8">
-            No transactions yet
-          </p>
+          <p className="text-center text-muted-foreground text-sm py-8">No transactions yet</p>
         ) : (
           txns.map(txn => (
             <TransactionCard
@@ -263,12 +314,9 @@ export function AccountDetailPage({ id }: Props) {
               <span className="text-sm text-muted-foreground">From</span>
               <div className="text-right">
                 <p className="text-sm font-semibold">{account.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  Available: {fmtAmount(account.current_balance)}
-                </p>
+                <p className="text-xs text-muted-foreground">Available: {fmtAmount(account.current_balance)}</p>
               </div>
             </div>
-
             <div className="space-y-1.5">
               <Label>To Account <span className="text-destructive">*</span></Label>
               <Select value={toAccountId} onValueChange={setToAccountId}>
@@ -277,9 +325,7 @@ export function AccountDetailPage({ id }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   {otherAccounts.length === 0 ? (
-                    <SelectItem value="__none__" disabled>
-                      No other accounts
-                    </SelectItem>
+                    <SelectItem value="__none__" disabled>No other accounts</SelectItem>
                   ) : (
                     otherAccounts.map(a => (
                       <SelectItem key={a.id} value={a.id.toString()}>
@@ -290,33 +336,25 @@ export function AccountDetailPage({ id }: Props) {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-1.5">
               <Label>Amount <span className="text-destructive">*</span></Label>
               <Input
-                type="number"
-                placeholder="0.00"
+                type="number" placeholder="0.00"
                 value={transferAmount}
                 onChange={e => setTransferAmount(e.target.value)}
                 className="text-lg h-12 rounded-xl"
               />
             </div>
-
             {Number(transferAmount) > 0 && (
-              <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10 mt-2">
+              <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10">
                 <span>Balance after transfer</span>
-                <span className={cn(
-                  'font-bold',
-                  Number(transferAmount) > balance && 'text-red-500'
-                )}>
+                <span className={cn('font-bold', Number(transferAmount) > balance && 'text-red-500')}>
                   {fmtAmount(balance - Number(transferAmount))}
                 </span>
               </div>
             )}
-
             <Button
-              className="w-full h-12 text-md mt-2 rounded-xl"
-              onClick={handleTransfer}
+              className="w-full h-12 rounded-xl" onClick={handleTransfer}
               disabled={transferMutation.isPending}
             >
               {transferMutation.isPending ? 'Transferring...' : 'Confirm Transfer'}
@@ -336,7 +374,6 @@ export function AccountDetailPage({ id }: Props) {
               <span className="text-sm text-muted-foreground">Current Balance</span>
               <span className="font-bold">{fmtAmount(account.current_balance)}</span>
             </div>
-
             <div className="space-y-1.5">
               <Label>
                 Amount
@@ -345,26 +382,20 @@ export function AccountDetailPage({ id }: Props) {
                 </span>
               </Label>
               <Input
-                type="number"
-                placeholder="+178 or -500"
+                type="number" placeholder="+178 or -500"
                 value={adjustAmount}
                 onChange={e => setAdjustAmount(e.target.value)}
                 className="text-lg h-12 rounded-xl"
               />
             </div>
-
             {adjustAmount !== '' && Number(adjustAmount) !== 0 && (
-              <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10 mt-2">
+              <div className="flex justify-between text-sm font-medium px-3 py-2.5 rounded-xl bg-primary/5 text-primary border border-primary/10">
                 <span>Balance after</span>
                 <span className="font-bold">{fmtAmount(balance + Number(adjustAmount))}</span>
               </div>
             )}
-
             <div className="space-y-1.5">
-              <Label>
-                Note
-                <span className="text-xs text-muted-foreground ml-1">(optional)</span>
-              </Label>
+              <Label>Note <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 placeholder="e.g. Banking interest, correction"
                 value={adjustNotes}
@@ -372,10 +403,8 @@ export function AccountDetailPage({ id }: Props) {
                 className="h-11 rounded-xl"
               />
             </div>
-
             <Button
-              className="w-full h-12 text-md mt-2 rounded-xl"
-              onClick={handleAdjust}
+              className="w-full h-12 rounded-xl" onClick={handleAdjust}
               disabled={adjustMutation.isPending}
             >
               {adjustMutation.isPending ? 'Adjusting...' : 'Confirm Adjustment'}
@@ -384,7 +413,7 @@ export function AccountDetailPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ── Direct balance edit sheet ─────────────────────────────────────── */}
+      {/* ── Set balance directly sheet ────────────────────────────────────── */}
       <Sheet open={editBalanceOpen} onOpenChange={setEditBalanceOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
@@ -408,8 +437,7 @@ export function AccountDetailPage({ id }: Props) {
               />
             </div>
             <Button
-              className="w-full h-12 text-md mt-2 rounded-xl"
-              onClick={handleSetBalance}
+              className="w-full h-12 rounded-xl" onClick={handleSetBalance}
               disabled={setBalanceMutation.isPending}
             >
               {setBalanceMutation.isPending ? 'Saving...' : 'Set Balance'}
@@ -417,6 +445,119 @@ export function AccountDetailPage({ id }: Props) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ── Edit Account sheet ────────────────────────────────────────────── */}
+      <Sheet open={editAccountOpen} onOpenChange={setEditAccountOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
+          <SheetHeader className="mb-5">
+            <SheetTitle className="text-left">Edit Account</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Account Name <span className="text-destructive">*</span></Label>
+              <Input
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                placeholder="e.g. HDFC Current"
+                className="h-11 rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <Select value={editType} onValueChange={(v) => {
+                setEditType(v as AccountType)
+                // Clear irrelevant fields when type changes
+                setEditAccNum(''); setEditIfsc(''); setEditUpiId('')
+              }}>
+                <SelectTrigger className="h-11 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank">Bank</SelectItem>
+                  <SelectItem value="upi">UPI</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {editType === 'bank' && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Account Number <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input
+                    value={editAccNum}
+                    onChange={e => setEditAccNum(e.target.value)}
+                    placeholder="e.g. 34455642507"
+                    className="h-11 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>IFSC Code <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input
+                    value={editIfsc}
+                    onChange={e => setEditIfsc(e.target.value.toUpperCase())}
+                    placeholder="e.g. UTIB0001234"
+                    className="h-11 rounded-xl"
+                  />
+                </div>
+              </>
+            )}
+            {editType === 'upi' && (
+              <div className="space-y-1.5">
+                <Label>UPI ID <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  value={editUpiId}
+                  onChange={e => setEditUpiId(e.target.value)}
+                  placeholder="e.g. name@upi"
+                  className="h-11 rounded-xl"
+                />
+              </div>
+            )}
+            <Button
+              className="w-full h-12 rounded-xl" onClick={handleUpdateAccount}
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Delete confirmation sheet ─────────────────────────────────────── */}
+      <Sheet open={deleteConfirm} onOpenChange={setDeleteConfirm}>
+        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
+          <SheetHeader className="mb-5">
+            <SheetTitle className="text-left text-destructive">Delete Account</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-destructive/5 border border-destructive/20">
+              <Trash2 className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">Delete "{account.name}"?</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This deactivates the account. All past transactions linked to it
+                  remain intact and are never deleted.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline" className="h-12 rounded-xl"
+                onClick={() => setDeleteConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive" className="h-12 rounded-xl"
+                onClick={handleDeleteAccount}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
     </div>
   )
 }
