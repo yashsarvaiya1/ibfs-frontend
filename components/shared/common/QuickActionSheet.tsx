@@ -42,8 +42,8 @@ export function QuickActionSheet() {
 
   // Opens QuickAction sub-sheet for expense/interest (different sheet body)
   const subAction = (type: 'expense' | 'interest') => {
-    // Re-opens with specific type — sheet stays open, body changes
-    openQuickAction(type)
+    close()
+    openDocCreateSheet(type)  // ← same as doc('bill'), doc('invoice')
   }
 
   const coreActions: ActionItem[] = [

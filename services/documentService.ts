@@ -5,12 +5,13 @@ import type {
   DocumentCreate,
   DocumentUpdate,
   RecordPaymentPayload,
+  MarkPaidPayload,
   MoveStockPayload,
   StockPreviewItem,
   DeleteDocumentPayload,
   AddDetailsPayload,
   StandaloneInterestPayload,
-  ReferenceData
+  ReferenceData,
 } from '@/models/document'
 import type { PaginatedResponse } from '@/models/pagination'
 
@@ -23,7 +24,7 @@ export interface DocumentListParams {
   search?: string
   page?: number
   page_size?: number
-  // is_active removed — DocumentViewSet always filters is_active=True (hardcoded in backend)
+  is_paid?: boolean        // ✅ filter by manual paid flag
 }
 
 export type { DocumentListItem }
@@ -41,7 +42,11 @@ export const documentService = {
   update: (id: number, data: DocumentUpdate) =>
     api.patch<Document>(`/documents/${id}/`, data).then(r => r.data),
 
-  // POST /documents/{id}/record_payment/
+  // POST /documents/{id}/mark_paid/  ← ✅ new — just flips is_paid flag
+  markPaid: (id: number, data: MarkPaidPayload) =>
+    api.post<Document>(`/documents/${id}/mark_paid/`, data).then(r => r.data),
+
+  // POST /documents/{id}/record_payment/ ← creates actual f.txn
   recordPayment: (id: number, data: RecordPaymentPayload) =>
     api.post(`/documents/${id}/record_payment/`, data).then(r => r.data),
 
@@ -61,15 +66,26 @@ export const documentService = {
   deleteDocument: (id: number, data: DeleteDocumentPayload) =>
     api.post(`/documents/${id}/delete_document/`, data).then(r => r.data),
 
-  // GET /documents/{id}/print/ — returns PDF blob for download/preview
+  // GET /documents/{id}/print/ — returns PDF blob
   print: (id: number) =>
     api.get(`/documents/${id}/print/`, { responseType: 'blob' }).then(r => r.data),
 
-  // POST /documents/standalone_interest/ (Path C Spec)
+  // ✅ Returns the direct PDF URL using the same baseURL as the axios instance
+  // Use this for <PdfViewer url={...}> and download links instead of hardcoding
+  getPdfUrl: (id: number): string => {
+    const base = (
+      api.defaults.baseURL ??
+      process.env.NEXT_PUBLIC_API_URL ??
+      ''
+    ).replace(/\/+$/, '')
+    return `${base}/documents/${id}/print/`
+  },
+
+  // POST /documents/standalone_interest/
   standaloneInterest: (data: StandaloneInterestPayload) =>
     api.post<{ interest_doc: number; ftxn: number }>('/documents/standalone_interest/', data).then(r => r.data),
 
-  // GET /documents/{id}/reference_data/ (Spec Part 2 Auto-copy)
+  // GET /documents/{id}/reference_data/
   referenceData: (id: number) =>
     api.get<ReferenceData>(`/documents/${id}/reference_data/`).then(r => r.data),
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
-import { useCreateDocument, useDocuments, useDocument } from '@/hooks/useDocument'
+import { useCreateDocument, useDocuments, useDocument, useStandaloneInterest } from '@/hooks/useDocument'
 import { useSettings } from '@/hooks/useSettings'
 import { useContacts } from '@/hooks/useContact'
 import { useProducts } from '@/hooks/useProduct'
@@ -28,12 +28,11 @@ import {
 } from 'lucide-react'
 import { fmtAmount } from '@/lib/utils'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
-// ✅ ADD: UploadInput + FilePreviewSheet
 import { UploadInput }      from '@/components/shared/common/UploadInput'
 import { FilePreviewSheet } from '@/components/shared/FilePreviewSheet'
 
-const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
-const getDocLabel = (t: string | null | undefined) => t ? DOC_LABELS[t] ?? t : ''
+const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
+const getDocLabel = (t: string | null | undefined) => t ? (DOC_LABELS[t] ?? t) : ''
 
 // ── Document type constants ───────────────────────────────────────────────────
 const WITH_LINE_ITEMS:     DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotation', 'challan', 'cn', 'dn']
@@ -53,7 +52,7 @@ const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType>> = {
   bill: 'po', invoice: 'pi',
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Local row types ───────────────────────────────────────────────────────────
 interface LineItemRow extends LineItem { key: string }
 interface ExpenseRow  { key: string; name: string; amount: string }
 interface InterestRow { key: string; name: string; amount: string; type: 'charge' | 'discount' }
@@ -61,18 +60,22 @@ interface InterestRow { key: string; name: string; amount: string; type: 'charge
 
 // ── Line Item Picker Sheet ────────────────────────────────────────────────────
 interface LineItemPickerProps {
-  open: boolean; items: LineItem[]
-  onConfirm: (selected: LineItem[]) => void; onClose: () => void
+  open: boolean
+  items: LineItem[]
+  onConfirm: (selected: LineItem[]) => void
+  onClose: () => void
 }
 function LineItemPickerSheet({ open, items, onConfirm, onClose }: LineItemPickerProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set(items.map((_, i) => i)))
   useEffect(() => { setSelected(new Set(items.map((_, i) => i))) }, [items])
-  const toggle = (i: number) => setSelected(prev => {
+
+  const toggle    = (i: number) => setSelected(prev => {
     const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next
   })
   const toggleAll = () => setSelected(prev =>
     prev.size === items.length ? new Set() : new Set(items.map((_, i) => i))
   )
+
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10" style={{ maxHeight: '80vh' }}>
@@ -86,12 +89,16 @@ function LineItemPickerSheet({ open, items, onConfirm, onClose }: LineItemPicker
         </div>
         <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 200px)' }}>
           {items.map((item, i) => (
-            <div key={i} onClick={() => toggle(i)} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selected.has(i) ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'}`}>
+            <div key={i} onClick={() => toggle(i)}
+              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors
+                ${selected.has(i) ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'}`}>
               <Checkbox checked={selected.has(i)} onCheckedChange={() => toggle(i)} onClick={e => e.stopPropagation()} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">{item.name}</p>
                 {item.quantity != null && item.rate != null && (
-                  <p className="text-xs text-muted-foreground mt-0.5">{item.quantity} × {item.rate}{item.hsn ? ` · HSN ${item.hsn}` : ''}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {item.quantity} × {item.rate}{item.hsn ? ` · HSN ${item.hsn}` : ''}
+                  </p>
                 )}
               </div>
               {item.amount != null && <p className="text-sm font-semibold shrink-0">{fmtAmount(item.amount)}</p>}
@@ -113,12 +120,16 @@ function LineItemPickerSheet({ open, items, onConfirm, onClose }: LineItemPicker
 
 // ── Product Multi-Picker Sheet ────────────────────────────────────────────────
 function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
-  open: boolean; products: any[]
-  onConfirm: (s: any[]) => void; onClose: () => void
+  open: boolean
+  products: any[]
+  onConfirm: (s: any[]) => void
+  onClose: () => void
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [search, setSearch] = useState('')
+  const [search,   setSearch]   = useState('')
+
   useEffect(() => { if (open) { setSelected(new Set()); setSearch('') } }, [open])
+
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.hsn_code && p.hsn_code.toLowerCase().includes(search.toLowerCase()))
@@ -126,25 +137,33 @@ function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
   const toggle = (id: number) => setSelected(prev => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
   })
+
   return (
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10" style={{ maxHeight: '90vh' }}>
         <SheetHeader className="mb-4">
           <SheetTitle className="text-left flex justify-between items-center pr-6">
             <span>Select Products</span>
-            <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">{selected.size} selected</span>
+            <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-md">
+              {selected.size} selected
+            </span>
           </SheetTitle>
         </SheetHeader>
-        <Input placeholder="Search inventory..." value={search} onChange={e => setSearch(e.target.value)} className="mb-3 h-11 rounded-xl" />
+        <Input placeholder="Search inventory..." value={search}
+          onChange={e => setSearch(e.target.value)} className="mb-3 h-11 rounded-xl" />
         <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
           {filtered.length === 0
             ? <p className="text-center text-sm text-muted-foreground py-10 bg-muted/30 rounded-xl border border-dashed">No products found</p>
             : filtered.map(p => (
-                <div key={p.id} onClick={() => toggle(p.id)} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selected.has(p.id) ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'}`}>
+                <div key={p.id} onClick={() => toggle(p.id)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors
+                    ${selected.has(p.id) ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'}`}>
                   <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggle(p.id)} onClick={e => e.stopPropagation()} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{p.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Stock {p.current_stock} {p.unit} · ₹{p.rate}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Stock {p.current_stock} {p.unit} · ₹{p.rate}
+                    </p>
                   </div>
                 </div>
               ))
@@ -185,34 +204,36 @@ export function DocumentNewPage() {
     shouldFetchRefDocs && primaryRefDocType ? { type: primaryRefDocType } : undefined
   )
 
-  const isInterest = docType === 'interest'
-  const { data: allDocsData } = useDocuments(isInterest ? {} : undefined)
+  // ✅ page_size: 50 prevents fetching all docs — fast enough for linking
+  const isInterestOrExpense = docType === 'interest' || docType === 'expense'
+  const { data: allDocsData } = useDocuments(
+    isInterestOrExpense ? { page_size: 50 } : undefined
+  )
 
-  const createDocument = useCreateDocument()
+  const createDocument    = useCreateDocument()
+  const standaloneInterest = useStandaloneInterest() // ✅ Path C for interest
 
-  // ── Form state ─────────────────────────────────────────────────────────────
-  const [contactId,        setContactId]        = useState(preContactId)
-  const [consigneeId,      setConsigneeId]       = useState('')
-  const [referenceId,      setReferenceId]       = useState('')
-  const [date,             setDate]              = useState(new Date().toISOString().split('T')[0])
-  const [dueDate,          setDueDate]           = useState('')
-  const [paymentTerms,     setPaymentTerms]      = useState('')
-  const [notes,            setNotes]             = useState('')
-  const [paymentAccountId, setPaymentAccountId]  = useState('')
-  const [discount,         setDiscount]          = useState('')
-  const [fastAmount,       setFastAmount]        = useState('')
-  const [voucherAmount,    setVoucherAmount]     = useState('')
-  const [attachmentUrls,   setAttachmentUrls]    = useState<string[]>([])  // ✅ KEPT — now fed by UploadInput
-  const [billMode,         setBillMode]          = useState<'fast' | 'detailed'>(
+  // ── Form state ──────────────────────────────────────────────────────────────
+  const [contactId,        setContactId]       = useState(preContactId)
+  const [consigneeId,      setConsigneeId]      = useState('')
+  const [referenceId,      setReferenceId]      = useState('')
+  const [date,             setDate]             = useState(new Date().toISOString().split('T')[0])
+  const [dueDate,          setDueDate]          = useState('')
+  const [paymentTerms,     setPaymentTerms]     = useState('')
+  const [notes,            setNotes]            = useState('')
+  const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [discount,         setDiscount]         = useState('')
+  const [fastAmount,       setFastAmount]       = useState('')
+  const [voucherAmount,    setVoucherAmount]    = useState('')
+  const [attachmentUrls,   setAttachmentUrls]   = useState<string[]>([])
+  const [billMode,         setBillMode]         = useState<'fast' | 'detailed'>(
     FAST_BILL_TYPES.includes(docType) ? 'fast' : 'detailed'
   )
   const [showCharges,       setShowCharges]       = useState(false)
   const [pickerOpen,        setPickerOpen]        = useState(false)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
-
-  // ✅ ADD: FilePreviewSheet state
-  const [previewOpen,  setPreviewOpen]  = useState(false)
-  const [previewIndex, setPreviewIndex] = useState(0)
+  const [previewOpen,       setPreviewOpen]       = useState(false)
+  const [previewIndex,      setPreviewIndex]      = useState(0)
 
   const [lineItems, setLineItems] = useState<LineItemRow[]>([
     { key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null },
@@ -235,13 +256,12 @@ export function DocumentNewPage() {
   const refDocs  = shouldFetchRefDocs ? (referenceDocs?.results ?? []) : []
   const allDocs  = allDocsData?.results ?? []
 
-  const refDocId = referenceId ? Number(referenceId) : undefined
-  const { data: refDoc } = useDocument(refDocId as number)
-
+  const refDocId    = referenceId      ? Number(referenceId)      : undefined
   const linkedDocId = interestLinkedDoc ? Number(interestLinkedDoc) : undefined
+  const { data: refDoc }    = useDocument(refDocId    as number)
   const { data: linkedDoc } = useDocument(linkedDocId as number)
 
-  // ── Computed flags ─────────────────────────────────────────────────────────
+  // ── Computed flags ──────────────────────────────────────────────────────────
   const isVoucher      = IS_VOUCHER.includes(docType)
   const hasLineItems   = WITH_LINE_ITEMS.includes(docType)
   const hasReference   = WITH_REFERENCE.includes(docType)
@@ -249,12 +269,14 @@ export function DocumentNewPage() {
   const isFastBillType = FAST_BILL_TYPES.includes(docType)
   const isFastMode     = isFastBillType && billMode === 'fast'
   const isExpenseType  = IS_EXPENSE_TYPE.includes(docType)
+
+  // ✅ Interest uses standaloneInterest (no payment account needed in UI — Path C)
   const showPaymentAccount =
     (WITH_PAYMENT.includes(docType) && !!settings?.auto_transaction)
     || IS_VOUCHER.includes(docType)
-    || isExpenseType
+    || docType === 'expense'
 
-  // ── Interest CF preview ────────────────────────────────────────────────────
+  // ── Interest CF preview ─────────────────────────────────────────────────────
   const interestNet = useMemo(() => {
     if (docType !== 'interest') return 0
     return interestRows.reduce((s, r) => {
@@ -265,7 +287,7 @@ export function DocumentNewPage() {
 
   const interestCFImpact = interestDirection === 'pay' ? interestNet : -interestNet
 
-  // ── Select options ─────────────────────────────────────────────────────────
+  // ── Select options ──────────────────────────────────────────────────────────
   const contactOptions: SearchableSelectOption[] = contacts.map(c => ({
     value: String(c.id), label: getContactDisplayName(c),
     sublabel: c.phone, badge: c.gstin ? 'GST' : undefined,
@@ -304,7 +326,7 @@ export function DocumentNewPage() {
     })),
   ]
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── Side effects ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!refDoc) return
     if (refDoc.contact) setContactId(String(refDoc.contact))
@@ -319,6 +341,7 @@ export function DocumentNewPage() {
     if (linkedDoc.contact) setContactId(String(linkedDoc.contact))
   }, [linkedDoc?.id])
 
+  // ── Line item handlers ──────────────────────────────────────────────────────
   const handlePickerConfirm = (selected: LineItem[]) => {
     if (selected.length === 0) return
     setLineItems(selected.map(item => ({ ...item, key: crypto.randomUUID() })))
@@ -356,16 +379,19 @@ export function DocumentNewPage() {
     }))
   }
 
+  // ── Expense row handlers ────────────────────────────────────────────────────
   const addExpenseRow    = () => setExpenseRows(p => [...p, { key: crypto.randomUUID(), name: '', amount: '' }])
   const removeExpenseRow = (key: string) => setExpenseRows(p => p.filter(r => r.key !== key))
   const updateExpenseRow = (key: string, field: 'name' | 'amount', value: string) =>
     setExpenseRows(p => p.map(r => r.key !== key ? r : { ...r, [field]: value }))
 
+  // ── Interest row handlers ───────────────────────────────────────────────────
   const addInterestRow    = () => setInterestRows(p => [...p, { key: crypto.randomUUID(), name: '', amount: '', type: 'charge' }])
   const removeInterestRow = (key: string) => setInterestRows(p => p.filter(r => r.key !== key))
   const updateInterestRow = (key: string, field: keyof InterestRow, value: string) =>
     setInterestRows(p => p.map(r => r.key !== key ? r : { ...r, [field]: value }))
 
+  // ── Charge / Tax handlers ───────────────────────────────────────────────────
   const addCharge    = () => setCharges(p => [...p, { name: '', amount: 0 }])
   const removeCharge = (i: number) => setCharges(p => p.filter((_, idx) => idx !== i))
   const updateCharge = (i: number, f: keyof Charge, v: string) =>
@@ -375,7 +401,7 @@ export function DocumentNewPage() {
   const updateTax = (i: number, f: keyof Tax, v: string) =>
     setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
 
-  // ── Totals ─────────────────────────────────────────────────────────────────
+  // ── Totals ──────────────────────────────────────────────────────────────────
   const lineTotal    = lineItems.reduce((s, l) => s + Number(l.amount), 0)
   const expenseTotal = expenseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
   const chargeTotal  = charges.reduce((s, c) => s + Number(c.amount), 0)
@@ -384,23 +410,47 @@ export function DocumentNewPage() {
   const taxTotal     = taxes.reduce((s, t) => s + (taxBase * Number(t.percentage) / 100), 0)
   const grandTotal   = lineTotal + chargeTotal - discountAmt + taxTotal
 
-  // ── Submit ─────────────────────────────────────────────────────────────────
+  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (CONTACT_REQUIRED.includes(docType) && !contactId) {
       toast.error('Select a contact'); return
     }
 
+    // ✅ INTEREST — Path C: bypass DocumentCreate entirely, use standaloneInterest
+    if (docType === 'interest') {
+      const validRows = interestRows.filter(r => r.name.trim() && Number(r.amount) > 0)
+      if (validRows.length === 0) { toast.error('Add at least one interest entry'); return }
+
+      // 'pay' (we owe them) → toggle='charge' | 'receive' (they owe us) → toggle='credit'
+      const toggle = interestDirection === 'pay' ? 'charge' : 'credit'
+      try {
+        const result = await standaloneInterest.mutateAsync({
+          contact:    contactId         ? Number(contactId)         : undefined,
+          reference:  interestLinkedDoc ? Number(interestLinkedDoc) : undefined,
+          date,
+          line_items: validRows.map(r => ({ name: r.name, amount: Number(r.amount) })),
+          toggle,
+        })
+        toast.success('Interest document created')
+        router.replace(`/documents/${result.interest_doc}`)
+      } catch (e: any) {
+        toast.error(e?.response?.data?.error ?? e?.response?.data?.detail ?? 'Failed to create interest')
+      }
+      return // ← CRITICAL: skip createDocument below
+    }
+
+    // All other doc types build a DocumentCreate payload
     const payload: DocumentCreate = {
       type:            docType,
       contact:         contactId  ? Number(contactId)  : undefined,
       date,
-      due_date:        dueDate       || undefined,
-      payment_terms:   paymentTerms  || undefined,
-      notes:           notes         || undefined,
-      reference:       referenceId   ? Number(referenceId) : undefined,
-      consignee:       consigneeId   ? Number(consigneeId) : undefined,
+      due_date:        dueDate      || undefined,
+      payment_terms:   paymentTerms || undefined,
+      notes:           notes        || undefined,
+      reference:       referenceId  ? Number(referenceId) : undefined,
+      consignee:       consigneeId  ? Number(consigneeId) : undefined,
       discount:        discountAmt,
-      attachment_urls: attachmentUrls,   // ✅ populated by UploadInput
+      attachment_urls: attachmentUrls,
     }
 
     if (docType === 'expense') {
@@ -410,16 +460,7 @@ export function DocumentNewPage() {
       payload.line_items      = validRows.map(r => ({ name: r.name, amount: Number(r.amount) }))
       payload.total_amount    = expenseTotal
       payload.payment_account = Number(paymentAccountId)
-
-    } else if (docType === 'interest') {
-      const validRows = interestRows.filter(r => r.name.trim() && Number(r.amount) > 0)
-      if (validRows.length === 0) { toast.error('Add at least one interest entry'); return }
-      if (!paymentAccountId)      { toast.error('Select a payment account'); return }
-      payload.interest_lines     = validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type }))
-      payload.total_amount       = Math.abs(interestCFImpact)
-      payload.payment_account    = Number(paymentAccountId)
-      payload.interest_direction = interestDirection
-      if (interestLinkedDoc) payload.reference = Number(interestLinkedDoc)
+      payload.reference       = interestLinkedDoc ? Number(interestLinkedDoc) : undefined
 
     } else if (isVoucher) {
       if (!voucherAmount || Number(voucherAmount) === 0) { toast.error('Enter amount'); return }
@@ -456,9 +497,7 @@ export function DocumentNewPage() {
     }
   }
 
-  // ── ✅ REPLACED: Attachments section now uses UploadInput ─────────────────
-  // Removed: currentLink state, handleAddAttachment, handleRemoveAttachment
-  // Now: UploadInput handles file upload to /api/upload/file/, returns relative paths
+  // ── Attachments helper ──────────────────────────────────────────────────────
   const renderAttachmentsSection = () => (
     <div className="space-y-2">
       <Label className="flex items-center gap-1.5">
@@ -471,15 +510,15 @@ export function DocumentNewPage() {
         onChange={setAttachmentUrls}
         context="document"
         maxFiles={10}
-        onPreview={(idx) => {
-          setPreviewIndex(idx)
-          setPreviewOpen(true)
-        }}
+        onPreview={(idx) => { setPreviewIndex(idx); setPreviewOpen(true) }}
       />
     </div>
   )
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Derived submit state ─────────────────────────────────────────────────────
+  const isSubmitting = createDocument.isPending || standaloneInterest.isPending
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="px-4 py-4 pb-10 space-y-6">
 
@@ -491,10 +530,18 @@ export function DocumentNewPage() {
             ? <span className="text-destructive">*</span>
             : <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>}
         </Label>
-        <SearchableSelect options={contactOptions} value={contactId} onChange={setContactId}
-          placeholder="Select contact" title="Select Contact"
-          searchPlaceholder="Search by name or phone..." emptyText="No contacts found"
-          error={CONTACT_REQUIRED.includes(docType) && !contactId} />
+        <SearchableSelect
+          options={contactOptions}
+          value={contactId}
+          onChange={setContactId}
+          placeholder="Select contact"
+          title="Select Contact"
+          searchPlaceholder="Search by name or phone..."
+          emptyText="No contacts found"
+          // ✅ clearable for optional contact types (interest, expense, etc.)
+          clearable={!CONTACT_REQUIRED.includes(docType)}
+          error={CONTACT_REQUIRED.includes(docType) && !contactId}
+        />
       </div>
 
       {/* Date */}
@@ -505,9 +552,9 @@ export function DocumentNewPage() {
 
       <Separator />
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* EXPENSE MODE                                                          */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* EXPENSE MODE                                                            */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {docType === 'expense' && (
         <div className="space-y-6">
           <div className="space-y-3">
@@ -544,28 +591,46 @@ export function DocumentNewPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Payment Account <span className="text-destructive">*</span>
+            <Label>
+              Link Document
+              <span className="text-xs text-muted-foreground ml-1 font-normal">optional — auto-fills contact</span>
+            </Label>
+            <SearchableSelect
+              options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
+              placeholder="Link to an existing document" title="Select Document"
+              searchPlaceholder="Search by doc ID, date..." clearable emptyText="No documents found"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>
+              Payment Account <span className="text-destructive">*</span>
               <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited</span>
             </Label>
-            <SearchableSelect options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
-              placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." clearable />
+            <SearchableSelect
+              options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+              placeholder="Select account" title="Select Payment Account"
+              searchPlaceholder="Search accounts..." clearable
+            />
           </div>
 
           {renderAttachmentsSection()}
 
           <div className="space-y-1.5">
             <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
           </div>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* INTEREST MODE                                                         */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* INTEREST MODE — Path C: standaloneInterest, NO payment account needed   */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {docType === 'interest' && (
         <div className="space-y-6">
 
+          {/* Direction selector */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">
               Payment Direction <span className="text-destructive">*</span>
@@ -574,30 +639,22 @@ export function DocumentNewPage() {
               Which way is money flowing for this interest adjustment?
             </p>
             <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setInterestDirection('pay')}
-                className={`flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all ${
-                  interestDirection === 'pay'
+              <button type="button" onClick={() => setInterestDirection('pay')}
+                className={`flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all
+                  ${interestDirection === 'pay'
                     ? 'border-red-400 bg-red-50 text-red-700'
-                    : 'border-border bg-muted/30 text-muted-foreground'
-                }`}
-              >
+                    : 'border-border bg-muted/30 text-muted-foreground'}`}>
                 <TrendingUp className="h-5 w-5" />
                 <span className="text-sm font-semibold">We Pay</span>
                 <span className="text-[10px] text-center leading-tight opacity-80">
                   Interest we owe — CF goes up (red)
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={() => setInterestDirection('receive')}
-                className={`flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all ${
-                  interestDirection === 'receive'
+              <button type="button" onClick={() => setInterestDirection('receive')}
+                className={`flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all
+                  ${interestDirection === 'receive'
                     ? 'border-green-400 bg-green-50 text-green-700'
-                    : 'border-border bg-muted/30 text-muted-foreground'
-                }`}
-              >
+                    : 'border-border bg-muted/30 text-muted-foreground'}`}>
                 <TrendingDown className="h-5 w-5" />
                 <span className="text-sm font-semibold">We Receive</span>
                 <span className="text-[10px] text-center leading-tight opacity-80">
@@ -615,12 +672,14 @@ export function DocumentNewPage() {
             </span>
           </div>
 
+          {/* Interest rows */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Interest Entries
               </Label>
-              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40" onClick={addInterestRow}>
+              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40"
+                onClick={addInterestRow}>
                 <Plus className="h-3.5 w-3.5" /> Add Row
               </Button>
             </div>
@@ -646,26 +705,18 @@ export function DocumentNewPage() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => updateInterestRow(row.key, 'type', 'charge')}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      row.type === 'charge'
+                  <button type="button" onClick={() => updateInterestRow(row.key, 'type', 'charge')}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors
+                      ${row.type === 'charge'
                         ? 'bg-red-50 border-red-300 text-red-600'
-                        : 'bg-muted border-border text-muted-foreground'
-                    }`}
-                  >
+                        : 'bg-muted border-border text-muted-foreground'}`}>
                     <TrendingUp className="h-3 w-3" /> Charge
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => updateInterestRow(row.key, 'type', 'discount')}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      row.type === 'discount'
+                  <button type="button" onClick={() => updateInterestRow(row.key, 'type', 'discount')}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors
+                      ${row.type === 'discount'
                         ? 'bg-green-50 border-green-300 text-green-600'
-                        : 'bg-muted border-border text-muted-foreground'
-                    }`}
-                  >
+                        : 'bg-muted border-border text-muted-foreground'}`}>
                     <TrendingDown className="h-3 w-3" /> Discount
                   </button>
                 </div>
@@ -673,6 +724,7 @@ export function DocumentNewPage() {
             ))}
           </div>
 
+          {/* CF Impact Preview */}
           {interestRows.some(r => Number(r.amount) > 0) && (
             <div className="rounded-xl border p-4 bg-muted/20 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -688,7 +740,7 @@ export function DocumentNewPage() {
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       {r.name || 'Entry'}
                       <Badge variant="outline" className="text-[10px] h-4">
-                        {r.type === 'charge' ? 'charge' : 'discount'}
+                        {r.type}
                       </Badge>
                     </span>
                     <span className={isPos ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
@@ -710,14 +762,7 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label>
-              Payment Account <span className="text-destructive">*</span>
-              <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited/credited</span>
-            </Label>
-            <SearchableSelect options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
-              placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." clearable />
-          </div>
+          {/* ✅ NO payment account for interest — Path C creates a record-only f.txn automatically */}
 
           <div className="space-y-1.5">
             <Label>
@@ -727,8 +772,7 @@ export function DocumentNewPage() {
             <SearchableSelect
               options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
               placeholder="Link to an existing document" title="Select Document"
-              searchPlaceholder="Search by doc ID, date..." clearable
-              emptyText="No documents found"
+              searchPlaceholder="Search by doc ID, date..." clearable emptyText="No documents found"
             />
           </div>
 
@@ -736,30 +780,33 @@ export function DocumentNewPage() {
 
           <div className="space-y-1.5">
             <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
           </div>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* FAST / DETAILED toggle for bill / invoice                            */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* FAST / DETAILED toggle — bill / invoice only                           */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {!isExpenseType && isFastBillType && (
         <Tabs value={billMode} onValueChange={v => setBillMode(v as 'fast' | 'detailed')} className="w-full">
           <TabsList className="w-full h-11 bg-muted/60 p-1 rounded-xl">
-            <TabsTrigger value="fast" className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger value="fast"
+              className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
               Fast Amount Only
             </TabsTrigger>
-            <TabsTrigger value="detailed" className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger value="detailed"
+              className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
               Detailed Items
             </TabsTrigger>
           </TabsList>
         </Tabs>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* FAST MODE                                                             */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* FAST MODE                                                               */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {!isExpenseType && isFastMode && (
         <div className="space-y-6">
           <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
@@ -771,27 +818,33 @@ export function DocumentNewPage() {
               value={fastAmount} onChange={e => setFastAmount(e.target.value)} />
             <p className="text-[11px] text-muted-foreground mt-1 leading-tight">
               Creates a valid {getDocLabel(docType)} instantly. Switch to{' '}
-              <button className="font-semibold text-primary underline underline-offset-2" onClick={() => setBillMode('detailed')}>Detailed</button>
-              {' '}to add line items &amp; track inventory.
+              <button className="font-semibold text-primary underline underline-offset-2"
+                onClick={() => setBillMode('detailed')}>Detailed</button>
+              {' '}to add line items & track inventory.
             </p>
           </div>
 
-          {/* ✅ Fast mode: Upload attachments (key USP from spec — 1-minute bill with photos) */}
           {renderAttachmentsSection()}
 
           {showPaymentAccount && (
             <div className="space-y-1.5">
-              <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span></Label>
-              <SearchableSelect options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
-                placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." clearable />
+              <Label>
+                Payment Account
+                <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span>
+              </Label>
+              <SearchableSelect
+                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                placeholder="Select account" title="Select Payment Account"
+                searchPlaceholder="Search accounts..." clearable
+              />
             </div>
           )}
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* VOUCHER MODE                                                          */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* VOUCHER MODE                                                            */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {!isExpenseType && isVoucher && (
         <div className="space-y-6">
           <div className="space-y-1.5">
@@ -817,21 +870,26 @@ export function DocumentNewPage() {
 
           <div className="space-y-1.5">
             <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
           </div>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* DETAILED MODE — bill/invoice/po/cn/dn etc.                           */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* DETAILED MODE — bill/invoice/po/cn/dn/challan etc.                      */}
+      {/* ════════════════════════════════════════════════════════════════════════ */}
       {!isExpenseType && !isFastMode && hasLineItems && (
         <div className="space-y-6">
+
           {hasConsignee && (
             <div className="space-y-1.5">
               <Label>Consignee <span className="text-xs text-muted-foreground ml-1">optional</span></Label>
-              <SearchableSelect options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
-                placeholder="Select consignee" title="Select Consignee" searchPlaceholder="Search contacts..." clearable />
+              <SearchableSelect
+                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                placeholder="Select consignee" title="Select Consignee"
+                searchPlaceholder="Search contacts..." clearable
+              />
             </div>
           )}
 
@@ -845,17 +903,23 @@ export function DocumentNewPage() {
                     : 'Select the Bill being returned — contact and items auto-fill'}
                 </p>
               )}
-              <SearchableSelect options={refDocOptions} value={referenceId} onChange={setReferenceId}
+              <SearchableSelect
+                options={refDocOptions} value={referenceId} onChange={setReferenceId}
                 placeholder="Link to existing document"
                 title={primaryRefDocType ? `Select ${getDocLabel(primaryRefDocType)}` : 'Reference Document'}
                 searchPlaceholder="Search by doc ID or date..." clearable
-                emptyText={`No ${primaryRefDocType ? getDocLabel(primaryRefDocType) : ''} documents found`} />
+                emptyText={`No ${primaryRefDocType ? getDocLabel(primaryRefDocType) : ''} documents found`}
+              />
               {refDoc && (
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/40 border border-border/50 text-xs mt-2">
                   <FileText className="h-4 w-4 text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-foreground/90">{getDocLabel(refDoc.type)} {refDoc.doc_id}</span>
-                    {refDoc.total_amount && <span className="text-muted-foreground"> · {fmtAmount(refDoc.total_amount)}</span>}
+                    <span className="font-semibold text-foreground/90">
+                      {getDocLabel(refDoc.type)} {refDoc.doc_id}
+                    </span>
+                    {refDoc.total_amount && (
+                      <span className="text-muted-foreground"> · {fmtAmount(refDoc.total_amount)}</span>
+                    )}
                     {(refDoc.line_items?.length ?? 0) > 0 && (
                       <span className="text-muted-foreground"> · {refDoc.line_items!.length} items</span>
                     )}
@@ -878,7 +942,8 @@ export function DocumentNewPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Payment Terms <span className="text-xs text-muted-foreground font-normal">opt</span></Label>
-              <Input placeholder="e.g. Net 30" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} className="h-11 rounded-xl" />
+              <Input placeholder="e.g. Net 30" value={paymentTerms}
+                onChange={e => setPaymentTerms(e.target.value)} className="h-11 rounded-xl" />
             </div>
           </div>
 
@@ -887,27 +952,42 @@ export function DocumentNewPage() {
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Line Items</Label>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 border-primary/30 text-primary hover:bg-primary/10"
+                <Button variant="outline" size="sm"
+                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 border-primary/30 text-primary hover:bg-primary/10"
                   onClick={() => setProductPickerOpen(true)}>
                   <Package className="h-3.5 w-3.5" /> Bulk Add
                 </Button>
-                <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40" onClick={addLineItem}>
+                <Button variant="ghost" size="sm"
+                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40" onClick={addLineItem}>
                   <Plus className="h-3.5 w-3.5" /> Empty Row
                 </Button>
               </div>
             </div>
 
             {lineItems.map(item => (
-              <Card key={item.key} className="overflow-hidden rounded-xl border border-border/80 shadow-sm transition-all focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
+              <Card key={item.key}
+                className="overflow-hidden rounded-xl border border-border/80 shadow-sm transition-all focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
                 <CardContent className="p-3 space-y-3">
                   {products.length > 0 && (
-                    <SearchableSelect options={productOptions} value={item.product_id ? String(item.product_id) : ''}
+                    <SearchableSelect
+                      options={productOptions}
+                      value={item.product_id ? String(item.product_id) : ''}
                       onChange={v => onProductSelect(item.key, v)}
-                      placeholder="Link to inventory product (optional)" title="Select Product"
-                      searchPlaceholder="Search by name or HSN..." clearable />
+                      placeholder="Link to inventory product (optional)"
+                      title="Select Product"
+                      searchPlaceholder="Search by name or HSN..."
+                      clearable
+                    />
                   )}
                   <Input placeholder="Item name / description" value={item.name}
-                    onChange={e => updateLineItem(item.key, 'name', e.target.value)} className="h-10 bg-muted/20" />
+                    onChange={e => updateLineItem(item.key, 'name', e.target.value)}
+                    className="h-10 bg-muted/20" />
+                  <Input
+                    placeholder="HSN Code (optional)"
+                    value={item.hsn ?? ''}
+                    onChange={e => updateLineItem(item.key, 'hsn', e.target.value || null)}
+                    className="h-9 bg-muted/20 text-sm font-mono tracking-wider"
+                  />
                   <div className={`grid gap-3 ${docType === 'challan' ? 'grid-cols-1' : 'grid-cols-3'}`}>
                     <div className="space-y-1.5">
                       <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Qty</p>
@@ -942,19 +1022,21 @@ export function DocumentNewPage() {
             ))}
           </div>
 
+          {/* Charges / Taxes / Discount */}
           {docType !== 'challan' && (
             <div className="pt-2">
-              <button className="flex items-center justify-between w-full p-3 rounded-xl border bg-muted/20 text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+              <button
+                className="flex items-center justify-between w-full p-3 rounded-xl border bg-muted/20 text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
                 onClick={() => setShowCharges(v => !v)}>
-                <span>Taxes, Discounts &amp; Charges</span>
+                <span>Taxes, Discounts & Charges</span>
                 {showCharges ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
               {showCharges && (
                 <div className="space-y-5 p-4 mt-2 border rounded-xl bg-background/50">
                   <div className="space-y-1.5">
                     <Label>Overall Discount</Label>
-                    <Input type="number" placeholder="0.00" value={discount} className="h-11 rounded-lg"
-                      onChange={e => setDiscount(e.target.value)} />
+                    <Input type="number" placeholder="0.00" value={discount}
+                      className="h-11 rounded-lg" onChange={e => setDiscount(e.target.value)} />
                   </div>
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -969,8 +1051,10 @@ export function DocumentNewPage() {
                           onChange={e => updateCharge(i, 'name', e.target.value)} />
                         <Input type="number" placeholder="0" className="w-24 h-10 font-medium" value={c.amount}
                           onChange={e => updateCharge(i, 'amount', e.target.value)} />
-                        <button onClick={() => removeCharge(i)} className="p-2 text-muted-foreground hover:text-destructive">
-                          <X className="h-4 w-4" /></button>
+                        <button onClick={() => removeCharge(i)}
+                          className="p-2 text-muted-foreground hover:text-destructive">
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -986,12 +1070,14 @@ export function DocumentNewPage() {
                         <Input placeholder="e.g. IGST 18%" className="flex-1 h-10" value={t.name}
                           onChange={e => updateTax(i, 'name', e.target.value)} />
                         <div className="relative w-24">
-                          <Input type="number" placeholder="0" className="w-full h-10 font-medium pr-6" value={t.percentage}
-                            onChange={e => updateTax(i, 'percentage', e.target.value)} />
+                          <Input type="number" placeholder="0" className="w-full h-10 font-medium pr-6"
+                            value={t.percentage} onChange={e => updateTax(i, 'percentage', e.target.value)} />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
                         </div>
-                        <button onClick={() => removeTax(i)} className="p-2 text-muted-foreground hover:text-destructive">
-                          <X className="h-4 w-4" /></button>
+                        <button onClick={() => removeTax(i)}
+                          className="p-2 text-muted-foreground hover:text-destructive">
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1000,6 +1086,7 @@ export function DocumentNewPage() {
             </div>
           )}
 
+          {/* Totals card */}
           <Card className="mt-4 bg-muted/30 border-transparent">
             <CardContent className="p-4 space-y-2 text-sm">
               <div className="flex justify-between text-muted-foreground font-medium">
@@ -1029,9 +1116,15 @@ export function DocumentNewPage() {
 
           {showPaymentAccount && (
             <div className="space-y-1.5">
-              <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span></Label>
-              <SearchableSelect options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
-                placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." clearable />
+              <Label>
+                Payment Account
+                <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span>
+              </Label>
+              <SearchableSelect
+                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                placeholder="Select account" title="Select Payment Account"
+                searchPlaceholder="Search accounts..." clearable
+              />
             </div>
           )}
 
@@ -1039,28 +1132,36 @@ export function DocumentNewPage() {
 
           <div className="space-y-1.5">
             <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes} onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
           </div>
         </div>
       )}
 
       {/* Submit */}
       <div className="pt-2">
-        <Button className="w-full h-14 text-lg font-bold rounded-2xl shadow-lg shadow-primary/20"
-          onClick={handleSubmit} disabled={createDocument.isPending}>
-          {createDocument.isPending ? 'Creating...' : `Create ${getDocLabel(docType)}`}
+        <Button
+          className="w-full h-14 text-lg font-bold rounded-2xl shadow-lg shadow-primary/20"
+          onClick={handleSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'Creating...' : `Create ${getDocLabel(docType)}`}
         </Button>
       </div>
 
-      {/* ── Pickers ─────────────────────────────────────────────────────────── */}
+      {/* Pickers */}
       {(refDoc?.line_items?.length ?? 0) > 0 && (
-        <LineItemPickerSheet open={pickerOpen} items={refDoc!.line_items!}
-          onConfirm={handlePickerConfirm} onClose={() => setPickerOpen(false)} />
+        <LineItemPickerSheet
+          open={pickerOpen} items={refDoc!.line_items!}
+          onConfirm={handlePickerConfirm} onClose={() => setPickerOpen(false)}
+        />
       )}
-      <ProductMultiPickerSheet open={productPickerOpen} products={products}
-        onConfirm={handleProductPickerConfirm} onClose={() => setProductPickerOpen(false)} />
+      <ProductMultiPickerSheet
+        open={productPickerOpen} products={products}
+        onConfirm={handleProductPickerConfirm} onClose={() => setProductPickerOpen(false)}
+      />
 
-      {/* ✅ ADD: FilePreviewSheet — opens when user taps a thumbnail in UploadInput */}
+      {/* File Preview Sheet */}
       <FilePreviewSheet
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
