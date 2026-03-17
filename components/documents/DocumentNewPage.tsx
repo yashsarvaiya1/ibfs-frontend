@@ -45,11 +45,17 @@ const CONTACT_REQUIRED:    DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cas
 const IS_EXPENSE_TYPE:     DocumentType[] = ['expense', 'interest']
 const AUTO_COPY_REF_TYPES: DocumentType[] = ['cn', 'dn']
 
-const REF_DOC_TYPES: Partial<Record<DocumentType, DocumentType>> = {
-  cn: 'invoice', dn: 'bill',
-  challan: 'bill',
-  po: 'quotation', pi: 'quotation',
-  bill: 'po', invoice: 'pi',
+// ✅ Now supports multiple ref types per doc type
+// bill can come from: po, quotation, or another bill
+// invoice can come from: pi, quotation, or another invoice
+const REF_DOC_TYPE_OPTIONS: Partial<Record<DocumentType, DocumentType[]>> = {
+  cn:      ['invoice'],
+  dn:      ['bill'],
+  challan: ['bill', 'invoice'],
+  po:      ['quotation'],
+  pi:      ['quotation'],
+  bill:    ['po', 'quotation', 'bill'],
+  invoice: ['pi', 'quotation', 'invoice'],
 }
 
 // ── Local row types ───────────────────────────────────────────────────────────
@@ -117,7 +123,6 @@ function LineItemPickerSheet({ open, items, onConfirm, onClose }: LineItemPicker
   )
 }
 
-
 // ── Product Multi-Picker Sheet ────────────────────────────────────────────────
 function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
   open: boolean
@@ -181,7 +186,6 @@ function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
   )
 }
 
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export function DocumentNewPage() {
   const router       = useRouter()
@@ -198,20 +202,25 @@ export function DocumentNewPage() {
   const { data: productsData } = useProducts({ is_active: true })
   const { data: accountsData } = useAccounts({ is_active: true })
 
-  const primaryRefDocType  = REF_DOC_TYPES[docType]
-  const shouldFetchRefDocs = WITH_REFERENCE.includes(docType)
-  const { data: referenceDocs } = useDocuments(
-    shouldFetchRefDocs && primaryRefDocType ? { type: primaryRefDocType } : undefined
+  // ✅ Multiple ref doc types supported — user picks which type to browse
+  const refDocTypeOptions = REF_DOC_TYPE_OPTIONS[docType] ?? []
+  const hasMultipleRefTypes = refDocTypeOptions.length > 1
+  const [selectedRefDocType, setSelectedRefDocType] = useState<DocumentType | ''>(
+    refDocTypeOptions[0] ?? ''
   )
 
-  // ✅ page_size: 50 prevents fetching all docs — fast enough for linking
+  const shouldFetchRefDocs = WITH_REFERENCE.includes(docType) && !!selectedRefDocType
+  const { data: referenceDocs } = useDocuments(
+    shouldFetchRefDocs ? { type: selectedRefDocType as DocumentType } : undefined
+  )
+
   const isInterestOrExpense = docType === 'interest' || docType === 'expense'
   const { data: allDocsData } = useDocuments(
     isInterestOrExpense ? { page_size: 50 } : undefined
   )
 
-  const createDocument    = useCreateDocument()
-  const standaloneInterest = useStandaloneInterest() // ✅ Path C for interest
+  const createDocument     = useCreateDocument()
+  const standaloneInterest = useStandaloneInterest()
 
   // ── Form state ──────────────────────────────────────────────────────────────
   const [contactId,        setContactId]       = useState(preContactId)
@@ -256,7 +265,7 @@ export function DocumentNewPage() {
   const refDocs  = shouldFetchRefDocs ? (referenceDocs?.results ?? []) : []
   const allDocs  = allDocsData?.results ?? []
 
-  const refDocId    = referenceId      ? Number(referenceId)      : undefined
+  const refDocId    = referenceId       ? Number(referenceId)       : undefined
   const linkedDocId = interestLinkedDoc ? Number(interestLinkedDoc) : undefined
   const { data: refDoc }    = useDocument(refDocId    as number)
   const { data: linkedDoc } = useDocument(linkedDocId as number)
@@ -264,13 +273,12 @@ export function DocumentNewPage() {
   // ── Computed flags ──────────────────────────────────────────────────────────
   const isVoucher      = IS_VOUCHER.includes(docType)
   const hasLineItems   = WITH_LINE_ITEMS.includes(docType)
-  const hasReference   = WITH_REFERENCE.includes(docType)
+  const hasReference   = WITH_REFERENCE.includes(docType) && refDocTypeOptions.length > 0
   const hasConsignee   = WITH_CONSIGNEE.includes(docType)
   const isFastBillType = FAST_BILL_TYPES.includes(docType)
   const isFastMode     = isFastBillType && billMode === 'fast'
   const isExpenseType  = IS_EXPENSE_TYPE.includes(docType)
 
-  // ✅ Interest uses standaloneInterest (no payment account needed in UI — Path C)
   const showPaymentAccount =
     (WITH_PAYMENT.includes(docType) && !!settings?.auto_transaction)
     || IS_VOUCHER.includes(docType)
@@ -327,18 +335,89 @@ export function DocumentNewPage() {
   ]
 
   // ── Side effects ────────────────────────────────────────────────────────────
+
+  // ✅ Reset referenceId when user switches ref doc type tab
+  useEffect(() => { setReferenceId('') }, [selectedRefDocType])
+
+  // ✅ MAIN COPY EFFECT — fires when a ref doc is selected
+  // Rules:
+  //  - contact      → only if contactId is empty
+  //  - consignee    → only if consigneeId is empty
+  //  - paymentAcct  → only if paymentAccountId is empty
+  //  - line_items   → always replace (with picker for cn/dn, direct for others)
+  //  - taxes        → only if taxes array is empty
+  //  - charges      → only if charges array is empty
+  //  - discount     → only if discount is empty
+  //  - paymentTerms → only if paymentTerms is empty
+  //  - dueDate      → only if dueDate is empty
+  //  - notes        → only if notes is empty
   useEffect(() => {
     if (!refDoc) return
-    if (refDoc.contact) setContactId(String(refDoc.contact))
+
+    // Contact — never override if already set
+    if (!contactId && refDoc.contact) {
+      setContactId(String(refDoc.contact))
+    }
+
+    // Consignee — never override if already set
+    if (!consigneeId && refDoc.consignee) {
+      setConsigneeId(String(refDoc.consignee))
+    }
+
+    // For cn/dn: open picker so user selects which items to copy
     if (AUTO_COPY_REF_TYPES.includes(docType) && (refDoc.line_items?.length ?? 0) > 0) {
       setLineItems([{ key: crypto.randomUUID(), name: '', quantity: 1, rate: 0, amount: 0, product_id: null }])
       setPickerOpen(true)
+      return // skip direct line item copy below
+    }
+
+    // For all other doc types: copy line items directly
+    if ((refDoc.line_items?.length ?? 0) > 0) {
+      setPickerOpen(true) // still show picker so user can deselect items
+    }
+
+    // Taxes — only if none set yet
+    if (taxes.length === 0 && (refDoc.taxes?.length ?? 0) > 0) {
+      setTaxes(refDoc.taxes!)
+      if (!showCharges) setShowCharges(true)
+    }
+
+    // Charges — only if none set yet
+    if (charges.length === 0 && (refDoc.charges?.length ?? 0) > 0) {
+      setCharges(refDoc.charges!)
+      if (!showCharges) setShowCharges(true)
+    }
+
+    // Discount — only if not set yet
+    if (!discount && refDoc.discount && Number(refDoc.discount) > 0) {
+      setDiscount(String(refDoc.discount))
+      if (!showCharges) setShowCharges(true)
+    }
+
+    // Payment terms — only if not set yet
+    if (!paymentTerms && refDoc.payment_terms) {
+      setPaymentTerms(refDoc.payment_terms)
+    }
+
+    // Due date — only if not set yet
+    if (!dueDate && refDoc.due_date) {
+      setDueDate(refDoc.due_date)
+    }
+
+    // Notes — only if not set yet
+    if (!notes && refDoc.notes) {
+      setNotes(refDoc.notes)
+    }
+
+    // Switch to detailed mode if we got line items
+    if ((refDoc.line_items?.length ?? 0) > 0 && isFastBillType) {
+      setBillMode('detailed')
     }
   }, [refDoc?.id])
 
   useEffect(() => {
     if (!linkedDoc) return
-    if (linkedDoc.contact) setContactId(String(linkedDoc.contact))
+    if (!contactId && linkedDoc.contact) setContactId(String(linkedDoc.contact))
   }, [linkedDoc?.id])
 
   // ── Line item handlers ──────────────────────────────────────────────────────
@@ -416,13 +495,10 @@ export function DocumentNewPage() {
       toast.error('Select a contact'); return
     }
 
-    // ✅ INTEREST — Path C: bypass DocumentCreate entirely, use standaloneInterest
     if (docType === 'interest') {
       const validRows = interestRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one interest entry'); return }
-
-      // 'pay' (we owe them) → toggle='charge' | 'receive' (they owe us) → toggle='credit'
-      const toggle = interestDirection === 'pay' ? 'charge' : 'credit'
+      const toggle = interestDirection === 'pay' ? 'credit' : 'charge'
       try {
         const result = await standaloneInterest.mutateAsync({
           contact:    contactId         ? Number(contactId)         : undefined,
@@ -436,10 +512,9 @@ export function DocumentNewPage() {
       } catch (e: any) {
         toast.error(e?.response?.data?.error ?? e?.response?.data?.detail ?? 'Failed to create interest')
       }
-      return // ← CRITICAL: skip createDocument below
+      return
     }
 
-    // All other doc types build a DocumentCreate payload
     const payload: DocumentCreate = {
       type:            docType,
       contact:         contactId  ? Number(contactId)  : undefined,
@@ -515,8 +590,109 @@ export function DocumentNewPage() {
     </div>
   )
 
-  // ── Derived submit state ─────────────────────────────────────────────────────
   const isSubmitting = createDocument.isPending || standaloneInterest.isPending
+
+  // ── Reference Document Section (reusable render) ────────────────────────────
+  const renderReferenceSection = () => {
+    if (!hasReference) return null
+    return (
+      <div className="space-y-2">
+        <Label>
+          Reference Document
+          <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>
+        </Label>
+
+        {/* ✅ Doc type tab switcher — shown only when multiple ref types exist */}
+        {hasMultipleRefTypes && (
+          <div className="flex gap-1.5 flex-wrap">
+            {refDocTypeOptions.map(type => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setSelectedRefDocType(type)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  selectedRefDocType === type
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted'
+                }`}
+              >
+                {getDocLabel(type)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {(docType === 'cn' || docType === 'dn') && (
+          <p className="text-xs text-muted-foreground">
+            {docType === 'cn'
+              ? 'Select the Invoice being returned — contact and items auto-fill'
+              : 'Select the Bill being returned — contact and items auto-fill'}
+          </p>
+        )}
+
+        <SearchableSelect
+          options={refDocOptions}
+          value={referenceId}
+          onChange={setReferenceId}
+          placeholder={selectedRefDocType ? `Select ${getDocLabel(selectedRefDocType)}` : 'Select reference doc'}
+          title="Reference Document"
+          searchPlaceholder="Search by doc ID or date..."
+          clearable
+          emptyText={selectedRefDocType ? `No ${getDocLabel(selectedRefDocType)} documents found` : 'No documents found'}
+        />
+
+        {/* ✅ Ref doc summary card — shows what will be / was copied */}
+        {refDoc && (
+          <div className="rounded-xl border bg-muted/30 p-3 space-y-2 mt-1">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-semibold text-foreground/90">
+                  {getDocLabel(refDoc.type)} {refDoc.doc_id}
+                </span>
+                {refDoc.total_amount && (
+                  <span className="text-xs text-muted-foreground"> · {fmtAmount(refDoc.total_amount)}</span>
+                )}
+              </div>
+              {(refDoc.line_items?.length ?? 0) > 0 && (
+                <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 shrink-0"
+                  onClick={() => setPickerOpen(true)}>
+                  Re-copy Items
+                </Button>
+              )}
+            </div>
+
+            {/* What was auto-copied — helpful confirmation */}
+            <div className="flex flex-wrap gap-1.5">
+              {refDoc.contact && !preContactId && (
+                <Badge variant="secondary" className="text-[10px] h-5">✓ Contact</Badge>
+              )}
+              {refDoc.consignee && (
+                <Badge variant="secondary" className="text-[10px] h-5">✓ Consignee</Badge>
+              )}
+              {(refDoc.line_items?.length ?? 0) > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-5">
+                  ✓ {refDoc.line_items!.length} Items
+                </Badge>
+              )}
+              {(refDoc.taxes?.length ?? 0) > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-5">✓ Taxes</Badge>
+              )}
+              {(refDoc.charges?.length ?? 0) > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-5">✓ Charges</Badge>
+              )}
+              {refDoc.discount && Number(refDoc.discount) > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-5">✓ Discount</Badge>
+              )}
+              {refDoc.payment_terms && (
+                <Badge variant="secondary" className="text-[10px] h-5">✓ Terms</Badge>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -538,7 +714,6 @@ export function DocumentNewPage() {
           title="Select Contact"
           searchPlaceholder="Search by name or phone..."
           emptyText="No contacts found"
-          // ✅ clearable for optional contact types (interest, expense, etc.)
           clearable={!CONTACT_REQUIRED.includes(docType)}
           error={CONTACT_REQUIRED.includes(docType) && !contactId}
         />
@@ -552,9 +727,7 @@ export function DocumentNewPage() {
 
       <Separator />
 
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {/* EXPENSE MODE                                                            */}
-      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* EXPENSE MODE */}
       {docType === 'expense' && (
         <div className="space-y-6">
           <div className="space-y-3">
@@ -566,7 +739,6 @@ export function DocumentNewPage() {
                 <Plus className="h-3.5 w-3.5" /> Add Row
               </Button>
             </div>
-
             {expenseRows.map(row => (
               <div key={row.key} className="flex gap-2 items-center">
                 <Input placeholder="e.g. Rent, Electricity, Salary..."
@@ -583,7 +755,6 @@ export function DocumentNewPage() {
                 )}
               </div>
             ))}
-
             <div className="flex justify-between items-center px-3 py-2.5 bg-muted/40 rounded-xl border">
               <span className="text-sm font-semibold">Total</span>
               <span className="text-lg font-black">{fmtAmount(expenseTotal)}</span>
@@ -624,13 +795,9 @@ export function DocumentNewPage() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {/* INTEREST MODE — Path C: standaloneInterest, NO payment account needed   */}
-      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* INTEREST MODE */}
       {docType === 'interest' && (
         <div className="space-y-6">
-
-          {/* Direction selector */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">
               Payment Direction <span className="text-destructive">*</span>
@@ -672,7 +839,6 @@ export function DocumentNewPage() {
             </span>
           </div>
 
-          {/* Interest rows */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -683,7 +849,6 @@ export function DocumentNewPage() {
                 <Plus className="h-3.5 w-3.5" /> Add Row
               </Button>
             </div>
-
             {interestRows.map(row => (
               <div key={row.key} className="space-y-2 p-3 rounded-xl border bg-muted/20">
                 <div className="flex gap-2 items-center">
@@ -724,7 +889,6 @@ export function DocumentNewPage() {
             ))}
           </div>
 
-          {/* CF Impact Preview */}
           {interestRows.some(r => Number(r.amount) > 0) && (
             <div className="rounded-xl border p-4 bg-muted/20 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -734,14 +898,16 @@ export function DocumentNewPage() {
                 const amt    = Number(r.amount)
                 const net    = r.type === 'charge' ? amt : -amt
                 const impact = interestDirection === 'pay' ? net : -net
-                const isPos  = impact > 0
+                // const isPos  = impact > 0
+
+                const isPos =
+                  (interestDirection === 'pay'     && r.type === 'charge')  ||
+                  (interestDirection === 'receive' && r.type === 'discount')
                 return (
                   <div key={i} className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       {r.name || 'Entry'}
-                      <Badge variant="outline" className="text-[10px] h-4">
-                        {r.type}
-                      </Badge>
+                      <Badge variant="outline" className="text-[10px] h-4">{r.type}</Badge>
                     </span>
                     <span className={isPos ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
                       {isPos ? '+' : '−'}{fmtAmount(Math.abs(impact))}
@@ -761,8 +927,6 @@ export function DocumentNewPage() {
               </p>
             </div>
           )}
-
-          {/* ✅ NO payment account for interest — Path C creates a record-only f.txn automatically */}
 
           <div className="space-y-1.5">
             <Label>
@@ -786,9 +950,7 @@ export function DocumentNewPage() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {/* FAST / DETAILED toggle — bill / invoice only                           */}
-      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* FAST / DETAILED toggle */}
       {!isExpenseType && isFastBillType && (
         <Tabs value={billMode} onValueChange={v => setBillMode(v as 'fast' | 'detailed')} className="w-full">
           <TabsList className="w-full h-11 bg-muted/60 p-1 rounded-xl">
@@ -804,34 +966,40 @@ export function DocumentNewPage() {
         </Tabs>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {/* FAST MODE                                                               */}
-      {/* ════════════════════════════════════════════════════════════════════════ */}
+      {/* FAST MODE */}
       {!isExpenseType && isFastMode && (
         <div className="space-y-6">
           <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
             <Label className="text-primary font-semibold">
-              Total Amount <span className="text-destructive">*</span>
+              Total Amount <span className="text-destructive">
+              *</span>
             </Label>
-            <Input type="number" placeholder="0.00"
-              className="text-3xl h-16 font-black rounded-xl border-primary/20 bg-background mt-1 tracking-tight"
-              value={fastAmount} onChange={e => setFastAmount(e.target.value)} />
-            <p className="text-[11px] text-muted-foreground mt-1 leading-tight">
-              Creates a valid {getDocLabel(docType)} instantly. Switch to{' '}
-              <button className="font-semibold text-primary underline underline-offset-2"
-                onClick={() => setBillMode('detailed')}>Detailed</button>
-              {' '}to add line items & track inventory.
-            </p>
+            <Input
+              type="number" placeholder="0.00" value={fastAmount}
+              onChange={e => setFastAmount(e.target.value)}
+              className="h-14 text-2xl font-bold rounded-xl border-primary/20"
+            />
           </div>
 
-          {renderAttachmentsSection()}
+          {/* Reference doc for fast mode */}
+          {renderReferenceSection()}
 
+          {/* Consignee */}
+          {hasConsignee && (
+            <div className="space-y-1.5">
+              <Label>Consignee <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <SearchableSelect
+                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                placeholder="Select consignee" title="Select Consignee"
+                searchPlaceholder="Search contacts..." clearable
+              />
+            </div>
+          )}
+
+          {/* Payment account */}
           {showPaymentAccount && (
             <div className="space-y-1.5">
-              <Label>
-                Payment Account
-                <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span>
-              </Label>
+              <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
                 options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
                 placeholder="Select account" title="Select Payment Account"
@@ -839,30 +1007,362 @@ export function DocumentNewPage() {
               />
             </div>
           )}
+
+          {/* Due date + payment terms */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Due Date <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Terms <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <Input placeholder="e.g. Net 30" value={paymentTerms}
+                onChange={e => setPaymentTerms(e.target.value)} className="h-11 rounded-xl" />
+            </div>
+          </div>
+
+          {renderAttachmentsSection()}
+
+          <div className="space-y-1.5">
+            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+          </div>
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {/* VOUCHER MODE                                                            */}
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {!isExpenseType && isVoucher && (
+      {/* DETAILED LINE ITEMS MODE */}
+      {!isExpenseType && !isFastMode && hasLineItems && (
         <div className="space-y-6">
+
+          {/* Reference doc */}
+          {renderReferenceSection()}
+
+          {/* Consignee */}
+          {hasConsignee && (
+            <div className="space-y-1.5">
+              <Label>Consignee <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <SearchableSelect
+                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                placeholder="Select consignee" title="Select Consignee"
+                searchPlaceholder="Search contacts..." clearable
+              />
+            </div>
+          )}
+
+          {/* Line items */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Line Items
+              </Label>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm"
+                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40"
+                  onClick={() => setProductPickerOpen(true)}>
+                  <Package className="h-3.5 w-3.5" /> Products
+                </Button>
+                <Button variant="ghost" size="sm"
+                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40"
+                  onClick={addLineItem}>
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+              </div>
+            </div>
+
+            {lineItems.map((item, idx) => (
+              <Card key={item.key} className="border border-border/60 shadow-none rounded-xl overflow-hidden">
+                <CardContent className="p-3 space-y-2">
+                  {/* Row header */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-muted-foreground w-5 shrink-0">
+                      #{idx + 1}
+                    </span>
+                    {docType !== 'challan' && (
+                      <SearchableSelect
+                        options={productOptions}
+                        value={item.product_id ? String(item.product_id) : ''}
+                        onChange={v => onProductSelect(item.key, v)}
+                        placeholder="Product (optional)"
+                        title="Select Product"
+                        searchPlaceholder="Search products..."
+                        clearable
+                        className="flex-1"
+                      />
+                    )}
+                    {lineItems.length > 1 && (
+                      <button onClick={() => removeLineItem(item.key)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive transition-colors shrink-0">
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Name */}
+                  <Input
+                    placeholder="Item name / description"
+                    value={item.name}
+                    onChange={e => updateLineItem(item.key, 'name', e.target.value)}
+                    className="h-10 rounded-lg text-sm"
+                  />
+
+                  {/* Qty × Rate = Amount */}
+                  {docType !== 'challan' && (
+                    <div className="flex gap-2 items-center">
+                      <div className="flex-1 space-y-0.5">
+                        <p className="text-[10px] text-muted-foreground font-medium px-0.5">Qty</p>
+                        <Input
+                          type="number" placeholder="1"
+                          value={item.quantity ?? ''}
+                          onChange={e => updateLineItem(item.key, 'quantity', Number(e.target.value))}
+                          className="h-10 rounded-lg text-sm text-center font-medium"
+                        />
+                      </div>
+                      <span className="text-muted-foreground text-sm mt-4">×</span>
+                      <div className="flex-1 space-y-0.5">
+                        <p className="text-[10px] text-muted-foreground font-medium px-0.5">Rate</p>
+                        <Input
+                          type="number" placeholder="0.00"
+                          value={item.rate ?? ''}
+                          onChange={e => updateLineItem(item.key, 'rate', Number(e.target.value))}
+                          className="h-10 rounded-lg text-sm font-medium"
+                        />
+                      </div>
+                      <span className="text-muted-foreground text-sm mt-4">=</span>
+                      <div className="flex-1 space-y-0.5">
+                        <p className="text-[10px] text-muted-foreground font-medium px-0.5">Amount</p>
+                        <Input
+                          type="number" placeholder="0.00"
+                          value={item.amount ?? ''}
+                          onChange={e => updateLineItem(item.key, 'amount', Number(e.target.value))}
+                          className="h-10 rounded-lg text-sm font-bold"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* HSN */}
+                  {docType !== 'challan' && (
+                    <Input
+                      placeholder="HSN code (optional)"
+                      value={item.hsn ?? ''}
+                      onChange={e => updateLineItem(item.key, 'hsn', e.target.value)}
+                      className="h-9 rounded-lg text-xs text-muted-foreground"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Charges / Taxes / Discount toggle */}
+          {docType !== 'challan' && (
+            <button
+              type="button"
+              onClick={() => setShowCharges(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-dashed border-border/60 bg-muted/20 hover:bg-muted/40 transition-colors text-sm font-medium text-muted-foreground"
+            >
+              <span className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Charges, Taxes & Discount
+                {(charges.length > 0 || taxes.length > 0 || discountAmt > 0) && (
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                    {charges.length + taxes.length + (discountAmt > 0 ? 1 : 0)}
+                  </Badge>
+                )}
+              </span>
+              {showCharges
+                ? <ChevronUp className="h-4 w-4" />
+                : <ChevronDown className="h-4 w-4" />}
+            </button>
+          )}
+
+          {showCharges && docType !== 'challan' && (
+            <div className="space-y-4 p-4 rounded-xl border bg-muted/10">
+
+              {/* Charges */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Extra Charges
+                  </Label>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2 bg-muted/40 rounded-lg"
+                    onClick={addCharge}>
+                    <Plus className="h-3 w-3" /> Add
+                  </Button>
+                </div>
+                {charges.map((c, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <Input placeholder="e.g. Freight, Packing..."
+                      value={c.name} onChange={e => updateCharge(i, 'name', e.target.value)}
+                      className="flex-1 h-10 rounded-lg text-sm" />
+                    <Input type="number" placeholder="0.00"
+                      value={c.amount || ''} onChange={e => updateCharge(i, 'amount', e.target.value)}
+                      className="w-28 h-10 rounded-lg text-sm font-semibold" />
+                    <button onClick={() => removeCharge(i)}
+                      className="p-1.5 text-muted-foreground hover:text-destructive">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {charges.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">No charges added</p>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Discount */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Discount (flat ₹)
+                </Label>
+                <Input
+                  type="number" placeholder="0.00"
+                  value={discount} onChange={e => setDiscount(e.target.value)}
+                  className="h-10 rounded-lg text-sm font-semibold"
+                />
+              </div>
+
+              <Separator />
+
+              {/* Taxes */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Taxes (%)
+                  </Label>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2 bg-muted/40 rounded-lg"
+                    onClick={addTax}>
+                    <Plus className="h-3 w-3" /> Add
+                  </Button>
+                </div>
+                {taxes.map((t, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <Input placeholder="e.g. GST 18%, IGST..."
+                      value={t.name} onChange={e => updateTax(i, 'name', e.target.value)}
+                      className="flex-1 h-10 rounded-lg text-sm" />
+                    <Input type="number" placeholder="0" min={0} max={100}
+                      value={t.percentage || ''} onChange={e => updateTax(i, 'percentage', e.target.value)}
+                      className="w-20 h-10 rounded-lg text-sm font-semibold" />
+                    <button onClick={() => removeTax(i)}
+                      className="p-1.5 text-muted-foreground hover:text-destructive">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {taxes.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">No taxes added</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Grand Total card */}
+          {docType !== 'challan' && (
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
+              {lineTotal > 0 && (
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Items subtotal</span>
+                  <span className="font-medium">{fmtAmount(lineTotal)}</span>
+                </div>
+              )}
+              {chargeTotal > 0 && (
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Charges</span>
+                  <span className="font-medium">+ {fmtAmount(chargeTotal)}</span>
+                </div>
+              )}
+              {discountAmt > 0 && (
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Discount</span>
+                  <span className="font-medium text-green-600">− {fmtAmount(discountAmt)}</span>
+                </div>
+              )}
+              {taxTotal > 0 && (
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Tax</span>
+                  <span className="font-medium">+ {fmtAmount(taxTotal)}</span>
+                </div>
+              )}
+              {(chargeTotal > 0 || discountAmt > 0 || taxTotal > 0) && <Separator />}
+              <div className="flex justify-between items-center">
+                <span className="text-base font-bold">Grand Total</span>
+                <span className="text-xl font-black text-primary">{fmtAmount(grandTotal)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Payment account */}
+          {showPaymentAccount && (
+            <div className="space-y-1.5">
+              <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <SearchableSelect
+                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                placeholder="Select account" title="Select Payment Account"
+                searchPlaceholder="Search accounts..." clearable
+              />
+            </div>
+          )}
+
+          {/* Due date + payment terms */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Due Date <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Terms <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+              <Input placeholder="e.g. Net 30" value={paymentTerms}
+                onChange={e => setPaymentTerms(e.target.value)} className="h-11 rounded-xl" />
+            </div>
+          </div>
+
+          {renderAttachmentsSection()}
+
           <div className="space-y-1.5">
-            <Label>Amount <span className="text-destructive">*</span></Label>
-            <Input type="number" placeholder="0.00" className="text-2xl font-bold h-14 rounded-xl px-4"
-              value={voucherAmount} onChange={e => setVoucherAmount(e.target.value)} />
+            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+          </div>
+        </div>
+      )}
+
+      {/* NON-LINE-ITEM DOCS — vouchers, po, pi, quotation, challan ref only */}
+      {!isExpenseType && !hasLineItems && !isVoucher && (
+        <div className="space-y-6">
+          {renderReferenceSection()}
+
+          {renderAttachmentsSection()}
+
+          <div className="space-y-1.5">
+            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
+            <Input placeholder="Internal remarks..." value={notes}
+              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
+          </div>
+        </div>
+      )}
+
+      {/* VOUCHER MODE */}
+      {isVoucher && (
+        <div className="space-y-6">
+          <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
+            <Label className="text-primary font-semibold">
+              Amount <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              type="number" placeholder="0.00" value={voucherAmount}
+              onChange={e => setVoucherAmount(e.target.value)}
+              className="h-14 text-2xl font-bold rounded-xl border-primary/20"
+            />
           </div>
 
           <div className="space-y-1.5">
-            <Label>
-              Payment Account <span className="text-destructive">*</span>
-              <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited/credited</span>
-            </Label>
+            <Label>Payment Account <span className="text-destructive">*</span></Label>
             <SearchableSelect
-              options={accountOptions.filter(o => o.value !== '')}
-              value={paymentAccountId} onChange={setPaymentAccountId}
+              options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
               placeholder="Select account" title="Select Payment Account"
-              searchPlaceholder="Search accounts..."
+              searchPlaceholder="Search accounts..." clearable
             />
           </div>
 
@@ -876,302 +1376,39 @@ export function DocumentNewPage() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {/* DETAILED MODE — bill/invoice/po/cn/dn/challan etc.                      */}
-      {/* ════════════════════════════════════════════════════════════════════════ */}
-      {!isExpenseType && !isFastMode && hasLineItems && (
-        <div className="space-y-6">
+      {/* ── SUBMIT BUTTON ─────────────────────────────────────────────────────── */}
+      <Button
+        className="w-full h-14 rounded-2xl text-base font-bold shadow-lg shadow-primary/20 gap-2"
+        disabled={isSubmitting}
+        onClick={handleSubmit}
+      >
+        {isSubmitting
+          ? 'Creating...'
+          : `Create ${getDocLabel(docType)}`}
+      </Button>
 
-          {hasConsignee && (
-            <div className="space-y-1.5">
-              <Label>Consignee <span className="text-xs text-muted-foreground ml-1">optional</span></Label>
-              <SearchableSelect
-                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
-                placeholder="Select consignee" title="Select Consignee"
-                searchPlaceholder="Search contacts..." clearable
-              />
-            </div>
-          )}
-
-          {hasReference && (
-            <div className="space-y-1.5">
-              <Label>Reference Document <span className="text-xs text-muted-foreground ml-1">optional</span></Label>
-              {(docType === 'cn' || docType === 'dn') && (
-                <p className="text-xs text-muted-foreground -mt-0.5">
-                  {docType === 'cn'
-                    ? 'Select the Invoice being returned — contact and items auto-fill'
-                    : 'Select the Bill being returned — contact and items auto-fill'}
-                </p>
-              )}
-              <SearchableSelect
-                options={refDocOptions} value={referenceId} onChange={setReferenceId}
-                placeholder="Link to existing document"
-                title={primaryRefDocType ? `Select ${getDocLabel(primaryRefDocType)}` : 'Reference Document'}
-                searchPlaceholder="Search by doc ID or date..." clearable
-                emptyText={`No ${primaryRefDocType ? getDocLabel(primaryRefDocType) : ''} documents found`}
-              />
-              {refDoc && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/40 border border-border/50 text-xs mt-2">
-                  <FileText className="h-4 w-4 text-primary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-foreground/90">
-                      {getDocLabel(refDoc.type)} {refDoc.doc_id}
-                    </span>
-                    {refDoc.total_amount && (
-                      <span className="text-muted-foreground"> · {fmtAmount(refDoc.total_amount)}</span>
-                    )}
-                    {(refDoc.line_items?.length ?? 0) > 0 && (
-                      <span className="text-muted-foreground"> · {refDoc.line_items!.length} items</span>
-                    )}
-                  </div>
-                  {(refDoc.line_items?.length ?? 0) > 0 && (
-                    <Button variant="outline" size="sm" className="h-7 text-[10px] px-2"
-                      onClick={() => setPickerOpen(true)}>
-                      Copy Items
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Due Date <span className="text-xs text-muted-foreground font-normal">opt</span></Label>
-              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="h-11 rounded-xl" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Payment Terms <span className="text-xs text-muted-foreground font-normal">opt</span></Label>
-              <Input placeholder="e.g. Net 30" value={paymentTerms}
-                onChange={e => setPaymentTerms(e.target.value)} className="h-11 rounded-xl" />
-            </div>
-          </div>
-
-          {/* Line Items */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Line Items</Label>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm"
-                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 border-primary/30 text-primary hover:bg-primary/10"
-                  onClick={() => setProductPickerOpen(true)}>
-                  <Package className="h-3.5 w-3.5" /> Bulk Add
-                </Button>
-                <Button variant="ghost" size="sm"
-                  className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40" onClick={addLineItem}>
-                  <Plus className="h-3.5 w-3.5" /> Empty Row
-                </Button>
-              </div>
-            </div>
-
-            {lineItems.map(item => (
-              <Card key={item.key}
-                className="overflow-hidden rounded-xl border border-border/80 shadow-sm transition-all focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
-                <CardContent className="p-3 space-y-3">
-                  {products.length > 0 && (
-                    <SearchableSelect
-                      options={productOptions}
-                      value={item.product_id ? String(item.product_id) : ''}
-                      onChange={v => onProductSelect(item.key, v)}
-                      placeholder="Link to inventory product (optional)"
-                      title="Select Product"
-                      searchPlaceholder="Search by name or HSN..."
-                      clearable
-                    />
-                  )}
-                  <Input placeholder="Item name / description" value={item.name}
-                    onChange={e => updateLineItem(item.key, 'name', e.target.value)}
-                    className="h-10 bg-muted/20" />
-                  <Input
-                    placeholder="HSN Code (optional)"
-                    value={item.hsn ?? ''}
-                    onChange={e => updateLineItem(item.key, 'hsn', e.target.value || null)}
-                    className="h-9 bg-muted/20 text-sm font-mono tracking-wider"
-                  />
-                  <div className={`grid gap-3 ${docType === 'challan' ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Qty</p>
-                      <Input type="number" className="h-10 font-medium" value={item.quantity}
-                        onChange={e => updateLineItem(item.key, 'quantity', Number(e.target.value))} />
-                    </div>
-                    {docType !== 'challan' && (
-                      <>
-                        <div className="space-y-1.5">
-                          <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Rate</p>
-                          <Input type="number" className="h-10 font-medium" value={item.rate}
-                            onChange={e => updateLineItem(item.key, 'rate', Number(e.target.value))} />
-                        </div>
-                        <div className="space-y-1.5">
-                          <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Amount</p>
-                          <Input type="number" className="h-10 font-bold bg-muted/50 border-transparent focus-visible:ring-0"
-                            readOnly value={item.amount} />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {lineItems.length > 1 && (
-                    <div className="flex justify-end pt-1">
-                      <button onClick={() => removeLineItem(item.key)}
-                        className="flex items-center gap-1.5 text-xs font-medium text-destructive/80 hover:text-destructive transition-colors py-1">
-                        <X className="h-3.5 w-3.5" /> Remove Row
-                      </button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Charges / Taxes / Discount */}
-          {docType !== 'challan' && (
-            <div className="pt-2">
-              <button
-                className="flex items-center justify-between w-full p-3 rounded-xl border bg-muted/20 text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
-                onClick={() => setShowCharges(v => !v)}>
-                <span>Taxes, Discounts & Charges</span>
-                {showCharges ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </button>
-              {showCharges && (
-                <div className="space-y-5 p-4 mt-2 border rounded-xl bg-background/50">
-                  <div className="space-y-1.5">
-                    <Label>Overall Discount</Label>
-                    <Input type="number" placeholder="0.00" value={discount}
-                      className="h-11 rounded-lg" onChange={e => setDiscount(e.target.value)} />
-                  </div>
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Additional Charges</Label>
-                      <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={addCharge}>
-                        <Plus className="h-3 w-3" /> Add Charge
-                      </Button>
-                    </div>
-                    {charges.map((c, i) => (
-                      <div key={i} className="flex gap-2 items-center">
-                        <Input placeholder="e.g. Freight" className="flex-1 h-10" value={c.name}
-                          onChange={e => updateCharge(i, 'name', e.target.value)} />
-                        <Input type="number" placeholder="0" className="w-24 h-10 font-medium" value={c.amount}
-                          onChange={e => updateCharge(i, 'amount', e.target.value)} />
-                        <button onClick={() => removeCharge(i)}
-                          className="p-2 text-muted-foreground hover:text-destructive">
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Taxes</Label>
-                      <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={addTax}>
-                        <Plus className="h-3 w-3" /> Add Tax
-                      </Button>
-                    </div>
-                    {taxes.map((t, i) => (
-                      <div key={i} className="flex gap-2 items-center">
-                        <Input placeholder="e.g. IGST 18%" className="flex-1 h-10" value={t.name}
-                          onChange={e => updateTax(i, 'name', e.target.value)} />
-                        <div className="relative w-24">
-                          <Input type="number" placeholder="0" className="w-full h-10 font-medium pr-6"
-                            value={t.percentage} onChange={e => updateTax(i, 'percentage', e.target.value)} />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
-                        </div>
-                        <button onClick={() => removeTax(i)}
-                          className="p-2 text-muted-foreground hover:text-destructive">
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Totals card */}
-          <Card className="mt-4 bg-muted/30 border-transparent">
-            <CardContent className="p-4 space-y-2 text-sm">
-              <div className="flex justify-between text-muted-foreground font-medium">
-                <span>Subtotal</span><span>{fmtAmount(lineTotal)}</span>
-              </div>
-              {chargeTotal > 0 && (
-                <div className="flex justify-between text-muted-foreground font-medium">
-                  <span>Charges</span><span>{fmtAmount(chargeTotal)}</span>
-                </div>
-              )}
-              {discountAmt > 0 && (
-                <div className="flex justify-between text-emerald-600 font-medium">
-                  <span>Discount</span><span>-{fmtAmount(discountAmt)}</span>
-                </div>
-              )}
-              {taxTotal > 0 && (
-                <div className="flex justify-between text-muted-foreground font-medium">
-                  <span>Tax</span><span>{fmtAmount(taxTotal)}</span>
-                </div>
-              )}
-              <Separator className="my-2" />
-              <div className="flex justify-between font-black text-xl text-foreground">
-                <span>Total</span><span>{fmtAmount(grandTotal)}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {showPaymentAccount && (
-            <div className="space-y-1.5">
-              <Label>
-                Payment Account
-                <span className="text-xs text-muted-foreground ml-1 font-normal">leave empty to pay later</span>
-              </Label>
-              <SearchableSelect
-                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
-                placeholder="Select account" title="Select Payment Account"
-                searchPlaceholder="Search accounts..." clearable
-              />
-            </div>
-          )}
-
-          {renderAttachmentsSection()}
-
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
-        </div>
-      )}
-
-      {/* Submit */}
-      <div className="pt-2">
-        <Button
-          className="w-full h-14 text-lg font-bold rounded-2xl shadow-lg shadow-primary/20"
-          onClick={handleSubmit}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? 'Creating...' : `Create ${getDocLabel(docType)}`}
-        </Button>
-      </div>
-
-      {/* Pickers */}
-      {(refDoc?.line_items?.length ?? 0) > 0 && (
-        <LineItemPickerSheet
-          open={pickerOpen} items={refDoc!.line_items!}
-          onConfirm={handlePickerConfirm} onClose={() => setPickerOpen(false)}
-        />
-      )}
-      <ProductMultiPickerSheet
-        open={productPickerOpen} products={products}
-        onConfirm={handleProductPickerConfirm} onClose={() => setProductPickerOpen(false)}
+      {/* ── SHEETS ────────────────────────────────────────────────────────────── */}
+      <LineItemPickerSheet
+        open={pickerOpen}
+        items={refDoc?.line_items ?? []}
+        onConfirm={handlePickerConfirm}
+        onClose={() => setPickerOpen(false)}
       />
 
-      {/* File Preview Sheet */}
+      <ProductMultiPickerSheet
+        open={productPickerOpen}
+        products={products}
+        onConfirm={handleProductPickerConfirm}
+        onClose={() => setProductPickerOpen(false)}
+      />
+
       <FilePreviewSheet
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
         files={attachmentUrls}
         initialIndex={previewIndex}
-        onRemove={(path) => {
-          setAttachmentUrls(prev => prev.filter(p => p !== path))
-          if (previewIndex >= attachmentUrls.length - 1) setPreviewIndex(0)
-        }}
       />
+
     </div>
   )
 }
