@@ -252,7 +252,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                     onChange={e => updateVoucherLine(i, 'amount', e.target.value)}
                   />
                   {voucherLines.length > 1 && (
-                    <button onClick={() => removeVoucherLine(i)} className="flex-shrink-0">
+                    <button onClick={() => removeVoucherLine(i)} className="shrink-0">
                       <X className="h-4 w-4 text-muted-foreground" />
                     </button>
                   )}
@@ -377,7 +377,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                             onChange={e => updateInterestLine(i, 'amount', e.target.value)}
                           />
                           {interestLines.length > 1 && (
-                            <button onClick={() => removeInterestLine(i)} className="flex-shrink-0">
+                            <button onClick={() => removeInterestLine(i)} className="shrink-0">
                               <X className="h-4 w-4 text-muted-foreground" />
                             </button>
                           )}

@@ -56,11 +56,6 @@ interface UIStore {
   openTransactionSheet:     (mode: 'send' | 'receive', contactId?: number) => void
   closeTransactionSheet:    () => void
 
-  // ── Transfer Funds Sheet (spec B2) ───────────────────────────────────────────
-  transferSheetOpen:  boolean
-  openTransferSheet:  () => void
-  closeTransferSheet: () => void
-
   // ── Adjust Balance Sheet (spec B3) ───────────────────────────────────────────
   adjustBalanceSheetOpen:  boolean
   adjustBalanceAccountId:  number | null
@@ -147,11 +142,6 @@ export const useUIStore = create<UIStore>()(
         set({ transactionSheetOpen: true, transactionSheetMode: mode, transactionSheetContactId: contactId ?? null }),
       closeTransactionSheet:     () =>
         set({ transactionSheetOpen: false, transactionSheetMode: 'send', transactionSheetContactId: null }),
-
-      // ── Transfer Funds Sheet ────────────────────────────────────────────────
-      transferSheetOpen:  false,
-      openTransferSheet:  () => set({ transferSheetOpen: true }),
-      closeTransferSheet: () => set({ transferSheetOpen: false }),
 
       // ── Adjust Balance Sheet ────────────────────────────────────────────────
       adjustBalanceSheetOpen:  false,

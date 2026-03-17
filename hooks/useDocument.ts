@@ -3,16 +3,16 @@ import { documentService } from '@/services/documentService'
 import type { DocumentListParams } from '@/services/documentService'
 import type {
   DocumentCreate, DocumentUpdate,
-  RecordPaymentPayload, MoveStockPayload,
-  DeleteDocumentPayload, StandaloneInterestPayload
+  RecordPaymentPayload, MarkPaidPayload,
+  MoveStockPayload, DeleteDocumentPayload,
+  StandaloneInterestPayload,
 } from '@/models/document'
 
-export const DOCUMENTS_KEY   = ['documents'] as const
-export const documentKey     = (id: number) => ['documents', id] as const
-export const stockPreviewKey = (id: number) => ['documents', id, 'stock_preview'] as const
+export const DOCUMENTS_KEY    = ['documents'] as const
+export const documentKey      = (id: number) => ['documents', id] as const
+export const stockPreviewKey  = (id: number) => ['documents', id, 'stock_preview'] as const
 export const referenceDataKey = (id: number) => ['documents', id, 'reference_data'] as const
 
-// enabled: params !== undefined — skips fetch when called as useDocuments(undefined)
 export function useDocuments(params?: DocumentListParams) {
   return useQuery({
     queryKey: [...DOCUMENTS_KEY, params],
@@ -67,6 +67,18 @@ export function useUpdateDocument(id: number) {
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: stockPreviewKey(id) })
       qc.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+}
+
+// ✅ Toggles is_paid flag only — no transactions created
+export function useMarkPaid(docId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: MarkPaidPayload) => documentService.markPaid(docId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: documentKey(docId) })
+      qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
     },
   })
 }

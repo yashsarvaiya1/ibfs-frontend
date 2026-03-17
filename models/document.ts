@@ -16,7 +16,7 @@ export type DocumentType =
 
 export interface LineItem {
   name: string
-  hsn?: string
+  hsn?: string | null
   quantity?: number
   rate?: number
   amount?: number
@@ -75,16 +75,16 @@ export interface Document {
   date: string
   due_date: string | null
   payment_terms: string | null
-  attachment_urls: string[]        // relative paths — stored in DB
-  attachment_urls_full: string[]   // absolute URLs — emitted by DocumentSerializer
+  attachment_urls: string[]
+  attachment_urls_full: string[]
   notes: string | null
   is_active: boolean
+  is_paid: boolean                   // ✅ manual paid flag
   created_at: string
   updated_at: string
   transactions?: FinancialTransaction[]
   payment_status: PaymentStatusDetail | null
   stock_status: StockStatusItem[] | null
-
   contact_display?:   ContactDisplay | null
   consignee_display?: ConsigneeDisplay | null
 }
@@ -98,6 +98,7 @@ export interface DocumentListItem {
   date: string
   total_amount: string | null
   is_active: boolean
+  is_paid: boolean                   // ✅ manual paid flag
   payment_status: PaymentStatusSummary | null
 }
 
@@ -117,23 +118,25 @@ export interface DocumentCreate {
   attachment_urls?: string[]
   notes?: string
   payment_account?: number
+  // interest standalone
   interest_lines?:     { name: string; amount: number; type: 'charge' | 'discount' }[]
-  interest_direction?: 'pay' | 'receive'
+  toggle?:             'charge' | 'credit'
 }
 
 export interface DocumentUpdate {
-  notes?: string
-  date?: string
-  due_date?: string
-  payment_terms?: string
+  contact?:         number | null    // ✅ ADD — edit page needs this
+  notes?:           string
+  date?:            string
+  due_date?:        string
+  payment_terms?:   string
   attachment_urls?: string[]
-  charges?: Charge[]
-  taxes?: Tax[]
-  discount?: number
-  total_amount?: string | number
-  consignee?: number
-  reference?: number
-  line_items?: LineItem[]
+  charges?:         Charge[]
+  taxes?:           Tax[]
+  discount?:        number
+  total_amount?:    string | number
+  consignee?:       number | null
+  reference?:       number | null
+  line_items?:      LineItem[]
 }
 
 export interface RecordPaymentPayload {
@@ -142,6 +145,10 @@ export interface RecordPaymentPayload {
   date?: string
   notes?: string
   interest_lines?: InterestLine[]
+}
+
+export interface MarkPaidPayload {
+  is_paid: boolean
 }
 
 export interface MoveStockPayload {
@@ -157,15 +164,14 @@ export interface StockPreviewItem {
   remaining_qty: string
 }
 
-// Payload for Standalone Interest Action (Path C)
 export interface StandaloneInterestPayload {
   contact?: number
+  reference?: number
   date?: string
-  line_items: { name: string; amount: number }[] // Path C schema uses generic line_items
+  line_items: { name: string; amount: number }[]
   toggle: 'charge' | 'credit'
 }
 
-// Result from GET /documents/{id}/reference_data/
 export interface ReferenceData {
   line_items: LineItem[]
   charges: Charge[]
@@ -176,7 +182,6 @@ export interface ReferenceData {
   notes: string | null
 }
 
-// Payload for POST /documents/{id}/add_details/
 export interface AddDetailsPayload {
   line_items: LineItem[]
 }
@@ -214,6 +219,11 @@ export const HAS_PAYMENT_STATUS: DocumentType[] = [
 
 export const HAS_STOCK_STATUS: DocumentType[] = [
   'bill', 'invoice', 'cn', 'dn', 'challan',
+]
+
+// Types that support manual mark_paid toggle
+export const MARK_PAID_TYPES: DocumentType[] = [
+  'bill', 'invoice', 'cn', 'dn',
 ]
 
 export interface ContactDisplay {

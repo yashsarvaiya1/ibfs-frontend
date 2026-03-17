@@ -1,14 +1,13 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle, FileWarning } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, FileWarning } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import api from '@/lib/axios' // Your authenticated axios instance
+import api from '@/lib/axios'
 
-// Worker setup
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
@@ -20,13 +19,33 @@ interface PdfViewerProps {
 }
 
 export function PdfViewer({ url, className }: PdfViewerProps) {
-  const [numPages, setNumPages] = useState<number>(0)
+  const [numPages,   setNumPages]   = useState<number>(0)
   const [pageNumber, setPageNumber] = useState<number>(1)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
+  const [blobUrl,    setBlobUrl]    = useState<string | null>(null)
 
-  // ── Authenticated PDF Fetch ──────────────────────────────────────────
+  // ✅ Measure the scroll container width so Page fills it exactly
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [pageWidth,  setPageWidth]  = useState<number>(0)
+
+  // ✅ ResizeObserver — re-measures on every layout change (orientation, keyboard, etc.)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width
+        if (w > 0) setPageWidth(w)
+      }
+    })
+    ro.observe(el)
+    // Initial measure
+    setPageWidth(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+
+  // ── Authenticated PDF fetch ────────────────────────────────────────────
   useEffect(() => {
     let activeBlobUrl: string | null = null
 
@@ -34,32 +53,24 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
       try {
         setLoading(true)
         setError(null)
-        
-        // Fetch raw PDF data using authenticated axios
         const response = await api.get(url, { responseType: 'blob' })
-        
-        // Create a local URL for the PDF data
         const blob = new Blob([response.data], { type: 'application/pdf' })
         activeBlobUrl = URL.createObjectURL(blob)
         setBlobUrl(activeBlobUrl)
       } catch (err: any) {
-        console.error("PDF Load Error:", err)
-        if (err.response?.status === 401) {
-          setError("Session expired or unauthorized. Please log in again.")
-        } else {
-          setError("Could not load document preview.")
-        }
+        console.error('PDF Load Error:', err)
+        setError(
+          err.response?.status === 401
+            ? 'Session expired. Please log in again.'
+            : 'Could not load document preview.',
+        )
       } finally {
         setLoading(false)
       }
     }
 
     loadPdf()
-
-    // Cleanup memory when component unmounts
-    return () => {
-      if (activeBlobUrl) URL.revokeObjectURL(activeBlobUrl)
-    }
+    return () => { if (activeBlobUrl) URL.revokeObjectURL(activeBlobUrl) }
   }, [url])
 
   const onLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
@@ -74,8 +85,8 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
           <FileWarning className="h-6 w-6 text-destructive" />
         </div>
         <div className="space-y-1">
-          <p className="font-semibold">{error}</p>
-          <p className="text-xs text-muted-foreground max-w-[240px]">
+          <p className="font-semibold text-sm">{error}</p>
+          <p className="text-xs text-muted-foreground max-w-60">
             The server rejected the request. You may need to refresh your session.
           </p>
         </div>
@@ -87,28 +98,44 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
   }
 
   return (
-    <div className={`flex flex-col h-full ${className ?? ''}`}>
-      <div className="flex-1 overflow-y-auto w-full flex justify-center bg-muted/20 relative">
+    // ✅ h-full fills parent exactly — parent (DocumentPrintPage) owns the height
+    <div className={`flex flex-col h-full w-full overflow-hidden ${className ?? ''}`}>
+
+      {/*
+        ✅ THE FIX:
+          - flex-1 min-h-0 → shrinks to available space, never expands beyond parent
+          - overflow-y-auto → THIS is the ONE scroll container for the PDF
+          - overflow-x-hidden → no horizontal scroll on mobile
+          - w-full → fills container width
+      */}
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden bg-muted/20 relative"
+      >
+        {/* Loading overlay */}
         {loading && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/40 backdrop-blur-[1px]">
             <div className="flex flex-col items-center gap-2">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Rendering</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                Rendering
+              </span>
             </div>
           </div>
         )}
 
-        {blobUrl && (
+        {blobUrl && pageWidth > 0 && (
           <Document
             file={blobUrl}
             onLoadSuccess={onLoadSuccess}
             loading=""
-            className="shadow-2xl my-4"
+            // ✅ No margin class — we control spacing via Page padding only
+            className="flex justify-center py-4"
           >
             <Page
               pageNumber={pageNumber}
-              // Dynamically adjust width for mobile vs desktop
-              width={Math.min(typeof window !== 'undefined' ? window.innerWidth - 32 : 360, 800)}
+              // ✅ Fills container width exactly — no overflow, no gap
+              width={pageWidth}
               renderTextLayer
               renderAnnotationLayer
             />
@@ -116,8 +143,9 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
         )}
       </div>
 
+      {/* Pagination — only rendered when needed, never causes scroll */}
       {numPages > 1 && (
-        <div className="shrink-0 flex items-center gap-4 py-3 border-t bg-background/95 backdrop-blur w-full justify-center">
+        <div className="shrink-0 flex items-center gap-4 py-3 border-t bg-background w-full justify-center">
           <button
             onClick={() => setPageNumber(p => Math.max(1, p - 1))}
             disabled={pageNumber <= 1}

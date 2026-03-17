@@ -1,3 +1,4 @@
+// services/accountService.ts
 import api from '@/lib/axios'
 import type {
   PaymentAccount, AccountCreate, AccountUpdate,
@@ -18,15 +19,18 @@ export const accountService = {
   update: (id: number, data: AccountUpdate) =>
     api.patch<PaymentAccount>(`/accounts/${id}/`, data).then(r => r.data),
 
-  // POST /accounts/{id}/set_balance/ — direct overwrite, no f.txn (spec B1)
-  setBalance: (id: number, data: SetBalancePayload) =>
-    api.post<PaymentAccount>(`/accounts/${id}/set_balance/`, data).then(r => r.data),
+  // Soft delete — sets is_active=False on backend
+  delete: (id: number) =>
+    api.delete(`/accounts/${id}/`).then(r => r.data),
 
-  // POST /accounts/transfer/ — two contra f.txns (spec B2)
+  // FIX: DRF converts underscore action names to hyphens in URLs
+  // set_balance action → /accounts/{id}/set-balance/ (not set_balance)
+  setBalance: (id: number, data: SetBalancePayload) =>
+    api.post<PaymentAccount>(`/accounts/${id}/set-balance/`, data).then(r => r.data),
+
   transfer: (data: TransferPayload) =>
     api.post('/accounts/transfer/', data).then(r => r.data),
 
-  // POST /accounts/{id}/adjust/ — actual f.txn, no contact (spec B3)
   adjust: (id: number, data: AdjustBalancePayload) =>
     api.post(`/accounts/${id}/adjust/`, data).then(r => r.data),
 }

@@ -1,16 +1,16 @@
+// lib/axios.ts
 import axios from 'axios'
 import { useAuthStore } from '@/stores/authStore'
-import { env } from 'next-runtime-env' // Import this
+import { env } from 'next-runtime-env'
 
 const api = axios.create({
-  // Use env() instead of process.env
-  baseURL: env('NEXT_PUBLIC_API_URL') || 'http://localhost:8000/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 })
 
+// ✅ baseURL injected at request time — reads runtime env, not build-time
 api.interceptors.request.use((config) => {
+  config.baseURL = env('NEXT_PUBLIC_API_URL') || 'http://localhost:8000/api'
+
   const credentials = useAuthStore.getState().credentials
   if (credentials) {
     config.headers.Authorization = `Basic ${credentials}`
