@@ -1,9 +1,11 @@
+// hooks/useTransactions.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactionService } from '@/services/transactionService'
 import type {
   LinkDocumentPayload,
   TransactionListParams,
   TransactionUpdatePayload,
+  TransactionPrintParams,
 } from '@/models/transaction'
 
 export const TRANSACTIONS_KEY = ['transactions'] as const
@@ -36,8 +38,6 @@ export function useLinkDocument(txnId: number) {
   })
 }
 
-// contactId optional — if provided, invalidates that contact's ledger + CF
-// Uses TransactionUpdatePayload — id passed inline, not in payload
 export function useUpdateTransaction(contactId?: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -48,6 +48,7 @@ export function useUpdateTransaction(contactId?: number) {
       qc.invalidateQueries({ queryKey: TRANSACTIONS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
       if (contactId) {
+        // Partial key invalidates all ledger filter combos for this contact
         qc.invalidateQueries({ queryKey: ['contacts', contactId, 'ledger'] })
         qc.invalidateQueries({ queryKey: ['contacts', contactId] })
         qc.invalidateQueries({ queryKey: ['contacts'] })
@@ -56,7 +57,6 @@ export function useUpdateTransaction(contactId?: number) {
   })
 }
 
-// Delete — backend reverses account balance automatically
 export function useDeleteTransaction(contactId?: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -73,8 +73,22 @@ export function useDeleteTransaction(contactId?: number) {
   })
 }
 
+/**
+ * TV-06: Context-aware transaction PDF print.
+ *
+ * For ledger PDF:
+ *   mutate({ view: 'ledger', contact: id, opening_balance_at: data.opening_balance_at, ...filters })
+ *
+ * For account statement PDF:
+ *   mutate({ view: 'list', account: id, balance_before_period: data.balance_before_period, ...filters })
+ *
+ * For plain transaction list PDF:
+ *   mutate({ view: 'list', ...filters })
+ *
+ * Returns a PDF blob — trigger download in onSuccess.
+ */
 export function usePrintTransactions() {
   return useMutation({
-    mutationFn: (params?: TransactionListParams) => transactionService.print(params),
+    mutationFn: (params?: TransactionPrintParams) => transactionService.print(params),
   })
 }

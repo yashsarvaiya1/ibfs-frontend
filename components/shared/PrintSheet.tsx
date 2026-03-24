@@ -1,81 +1,144 @@
 'use client'
 
-import { useRef } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { Printer, X } from 'lucide-react'
+import { Printer, X, Loader2, Download } from 'lucide-react'
+import { env } from 'next-runtime-env'
 import { toast } from 'sonner'
 
+type PrintView = 'ledger' | 'list'
+
 interface PrintSheetProps {
-  open:     boolean
-  onClose:  () => void
-  title:    string        // e.g. "Transaction Report" | "Ledger — Smit"
-  children: React.ReactNode  // already-rendered list or ledger view
+  open:         boolean
+  onClose:      () => void
+  title:        string
+  queryParams:  Record<string, unknown>
+  view?:        PrintView    // transactions print only
+  endpoint?:    string       // defaults to 'transactions/print/'
+  filename?:    string       // download filename prefix e.g. 'Inventory' → 'Inventory_2026-03-24.pdf'
+  loadingText?: string       // e.g. 'stock report'
 }
 
-export function PrintSheet({ open, onClose, title, children }: PrintSheetProps) {
-  const printRef = useRef<HTMLDivElement>(null)
+function getApiBase(): string {
+  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
+  return raw.replace(/\/$/, '')
+}
 
-  const handlePrint = () => {
-    if (!printRef.current) return
-    const content = printRef.current.innerHTML
-    const win = window.open('', '_blank')
-    if (!win) { toast.error('Allow popups to print'); return }
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${title}</title>
-          <meta charset="utf-8" />
-          <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 16px; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 11px; }
-            th { background: #f5f5f5; font-weight: 600; }
-            .positive { color: #dc2626; }
-            .negative { color: #16a34a; }
-            .section-header { background: #f0f0f0; font-weight: 700; padding: 6px 8px; margin-top: 12px; font-size: 12px; }
-            .summary-row { font-weight: 700; background: #fafafa; }
-            h1 { font-size: 16px; margin-bottom: 4px; }
-            .meta { font-size: 11px; color: #666; margin-bottom: 12px; }
-            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-          </style>
-        </head>
-        <body>${content}</body>
-      </html>
-    `)
-    win.document.close()
-    win.focus()
-    setTimeout(() => { win.print(); win.close() }, 300)
+export function PrintSheet({
+  open,
+  onClose,
+  title,
+  queryParams,
+  view,
+  endpoint    = 'transactions/print/',
+  filename,
+  loadingText,
+}: PrintSheetProps) {
+  const iframeRef             = useRef<HTMLIFrameElement>(null)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const queryKey = useMemo(
+    () => JSON.stringify({ ...queryParams, view }),
+    [queryParams, view],
+  )
+
+  useEffect(() => {
+    if (open) {
+      if (blobUrl) { URL.revokeObjectURL(blobUrl); setBlobUrl(null) }
+      fetchPDF()
+    } else {
+      if (blobUrl) { URL.revokeObjectURL(blobUrl); setBlobUrl(null) }
+    }
+  }, [open, queryKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchPDF = async () => {
+    setLoading(true)
+    try {
+      const q = new URLSearchParams()
+      const merged = view ? { ...queryParams, view } : { ...queryParams }
+      Object.entries(merged).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') q.append(k, String(v))
+      })
+      const url = `${getApiBase()}/${endpoint}?${q.toString()}`
+      const res = await fetch(url, { credentials: 'include' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      setBlobUrl(URL.createObjectURL(blob))
+    } catch (err) {
+      console.error('PDF error:', err)
+      toast.error('Failed to load PDF')
+    } finally {
+      setLoading(false)
+    }
   }
 
+  const handlePrint = () => {
+    if (!iframeRef.current?.contentWindow) { toast.error('Preview not ready'); return }
+    iframeRef.current.contentWindow.print()
+  }
+
+  const handleDownload = () => {
+    if (!blobUrl) return
+    const a    = document.createElement('a')
+    a.href     = blobUrl
+    const date = new Date().toISOString().split('T')[0]
+    a.download = filename
+      ? `${filename}_${date}.pdf`
+      : view === 'ledger'
+        ? `Ledger_${date}.pdf`
+        : `Transactions_${date}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  const resolvedLoadingText = loadingText
+    ?? (view === 'ledger' ? 'ledger' : 'transactions')
+
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <SheetContent
-        side="bottom"
-        className="rounded-t-2xl px-4 pb-6 h-[92vh] flex flex-col"
-      >
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
+      <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-6 h-[92vh] flex flex-col">
         <SheetHeader className="mb-3 shrink-0">
           <div className="flex items-center justify-between">
-            <SheetTitle className="text-left">{title}</SheetTitle>
-            <button onClick={onClose}>
+            <SheetTitle>{title}</SheetTitle>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-1.5 rounded-full hover:bg-muted/60 transition-colors"
+            >
               <X className="h-5 w-5 text-muted-foreground" />
             </button>
           </div>
         </SheetHeader>
 
-        {/* Preview area — white background simulating paper */}
-        <div className="flex-1 overflow-y-auto rounded-xl border bg-white text-black text-xs">
-          <div ref={printRef} className="p-4">
-            {children}
-          </div>
+        <div className="flex-1 overflow-hidden rounded-xl border bg-muted/30 shadow-inner mb-3 relative min-h-0">
+          {loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 z-10">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground font-medium">
+                Generating {resolvedLoadingText} PDF…
+              </p>
+            </div>
+          )}
+          {blobUrl && (
+            <iframe ref={iframeRef} src={blobUrl} className="w-full h-full rounded-lg" title="PDF Preview" />
+          )}
+          {!blobUrl && !loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <p className="text-sm text-muted-foreground">Preview failed to load</p>
+              <Button variant="outline" size="sm" onClick={fetchPDF}>Retry</Button>
+            </div>
+          )}
         </div>
 
-        <div className="pt-4 shrink-0">
-          <Button className="w-full gap-2" onClick={handlePrint}>
-            <Printer className="h-4 w-4" />
-            Print / Save PDF
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" className="flex-1 gap-2" onClick={handlePrint} disabled={loading || !blobUrl}>
+            <Printer className="h-4 w-4" /> Print
+          </Button>
+          <Button className="flex-1 gap-2" onClick={handleDownload} disabled={loading || !blobUrl}>
+            <Download className="h-4 w-4" /> Save PDF
           </Button>
         </div>
       </SheetContent>

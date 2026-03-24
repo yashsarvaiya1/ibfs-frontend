@@ -34,6 +34,7 @@ import {
 import {
   ArrowLeftRight, SlidersHorizontal, MoreVertical,
   Pencil, Landmark, Smartphone, Wallet, Trash2,
+  ChevronLeft, ChevronRight, ExternalLink, Printer, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AccountType, SetBalancePayload } from '@/models/account'
@@ -41,6 +42,7 @@ import { FinancialTransaction } from '@/models/transaction'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { TransactionCard } from '@/components/shared/TransactionCard'
 import { SearchableSelect, SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
+import { PrintSheet } from '@/components/shared/PrintSheet'
 
 
 const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
@@ -52,6 +54,7 @@ const ACCOUNT_ICONS: Record<AccountType, typeof Landmark> = {
   cash: Wallet,
 }
 
+const PAGE_SIZE = 20
 
 interface Props { id: number }
 
@@ -60,33 +63,50 @@ export function AccountDetailPage({ id }: Props) {
   const router       = useRouter()
   const setPageTitle = useUIStore((s) => s.setPageTitle)
 
-  const { data: account,      isLoading } = useAccount(id)
-  const { data: txnsData }                = useTransactions({ account: id })
-  const { data: allAccountsData }         = useAccounts({ is_active: true })
+  // ── Pagination + filter state ──────────────────────────────────────────────
+  const [page,      setPage]      = useState(1)
+  const [dateFrom,  setDateFrom]  = useState('')
+  const [dateTo,    setDateTo]    = useState('')
+  const [printOpen, setPrintOpen] = useState(false)
 
-  // Latest first
-  const txns = [...(txnsData?.results ?? [])].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id - a.id,
-  )
+  const { data: account,      isLoading } = useAccount(id)
+  const { data: txnsData }                = useTransactions({
+    account:   id,
+    page,
+    page_size: PAGE_SIZE,
+    ordering:  '-date,-id',
+    ...(dateFrom && { date_from: dateFrom }),
+    ...(dateTo   && { date_to:   dateTo   }),
+  })
+  const { data: allAccountsData } = useAccounts({ is_active: true })
+
+  const txns       = txnsData?.results ?? []
+  const totalCount = txnsData?.count ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+  const hasPrev    = page > 1
+  const hasNext    = page < totalPages
+
   const otherAccounts = (allAccountsData?.results ?? []).filter(a => a.id !== id)
   const allAccounts   = allAccountsData?.results ?? []
 
-  // ── Account action sheet states ───────────────────────────────────────────
+  const [printView, setPrintView] = useState<'list' | 'ledger'>('list')
+
+  // ── Sheet / dialog states ──────────────────────────────────────────────────
   const [transferOpen,    setTransferOpen]    = useState(false)
   const [adjustOpen,      setAdjustOpen]      = useState(false)
   const [editBalanceOpen, setEditBalanceOpen] = useState(false)
   const [editAccountOpen, setEditAccountOpen] = useState(false)
   const [deleteConfirm,   setDeleteConfirm]   = useState(false)
 
-  // ── Transaction edit state ────────────────────────────────────────────────
-  const [editTxn,        setEditTxn]        = useState<FinancialTransaction | null>(null)
-  const [confirmTxnDel,  setConfirmTxnDel]  = useState(false)
-  const [txnAmount,      setTxnAmount]      = useState('')
-  const [txnDate,        setTxnDate]        = useState('')
-  const [txnNotes,       setTxnNotes]       = useState('')
-  const [txnAccountId,   setTxnAccountId]   = useState('')
+  // ── Transaction edit state ─────────────────────────────────────────────────
+  const [editTxn,       setEditTxn]       = useState<FinancialTransaction | null>(null)
+  const [confirmTxnDel, setConfirmTxnDel] = useState(false)
+  const [txnAmount,     setTxnAmount]     = useState('')
+  const [txnDate,       setTxnDate]       = useState('')
+  const [txnNotes,      setTxnNotes]      = useState('')
+  const [txnAccountId,  setTxnAccountId]  = useState('')
 
-  // ── Account form state ────────────────────────────────────────────────────
+  // ── Account form state ─────────────────────────────────────────────────────
   const [toAccountId,    setToAccountId]    = useState('')
   const [transferAmount, setTransferAmount] = useState('')
   const [adjustAmount,   setAdjustAmount]   = useState('')
@@ -98,7 +118,7 @@ export function AccountDetailPage({ id }: Props) {
   const [editIfsc,       setEditIfsc]       = useState('')
   const [editUpiId,      setEditUpiId]      = useState('')
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const transferMutation   = useTransfer()
   const adjustMutation     = useAdjustBalance(id)
   const setBalanceMutation = useSetBalance(id)
@@ -121,7 +141,6 @@ export function AccountDetailPage({ id }: Props) {
     }
   }, [editAccountOpen, account])
 
-  // Populate txn edit form when editTxn changes
   useEffect(() => {
     if (!editTxn) return
     setTxnAmount(String(Math.abs(Number(editTxn.amount))))
@@ -129,6 +148,21 @@ export function AccountDetailPage({ id }: Props) {
     setTxnNotes(editTxn.notes ?? '')
     setTxnAccountId(editTxn.payment_account ? String(editTxn.payment_account) : String(id))
   }, [editTxn, id])
+
+  // Reset page on account or filter change
+  useEffect(() => { setPage(1) }, [id])
+  useEffect(() => { setPage(1) }, [dateFrom, dateTo])
+
+  // ── Print query params — backend auto-computes balance_before_period ───────
+  const printQueryParams = useMemo(() => {
+    const p: Record<string, unknown> = {
+      account:  id,
+      ordering: 'date',
+    }
+    if (dateFrom) p.date_from = dateFrom
+    if (dateTo)   p.date_to   = dateTo
+    return p
+  }, [id, dateFrom, dateTo])
 
   const accountOptions: SearchableSelectOption[] = allAccounts.map(a => ({
     value:    String(a.id),
@@ -151,22 +185,19 @@ export function AccountDetailPage({ id }: Props) {
   const Icon    = ACCOUNT_ICONS[account.type as AccountType] ?? Wallet
   const balance = Number(account.current_balance)
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleViewAllTransactions = () => router.push(`/transactions?account=${id}`)
+
   const handleEditTxn = (txn: FinancialTransaction) => {
     if (txn.type === 'record') {
-      // Record txns are managed via the document — redirect there
-      if (txn.document) {
-        router.push(`/documents/${txn.document}`)
-      } else {
-        toast.info('This record transaction has no linked document')
-      }
+      if (txn.document) router.push(`/documents/${txn.document}`)
+      else toast.info('This record transaction has no linked document')
       return
     }
     if (txn.type === 'contra') {
       toast.info('Transfer transactions are managed via the Transfers page')
       return
     }
-    // actual → open edit sheet
     setEditTxn(txn)
   }
 
@@ -174,12 +205,10 @@ export function AccountDetailPage({ id }: Props) {
     const found = txns.find(t => t.id === txnId)
     if (!found) return
     if (found.type === 'record') {
-      toast.error('Record transactions can only be deleted via document deletion')
-      return
+      toast.error('Record transactions can only be deleted via document deletion'); return
     }
     if (found.type === 'contra') {
-      toast.error('Transfer transactions cannot be deleted individually')
-      return
+      toast.error('Transfer transactions cannot be deleted individually'); return
     }
     setEditTxn(found)
     setConfirmTxnDel(true)
@@ -274,10 +303,13 @@ export function AccountDetailPage({ id }: Props) {
     } catch { toast.error('Failed to delete account') }
   }
 
+  const dateRangeInvalid = !!(dateFrom && dateTo && dateFrom > dateTo)
+
+
   return (
     <div className="pb-10">
 
-      {/* ── Balance card ─────────────────────────────────────────────────── */}
+      {/* ── Balance card ──────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-4">
         <Card className="bg-primary text-primary-foreground overflow-hidden rounded-2xl shadow-md">
           <CardContent className="p-5">
@@ -325,6 +357,9 @@ export function AccountDetailPage({ id }: Props) {
                   }}>
                     <SlidersHorizontal className="mr-2 h-4 w-4" /> Set Balance Directly
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleViewAllTransactions}>
+                    <ExternalLink className="mr-2 h-4 w-4" /> View All Transactions
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
@@ -357,15 +392,91 @@ export function AccountDetailPage({ id }: Props) {
 
       <Separator />
 
-      {/* ── Transaction history ───────────────────────────────────────────── */}
-      <div className="px-4 pt-5 pb-2">
-        <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-          Transaction History
-        </h2>
+      {/* ── Transaction history header + date filters + print ─────────────── */}
+      <div className="px-4 pt-5 pb-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            Transaction History
+          </h2>
+          <div className="flex items-center gap-2">
+            {totalCount > 0 && (
+              <span className="text-xs text-muted-foreground">{totalCount} total</span>
+            )}
+            {/* View toggle */}
+            <div className="flex items-center rounded-lg border border-border overflow-hidden h-8">
+              <button
+                onClick={() => setPrintView('list')}
+                className={cn(
+                  'px-2.5 text-xs font-semibold h-full transition-colors',
+                  printView === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted-foreground hover:bg-muted/50',
+                )}
+              >
+                List
+              </button>
+              <button
+                onClick={() => setPrintView('ledger')}
+                className={cn(
+                  'px-2.5 text-xs font-semibold h-full transition-colors border-l border-border',
+                  printView === 'ledger'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted-foreground hover:bg-muted/50',
+                )}
+              >
+                Ledger
+              </button>
+            </div>
+            <Button
+              variant="outline" size="sm"
+              className="h-8 gap-1.5 rounded-xl text-xs"
+              onClick={() => setPrintOpen(true)}
+              disabled={totalCount === 0}
+            >
+              <Printer className="h-3.5 w-3.5" /> Print
+            </Button>
+          </div>
+
+        </div>
+
+        {/* Date range filter */}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            className="flex-1 h-8 rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <span className="text-xs text-muted-foreground shrink-0">—</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={e => setDateTo(e.target.value)}
+            className="flex-1 h-8 rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(''); setDateTo('') }}
+              className="flex items-center gap-1 h-8 px-2.5 rounded-lg border border-border bg-background text-xs font-semibold text-muted-foreground hover:text-destructive transition-colors shrink-0"
+            >
+              <X className="h-3 w-3" /> Clear
+            </button>
+          )}
+        </div>
+
+        {dateRangeInvalid && (
+          <p className="text-[11px] text-destructive font-semibold ml-1">
+            ⚠️ "From" date is after "To" date
+          </p>
+        )}
       </div>
+
+      {/* ── Transaction list ──────────────────────────────────────────────── */}
       <div className="px-4 space-y-2 pb-4">
         {txns.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm py-8">No transactions yet</p>
+          <p className="text-center text-muted-foreground text-sm py-8">
+            {dateFrom || dateTo ? 'No transactions in this date range' : 'No transactions yet'}
+          </p>
         ) : (
           txns.map(txn => (
             <TransactionCard
@@ -378,6 +489,43 @@ export function AccountDetailPage({ id }: Props) {
           ))
         )}
       </div>
+
+      {/* ── Pagination controls ───────────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div className="px-4 pb-6 flex items-center justify-between gap-3">
+          <Button
+            variant="outline" size="sm" className="h-9 rounded-xl gap-1.5"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={!hasPrev}
+          >
+            <ChevronLeft className="h-4 w-4" /> Prev
+          </Button>
+          <span className="text-xs text-muted-foreground font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline" size="sm" className="h-9 rounded-xl gap-1.5"
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={!hasNext}
+          >
+            Next <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* ── View all shortcut ─────────────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div className="px-4 pb-6">
+          <Button
+            variant="ghost"
+            className="w-full h-10 rounded-xl text-sm text-primary gap-2"
+            onClick={handleViewAllTransactions}
+          >
+            <ExternalLink className="h-4 w-4" />
+            View all {totalCount} transactions with filters
+          </Button>
+        </div>
+      )}
 
       {/* ── Transaction edit sheet ────────────────────────────────────────── */}
       <Sheet open={!!editTxn && !confirmTxnDel} onOpenChange={v => { if (!v) setEditTxn(null) }}>
@@ -398,7 +546,6 @@ export function AccountDetailPage({ id }: Props) {
                 </div>
               </SheetHeader>
 
-              {/* Txn summary */}
               <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-muted mb-5">
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -457,8 +604,7 @@ export function AccountDetailPage({ id }: Props) {
                 <div className="space-y-1.5">
                   <Label>Date</Label>
                   <Input
-                    type="date"
-                    className="h-11 rounded-xl"
+                    type="date" className="h-11 rounded-xl"
                     value={txnDate}
                     onChange={e => setTxnDate(e.target.value)}
                   />
@@ -752,7 +898,7 @@ export function AccountDetailPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ── Delete account confirmation sheet ────────────────────────────── */}
+      {/* ── Delete account confirmation ───────────────────────────────────── */}
       <Sheet open={deleteConfirm} onOpenChange={setDeleteConfirm}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
@@ -787,6 +933,15 @@ export function AccountDetailPage({ id }: Props) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ── Print Sheet ───────────────────────────────────────────────────── */}
+      <PrintSheet
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        title={`${printView === 'ledger' ? 'Statement (Ledger)' : 'Statement'} — ${account.name}`}
+        queryParams={printQueryParams}
+        view={printView}
+      />
 
     </div>
   )

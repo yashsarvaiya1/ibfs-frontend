@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useUIStore } from '@/stores/uiStore'
@@ -35,14 +35,18 @@ import {
 import {
   MoreVertical, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle2, MoveRight, ImageIcon,
+  Printer, X, CalendarRange,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { StockTransactionCard } from '@/components/shared/StockTransactionCard'
 import { AdjustStockSheet }     from '@/components/shared/AdjustStockSheet'
 import { UploadInput }          from '@/components/shared/common/UploadInput'
+import { PrintSheet }           from '@/components/shared/PrintSheet'
 import type { StockTransaction } from '@/models/stock-transaction'
 
+
 interface Props { id: number }
+
 
 export function ProductDetailPage({ id }: Props) {
   const router = useRouter()
@@ -70,7 +74,7 @@ export function ProductDetailPage({ id }: Props) {
   const [editHsn,      setEditHsn]      = useState('')
   const [editDesc,     setEditDesc]     = useState('')
   const [editStock,    setEditStock]    = useState('')
-  const [editImageUrl, setEditImageUrl] = useState<string[]>([])   // ✅ image
+  const [editImageUrl, setEditImageUrl] = useState<string[]>([])
 
   const updateProduct = useUpdateProduct(id)
 
@@ -80,6 +84,38 @@ export function ProductDetailPage({ id }: Props) {
   const [confirmDelOpen, setConfirmDelOpen] = useState(false)
 
   const deleteMut = useDeleteStockTransaction(deleteTarget?.id ?? 0)
+
+  // ── Print state ────────────────────────────────────────────────────────────
+  const [printOptionsOpen, setPrintOptionsOpen] = useState(false)
+  const [printSheetOpen,   setPrintSheetOpen]   = useState(false)
+  const [printDateFrom,    setPrintDateFrom]    = useState('')
+  const [printDateTo,      setPrintDateTo]      = useState('')
+
+  const printDateRangeInvalid = !!(
+    printDateFrom && printDateTo &&
+    new Date(printDateFrom) > new Date(printDateTo)
+  )
+
+  const printQueryParams = useMemo(() => {
+    const p: Record<string, unknown> = { product: id, ordering: 'date' }
+    if (printDateFrom) p.date_from = printDateFrom
+    if (printDateTo)   p.date_to   = printDateTo
+    return p
+  }, [id, printDateFrom, printDateTo])
+
+  const handleClosePrint = () => {
+    setPrintSheetOpen(false)
+    setTimeout(() => { setPrintDateFrom(''); setPrintDateTo('') }, 300)
+  }
+
+  const filteredTxnCount = useMemo(() => {
+    if (!printDateFrom && !printDateTo) return stockTxns.length
+    return stockTxns.filter(t => {
+      if (printDateFrom && t.date < printDateFrom) return false
+      if (printDateTo   && t.date > printDateTo)   return false
+      return true
+    }).length
+  }, [stockTxns, printDateFrom, printDateTo])
 
   useEffect(() => {
     if (product) {
@@ -91,7 +127,6 @@ export function ProductDetailPage({ id }: Props) {
       setEditHsn(product.hsn_code ?? '')
       setEditDesc(product.description ?? '')
       setEditStock(product.current_stock)
-      // ✅ seed image — wrap single path into array for UploadInput
       setEditImageUrl(product.image_url ? [product.image_url] : [])
     }
   }, [product, setPageTitle])
@@ -118,7 +153,6 @@ export function ProductDetailPage({ id }: Props) {
         hsn_code:      editHsn || null,
         description:   editDesc || null,
         current_stock: editStock,
-        // ✅ unwrap array → single path (or null to clear)
         image_url:     editImageUrl[0] ?? null,
       })
       toast.success('Product updated')
@@ -130,15 +164,10 @@ export function ProductDetailPage({ id }: Props) {
 
   const handleEditStockTxn = (txn: StockTransaction) => {
     if (txn.type === 'record') {
-      // Record s.txns are managed via document — redirect there
-      if (txn.document) {
-        router.push(`/documents/${txn.document}`)
-      } else {
-        toast.info('No linked document to edit')
-      }
+      if (txn.document) { router.push(`/documents/${txn.document}`) }
+      else { toast.info('No linked document to edit') }
       return
     }
-    // actual → open AdjustStockSheet in edit mode
     setEditStockTxn(txn)
   }
 
@@ -171,8 +200,6 @@ export function ProductDetailPage({ id }: Props) {
       {/* ── Product header ────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start gap-3">
-
-          {/* ✅ Product image */}
           <div
             className="shrink-0 w-16 h-16 rounded-xl border border-border/60 bg-muted overflow-hidden cursor-pointer"
             onClick={() => setEditSheet(true)}
@@ -181,8 +208,7 @@ export function ProductDetailPage({ id }: Props) {
               <Image
                 src={getMediaUrl(product.image_url)}
                 alt={product.name}
-                width={64}
-                height={64}
+                width={64} height={64}
                 className="w-full h-full object-cover"
                 unoptimized
               />
@@ -193,7 +219,6 @@ export function ProductDetailPage({ id }: Props) {
             )}
           </div>
 
-          {/* Name + badges */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -264,17 +289,10 @@ export function ProductDetailPage({ id }: Props) {
 
       {/* ── Adjust buttons ────────────────────────────────────────────────── */}
       <div className="px-4 pb-4 grid grid-cols-2 gap-3">
-        <Button
-          className="h-11 gap-2 rounded-xl"
-          onClick={() => openAdjustStockSheet(id, 'add')}
-        >
+        <Button className="h-11 gap-2 rounded-xl" onClick={() => openAdjustStockSheet(id, 'add')}>
           <TrendingUp className="h-4 w-4" /> Add Stock
         </Button>
-        <Button
-          variant="outline"
-          className="h-11 gap-2 rounded-xl"
-          onClick={() => openAdjustStockSheet(id, 'remove')}
-        >
+        <Button variant="outline" className="h-11 gap-2 rounded-xl" onClick={() => openAdjustStockSheet(id, 'remove')}>
           <TrendingDown className="h-4 w-4" /> Remove Stock
         </Button>
       </div>
@@ -303,13 +321,10 @@ export function ProductDetailPage({ id }: Props) {
                     <CardContent className="p-3">
                       <div className="flex items-center justify-between gap-2">
                         <button
-                          type="button"
-                          className="flex-1 text-left"
+                          type="button" className="flex-1 text-left"
                           onClick={() => router.push(`/documents/${move.document_id}`)}
                         >
-                          <p className="text-sm font-semibold">
-                            {move.doc_type.toUpperCase()} #{move.doc_id}
-                          </p>
+                          <p className="text-sm font-semibold">{move.doc_type.toUpperCase()} #{move.doc_id}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {move.contact ?? 'No contact'} · {fmtDate(move.date)}
                           </p>
@@ -318,8 +333,7 @@ export function ProductDetailPage({ id }: Props) {
                           </p>
                         </button>
                         <Button
-                          size="sm"
-                          variant="outline"
+                          size="sm" variant="outline"
                           className="shrink-0 h-8 text-xs gap-1.5 rounded-lg border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100"
                           onClick={() => openMoveStockSheet(move.document_id, 'product')}
                         >
@@ -331,7 +345,6 @@ export function ProductDetailPage({ id }: Props) {
                 ))}
               </div>
             )}
-
             {completed.length > 0 && (
               <div className="space-y-2 pt-2">
                 <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
@@ -372,10 +385,21 @@ export function ProductDetailPage({ id }: Props) {
         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
           Ledger History
         </h2>
-        {stockTxns.some(t => t.type === 'actual') && (
-          <p className="text-[10px] text-muted-foreground">Tap Moved entries to edit</p>
-        )}
+        <div className="flex items-center gap-2">
+          {stockTxns.some(t => t.type === 'actual') && (
+            <p className="text-[10px] text-muted-foreground">Tap entries to edit</p>
+          )}
+          <Button
+            variant="outline" size="sm"
+            className="h-7 gap-1.5 text-xs rounded-lg"
+            disabled={stockTxns.length === 0}
+            onClick={() => setPrintOptionsOpen(true)}
+          >
+            <Printer className="h-3 w-3" /> Print
+          </Button>
+        </div>
       </div>
+
       <div className="px-4 space-y-2 pb-4">
         {stockTxns.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm py-8">No stock history yet</p>
@@ -398,24 +422,15 @@ export function ProductDetailPage({ id }: Props) {
             <SheetTitle className="text-left">Edit Product</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
-
-            {/* ✅ Product image upload */}
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
                 Product Image
                 <span className="text-xs text-muted-foreground font-normal ml-1">optional</span>
               </Label>
-              <UploadInput
-                value={editImageUrl}
-                onChange={setEditImageUrl}
-                context="product"
-                maxFiles={1}
-              />
+              <UploadInput value={editImageUrl} onChange={setEditImageUrl} context="product" maxFiles={1} />
             </div>
-
             <Separator />
-
             <div className="space-y-1.5">
               <Label>Name <span className="text-destructive">*</span></Label>
               <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-11 rounded-xl" />
@@ -434,8 +449,6 @@ export function ProductDetailPage({ id }: Props) {
                 <Input value={editUnit} onChange={e => setEditUnit(e.target.value)} className="h-11 rounded-xl" />
               </div>
             </div>
-
-            {/* Direct stock override warning box */}
             <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800">
               <div className="space-y-1.5">
                 <Label className="flex justify-between items-center">
@@ -443,14 +456,12 @@ export function ProductDetailPage({ id }: Props) {
                   <span className="text-[10px] text-amber-700 font-normal">⚠️ No transaction created</span>
                 </Label>
                 <Input
-                  type="number"
-                  value={editStock}
+                  type="number" value={editStock}
                   onChange={e => setEditStock(e.target.value)}
                   className="h-11 rounded-xl bg-background"
                 />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Min Stock Alert</Label>
@@ -461,7 +472,6 @@ export function ProductDetailPage({ id }: Props) {
                 <Input value={editHsn} onChange={e => setEditHsn(e.target.value)} className="h-11 rounded-xl" />
               </div>
             </div>
-
             <Button
               className="w-full h-12 mt-2 rounded-xl"
               onClick={handleUpdate}
@@ -474,10 +484,7 @@ export function ProductDetailPage({ id }: Props) {
       </Sheet>
 
       {/* Stock txn edit */}
-      <AdjustStockSheet
-        editTxn={editStockTxn}
-        onEditClose={() => setEditStockTxn(null)}
-      />
+      <AdjustStockSheet editTxn={editStockTxn} onEditClose={() => setEditStockTxn(null)} />
 
       {/* Stock txn delete confirmation */}
       <AlertDialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
@@ -518,6 +525,105 @@ export function ProductDetailPage({ id }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          STOCK PRINT OPTIONS SHEET
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Sheet open={printOptionsOpen} onOpenChange={setPrintOptionsOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[80vh] overflow-y-auto">
+          <SheetHeader className="mb-5">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="flex items-center gap-2">
+                <Printer className="h-4 w-4" /> Print Stock History
+              </SheetTitle>
+              <button
+                onClick={() => setPrintOptionsOpen(false)}
+                className="p-1.5 rounded-full hover:bg-muted/60 transition-colors"
+              >
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+          </SheetHeader>
+
+          <div className="space-y-5">
+
+            {/* Product summary */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/40 border border-muted">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-sm font-black text-primary">
+                  {product.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="text-sm font-bold">{product.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  Current stock: {product.current_stock} {product.unit}
+                </p>
+              </div>
+            </div>
+
+            {/* Date range */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5 text-sm font-semibold">
+                <CalendarRange className="h-3.5 w-3.5" /> Date Range
+                <span className="text-xs font-normal text-muted-foreground ml-1">optional</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">From</Label>
+                  <Input
+                    type="date" value={printDateFrom}
+                    onChange={e => setPrintDateFrom(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">To</Label>
+                  <Input
+                    type="date" value={printDateTo}
+                    onChange={e => setPrintDateTo(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+              </div>
+              {printDateRangeInvalid && (
+                <p className="text-[11px] text-destructive font-semibold">
+                  ⚠ "From" date cannot be after "To" date
+                </p>
+              )}
+            </div>
+
+            {/* Count estimate */}
+            <div className="p-3 rounded-xl bg-muted/40 border border-muted">
+              <p className="text-sm font-bold">{filteredTxnCount} transaction{filteredTxnCount !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {printDateFrom || printDateTo
+                  ? 'Matching selected date range'
+                  : 'All time · no date filter applied'}
+              </p>
+            </div>
+
+            <Button
+              className="w-full h-12 rounded-xl gap-2"
+              disabled={printDateRangeInvalid}
+              onClick={() => { setPrintOptionsOpen(false); setPrintSheetOpen(true) }}
+            >
+              <Printer className="h-4 w-4" /> Generate PDF
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Stock Print Sheet ─────────────────────────────────────────────── */}
+      <PrintSheet
+        open={printSheetOpen}
+        onClose={handleClosePrint}
+        title={`Stock History — ${product.name}`}
+        queryParams={printQueryParams}
+        endpoint="stock-transactions/print/"
+        filename={`Stock_${product.name.replace(/\s+/g, '_')}`}
+        loadingText="stock history"
+      />
 
     </div>
   )

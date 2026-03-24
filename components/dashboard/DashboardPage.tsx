@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useAccounts } from '@/hooks/useAccount'
 import { useProducts } from '@/hooks/useProduct'
 import { useTransactions } from '@/hooks/useTransaction'
-import { fmtAmount, fmtDate } from '@/lib/utils'
+import { fmtAmount } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle, TrendingUp, TrendingDown, Landmark } from 'lucide-react'
@@ -17,32 +17,28 @@ export function DashboardPage() {
   useEffect(() => setPageTitle('Home'), [setPageTitle])
 
   const { data: accountsData, isLoading: loadingAccounts } = useAccounts({ is_active: true })
-  const { data: productsData }  = useProducts({ low_stock: true })
-  // Only actual txns — page_size 5 — newest first (backend returns -date order)
-  const { data: recentTxns, isLoading: loadingTxns } = useTransactions({
-    type: 'actual',
-    page: 1,
-    page_size: 5,
+  const { data: productsData }                             = useProducts({ low_stock: true })
+  const { data: recentTxns,   isLoading: loadingTxns }    = useTransactions({
+    type: 'actual', page: 1, page_size: 5,
   })
 
   const accounts       = accountsData?.results ?? []
-  const lowStockCount  = productsData?.count ?? 0
-  const recentActivity = recentTxns?.results ?? []
+  const lowStockCount  = productsData?.count   ?? 0
+  const recentActivity = recentTxns?.results   ?? []
+  const totalBalance   = accounts.reduce((s, a) => s + Number(a.current_balance), 0)
 
-  const totalBalance  = accounts.reduce((s, a) => s + Number(a.current_balance), 0)
-
-  // Inflow / outflow from the 5 most recent — scoped label so user isn't misled
+  // Fix: negative = Cr = incoming, positive = Dr = outgoing
   const recentInflow  = recentActivity
-    .filter(t => Number(t.amount) > 0)
-    .reduce((s, t) => s + Number(t.amount), 0)
-  const recentOutflow = recentActivity
     .filter(t => Number(t.amount) < 0)
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+  const recentOutflow = recentActivity
+    .filter(t => Number(t.amount) > 0)
+    .reduce((s, t) => s + Number(t.amount), 0)
 
   return (
     <div className="px-4 py-4 space-y-6 pb-10">
 
-      {/* ── Payment Accounts ───────────────────────────────────────────── */}
+      {/* ── Payment Accounts ──────────────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Accounts</h2>
@@ -65,7 +61,7 @@ export function DashboardPage() {
           </div>
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-            {accounts.map((acc) => (
+            {accounts.map(acc => (
               <Link key={acc.id} href={`/accounts/${acc.id}`}>
                 <Card className="shrink-0 w-36 cursor-pointer active:scale-95 transition-transform rounded-xl shadow-sm">
                   <CardContent className="p-3">
@@ -80,7 +76,7 @@ export function DashboardPage() {
         )}
       </section>
 
-      {/* ── Quick Stats ──────────────────────────────────────────────────── */}
+      {/* ── Quick Stats ───────────────────────────────────────────────── */}
       <section className="grid grid-cols-3 gap-3">
         <Card className="rounded-xl shadow-sm">
           <CardContent className="p-3 text-center">
@@ -117,7 +113,7 @@ export function DashboardPage() {
         </Link>
       </section>
 
-      {/* ── Recent Activity ──────────────────────────────────────────────── */}
+      {/* ── Recent Activity ───────────────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Recent Activity</h2>

@@ -1,11 +1,13 @@
+// hooks/useDocument.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { documentService } from '@/services/documentService'
-import type { DocumentListParams } from '@/services/documentService'
+// Import from canonical model source, not service re-export
+import type { DocumentListParams } from '@/models/document'
 import type {
   DocumentCreate, DocumentUpdate,
   RecordPaymentPayload, MarkPaidPayload,
   MoveStockPayload, DeleteDocumentPayload,
-  StandaloneInterestPayload,
+  StandaloneInterestPayload, BulkPrintPayload,
 } from '@/models/document'
 
 export const DOCUMENTS_KEY    = ['documents'] as const
@@ -71,7 +73,7 @@ export function useUpdateDocument(id: number) {
   })
 }
 
-// ✅ Toggles is_paid flag only — no transactions created
+// Toggles is_paid flag — no f.txn created
 export function useMarkPaid(docId: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -92,6 +94,7 @@ export function useRecordPayment(docId: number) {
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
       qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
     },
   })
 }
@@ -151,8 +154,28 @@ export function useStandaloneInterest() {
   })
 }
 
+// Single document PDF — returns blob for download/open
 export function usePrintDocument() {
   return useMutation({
     mutationFn: (id: number) => documentService.print(id),
+  })
+}
+
+/**
+ * DV-04 / DV-05: Bulk print.
+ * Pass { ids: [1,2,3] } to print selected documents.
+ * Omit ids (or pass {}) to print the current filtered set on the backend.
+ * Returns a PDF blob — trigger browser download in onSuccess.
+ *
+ * Usage:
+ *   const { mutate: bulkPrint } = useBulkPrint()
+ *   bulkPrint(
+ *     { ids: selectedIds },
+ *     { onSuccess: (blob) => downloadBlob(blob, 'Documents.pdf') }
+ *   )
+ */
+export function useBulkPrint() {
+  return useMutation({
+    mutationFn: (payload?: BulkPrintPayload) => documentService.bulkPrint(payload),
   })
 }

@@ -1,33 +1,45 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocuments } from '@/hooks/useDocument'
+import { useContacts } from '@/hooks/useContact'
 import { useSettings } from '@/hooks/useSettings'
-import { DOC_TYPE_LABELS, DocumentType, MARK_PAID_TYPES } from '@/models/document'
+import { SearchableSelect } from '@/components/shared/common/SearchableSelect'
+import { DOC_TYPE_LABELS, DocumentType } from '@/models/document'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet'
 import { Separator } from '@/components/ui/separator'
 import {
-  Search, ChevronRight, FileText, Trash2,
-  CheckCircle2, Clock, AlertCircle, SlidersHorizontal, X, Check,
+  Search, ChevronRight, ChevronLeft, FileText, Trash2,
+  CheckCircle2, Clock, AlertCircle,
+  SlidersHorizontal, X, Check, Printer, Download, Loader2,
 } from 'lucide-react'
+import { env } from 'next-runtime-env'
+import { toast } from 'sonner'
 import type { Settings } from '@/models/settings'
 
 
-// ── Filter config ─────────────────────────────────────────────────────────────
+// ─── Types & constants ────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 5
+
 const BASE_TYPE_OPTIONS: { label: string; value: string }[] = [
   { label: 'Bills',    value: 'bill' },
   { label: 'Invoices', value: 'invoice' },
 ]
 
-const OPTIONAL_TYPE_OPTIONS: { label: string; value: DocumentType; flag: keyof Settings }[] = [
+const OPTIONAL_TYPE_OPTIONS: {
+  label: string; value: DocumentType; flag: keyof Settings
+}[] = [
   { label: 'PO',           value: 'po',                   flag: 'enable_po' },
   { label: 'Proforma',     value: 'pi',                   flag: 'enable_pi' },
   { label: 'Quotation',    value: 'quotation',            flag: 'enable_quotation' },
@@ -64,13 +76,18 @@ const PAYMENT_FILTERS = [
 
 type PaymentFilter = '' | 'paid' | 'unpaid' | 'partial'
 
+function getApiBase(): string {
+  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
+  return raw.replace(/\/$/, '')
+}
 
 function countActiveFilters(opts: {
-  selectedTypes: string[]
-  dateFrom: string
-  dateTo: string
-  paymentFilter: PaymentFilter
-  showDeleted: boolean
+  selectedTypes:  string[]
+  dateFrom:       string
+  dateTo:         string
+  paymentFilter:  PaymentFilter
+  showDeleted:    boolean
+  filterContact:  string
 }) {
   let n = 0
   if (opts.selectedTypes.length > 0) n++
@@ -78,9 +95,139 @@ function countActiveFilters(opts: {
   if (opts.dateTo)                    n++
   if (opts.paymentFilter)             n++
   if (opts.showDeleted)               n++
+  if (opts.filterContact)             n++
   return n
 }
 
+
+// ─── DocPrintSheet ────────────────────────────────────────────────────────────
+
+interface DocPrintSheetProps {
+  open:        boolean
+  onClose:     () => void
+  title:       string
+  url:         string
+  fetchBody?:  object
+  method?:     'GET' | 'POST'
+}
+
+function DocPrintSheet({
+  open, onClose, title, url, fetchBody, method = 'GET',
+}: DocPrintSheetProps) {
+  const iframeRef             = useRef<HTMLIFrameElement>(null)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open && blobUrl) {
+      URL.revokeObjectURL(blobUrl)
+      setBlobUrl(null)
+    }
+  }, [open]) // eslint-disable-line
+
+  useEffect(() => {
+    if (open) fetchPDF()
+  }, [open, url]) // eslint-disable-line
+
+  const fetchPDF = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(url, {
+        method,
+        credentials: 'include',
+        ...(method === 'POST' && fetchBody
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(fetchBody),
+            }
+          : {}),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      setBlobUrl(URL.createObjectURL(blob))
+    } catch (err) {
+      console.error('Doc PDF error:', err)
+      toast.error('Failed to load PDF')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePrint = () => iframeRef.current?.contentWindow?.print()
+
+  const handleDownload = () => {
+    if (!blobUrl) return
+    const a    = document.createElement('a')
+    a.href     = blobUrl
+    a.download = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
+      <SheetContent
+        side="bottom"
+        className="rounded-t-2xl px-4 pb-6 h-[92vh] flex flex-col"
+      >
+        <SheetHeader className="mb-3 shrink-0">
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-left">{title}</SheetTitle>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-1.5 rounded-full hover:bg-muted/60 transition-colors"
+            >
+              <X className="h-5 w-5 text-muted-foreground" />
+            </button>
+          </div>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-hidden rounded-xl border bg-muted/30 shadow-inner mb-3 relative min-h-0">
+          {loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 z-10">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground font-medium">Generating PDF…</p>
+            </div>
+          )}
+          {blobUrl && (
+            <iframe
+              ref={iframeRef}
+              src={blobUrl}
+              className="w-full h-full rounded-lg"
+              title="Document Preview"
+            />
+          )}
+          {!blobUrl && !loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <p className="text-sm text-muted-foreground">Preview failed to load</p>
+              <Button variant="outline" size="sm" onClick={fetchPDF}>Retry</Button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant="outline" className="flex-1 gap-2"
+            onClick={handlePrint} disabled={loading || !blobUrl}
+          >
+            <Printer className="h-4 w-4" /> Print
+          </Button>
+          <Button
+            className="flex-1 gap-2"
+            onClick={handleDownload} disabled={loading || !blobUrl}
+          >
+            <Download className="h-4 w-4" /> Save PDF
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+
+// ─── DocumentsPage ────────────────────────────────────────────────────────────
 
 export function DocumentsPage() {
   const router       = useRouter()
@@ -89,42 +236,71 @@ export function DocumentsPage() {
 
   useEffect(() => setPageTitle('Documents'), [setPageTitle])
 
-  const { data: settings } = useSettings()
+  const { data: settings }     = useSettings()
+  const { data: contactsData } = useContacts()
+  const allContacts             = contactsData?.results ?? []
 
-  // ── Applied filter state (drives query) ───────────────────────────────────
-  const [search,         setSearch]         = useState('')
-  const [selectedTypes,  setSelectedTypes]  = useState<string[]>(() => {
-    const t = searchParams.get('type')
-    return t ? [t] : []
-  })
-  const [showDeleted,    setShowDeleted]    = useState(false)
-  const [dateFrom,       setDateFrom]       = useState('')
-  const [dateTo,         setDateTo]         = useState('')
-  const [paymentFilter,  setPaymentFilter]  = useState<PaymentFilter>('')
+  // ── URL params ─────────────────────────────────────────────────────────────
+  const urlContact = searchParams.get('contact')
+  const urlType    = searchParams.get('type')
 
-  // ── Filter sheet state ────────────────────────────────────────────────────
-  const [filterOpen,          setFilterOpen]          = useState(false)
-  const [stagedTypes,         setStagedTypes]         = useState<string[]>([])
-  const [stagedDateFrom,      setStagedDateFrom]      = useState('')
-  const [stagedDateTo,        setStagedDateTo]        = useState('')
-  const [stagedPayment,       setStagedPayment]       = useState<PaymentFilter>('')
-  const [stagedShowDeleted,   setStagedShowDeleted]   = useState(false)
+  // ── Applied filters ────────────────────────────────────────────────────────
+  const [page,          setPage]          = useState(1)
+  const [search,        setSearch]        = useState('')
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(() =>
+    urlType ? [urlType] : [],
+  )
+  const [showDeleted,   setShowDeleted]   = useState(false)
+  const [dateFrom,      setDateFrom]      = useState('')
+  const [dateTo,        setDateTo]        = useState('')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('')
+  const [filterContact, setFilterContact] = useState<string>(urlContact ?? '')
 
+  // ── Filter sheet staged ────────────────────────────────────────────────────
+  const [filterOpen,        setFilterOpen]       = useState(false)
+  const [stagedTypes,       setStagedTypes]      = useState<string[]>([])
+  const [stagedDateFrom,    setStagedDateFrom]   = useState('')
+  const [stagedDateTo,      setStagedDateTo]     = useState('')
+  const [stagedPayment,     setStagedPayment]    = useState<PaymentFilter>('')
+  const [stagedShowDeleted, setStagedShowDeleted]= useState(false)
+  const [stagedContact,     setStagedContact]    = useState('')
+
+  // ── Print state ────────────────────────────────────────────────────────────
+  const [bulkPrintOpen,  setBulkPrintOpen]  = useState(false)
+  const [selectedDocIds, setSelectedDocIds] = useState<number[]>([])
+  const [isSelectMode,   setIsSelectMode]   = useState(false)
+  const [isAllPagesSelected, setIsAllPagesSelected] = useState(false) 
+
+  const stagedPaymentApplicable =
+  stagedTypes.length === 0 || stagedTypes.every(t => HAS_BALANCE.has(t))
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [
+    search, selectedTypes, showDeleted, dateFrom,
+    dateTo, paymentFilter, filterContact,
+  ])
+
+  // ── Filter sheet handlers ──────────────────────────────────────────────────
   const handleOpenFilter = () => {
     setStagedTypes([...selectedTypes])
     setStagedDateFrom(dateFrom)
     setStagedDateTo(dateTo)
     setStagedPayment(paymentFilter)
     setStagedShowDeleted(showDeleted)
+    setStagedContact(filterContact)
     setFilterOpen(true)
   }
 
   const handleApplyFilters = () => {
+    const paymentApplicable =
+      stagedTypes.length === 0 || stagedTypes.every(t => HAS_BALANCE.has(t))
     setSelectedTypes(stagedTypes)
     setDateFrom(stagedDateFrom)
     setDateTo(stagedDateTo)
-    setPaymentFilter(stagedPayment)
+    setPaymentFilter(paymentApplicable ? stagedPayment : '')  // ← reset if incompatible
     setShowDeleted(stagedShowDeleted)
+    setFilterContact(stagedContact)
+    setPage(1)
     setFilterOpen(false)
   }
 
@@ -134,6 +310,7 @@ export function DocumentsPage() {
     setStagedDateTo('')
     setStagedPayment('')
     setStagedShowDeleted(false)
+    setStagedContact('')
   }
 
   const handleResetAll = () => {
@@ -142,125 +319,348 @@ export function DocumentsPage() {
     setDateTo('')
     setPaymentFilter('')
     setShowDeleted(false)
+    setFilterContact('')
+    setPage(1)
   }
 
-  // Toggle a type in the staged multi-select
-  const toggleStagedType = (val: string) => {
-    setStagedTypes(prev =>
-      prev.includes(val) ? prev.filter(t => t !== val) : [...prev, val]
-    )
-  }
+  const toggleStagedType = (val: string) =>
+    setStagedTypes(prev => {
+      const next = prev.includes(val) ? prev.filter(t => t !== val) : [...prev, val]
+      // Adding a non-balance type → payment filter no longer valid
+      if (!prev.includes(val) && !HAS_BALANCE.has(val)) setStagedPayment('')
+      return next
+    })
 
-  // ── All available type options (driven by settings) ───────────────────────
+    const handleStagedPaymentChange = (val: PaymentFilter) => {
+      setStagedPayment(val)
+      if (val) {
+        // Drop any staged types that don't support payment status
+        setStagedTypes(prev => prev.filter(t => HAS_BALANCE.has(t)))
+      }
+    }
+
+  // ── All type options (driven by settings) ──────────────────────────────────
   const allTypeOptions = useMemo(() => [
     ...BASE_TYPE_OPTIONS,
     ...OPTIONAL_TYPE_OPTIONS.filter(f => settings?.[f.flag]),
     { label: 'Expense', value: 'expense' },
   ], [settings])
 
-  // ── Build query ───────────────────────────────────────────────────────────
+  // ── Contact options ────────────────────────────────────────────────────────
+  const contactOptions = allContacts.map(c => ({
+    value:    String(c.id),
+    label:    c.company_name || c.contact_name,
+    sublabel: c.company_name ? c.contact_name : undefined,
+  }))
+
+  const resolvedContact     = filterContact
+    ? allContacts.find(c => String(c.id) === filterContact)
+    : null
+  const resolvedContactName = resolvedContact
+    ? resolvedContact.company_name || resolvedContact.contact_name
+    : filterContact ? `Contact #${filterContact}` : ''
+
+  // ── Query params ───────────────────────────────────────────────────────────
   const queryParams = useMemo(() => {
-    const p: Record<string, any> = {
+    const p: Record<string, unknown> = {
       search:    search    || undefined,
-      contact:   searchParams.get('contact') ? Number(searchParams.get('contact')) : undefined,
-      is_active: showDeleted ? false : true,
-      ordering:  '-date',
+      contact:   filterContact ? Number(filterContact) : undefined,
+      is_active: showDeleted ? 'false' : 'true',
+      ordering:  '-date,-created_at',
+      page,
+      page_size: PAGE_SIZE,
     }
-    // ✅ Send multiple types as comma-separated (backend handles split)
-    if (selectedTypes.length === 1)       p.type = selectedTypes[0]
-    else if (selectedTypes.length > 1)    p.type = selectedTypes.join(',')
+
+    // ── Multi-type: comma-separated → backend uses type__in ──────────────────
+    if (selectedTypes.length === 1)    p.type = selectedTypes[0]
+    else if (selectedTypes.length > 1) p.type = selectedTypes.join(',')
 
     if (dateFrom) p.date_from = dateFrom
     if (dateTo)   p.date_to   = dateTo
+
+    // Partial is handled client-side; paid/unpaid go to backend
     if (paymentFilter === 'paid')   p.is_paid = true
     if (paymentFilter === 'unpaid') p.is_paid = false
 
     return p
-  }, [search, searchParams, showDeleted, selectedTypes, dateFrom, dateTo, paymentFilter])
+  }, [
+    search, filterContact, showDeleted, selectedTypes,
+    dateFrom, dateTo, paymentFilter, page,
+  ])
 
-  const { data, isLoading } = useDocuments(queryParams as any)
-  const allDocs = data?.results ?? []
+  const { data, isLoading } = useDocuments(queryParams)
+  const allDocs    = data?.results ?? []
+  const totalCount = data?.count   ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+  const hasPrev    = page > 1
+  const hasNext    = page < totalPages
 
-  // Client-side partial filter
+  // Client-side partial filter (only applied on current page results)
   const docs = useMemo(() => {
     if (paymentFilter !== 'partial') return allDocs
     return allDocs.filter(doc => {
       if (!HAS_BALANCE.has(doc.type)) return false
-      const ps     = doc.payment_status
-      if (!ps)     return false
+      const ps = doc.payment_status
+      if (!ps)  return false
       const isPaid = doc.is_paid || ps.is_paid
       if (isPaid)  return false
-      const rem    = Number(ps.remaining)
-      const total  = Number(doc.total_amount)
+      const rem   = Number(ps.remaining)
+      const total = Number(doc.total_amount)
       return rem > 0 && rem < total
     })
   }, [allDocs, paymentFilter])
 
+  // ── Counts ─────────────────────────────────────────────────────────────────
   const activeFilterCount = countActiveFilters({
-    selectedTypes, dateFrom, dateTo, paymentFilter, showDeleted,
+    selectedTypes, dateFrom, dateTo, paymentFilter, showDeleted, filterContact,
   })
-  const hasAnyFilter = activeFilterCount > 0 || !!search
-
-  // Staged filter count (for Apply button badge)
   const stagedFilterCount = countActiveFilters({
     selectedTypes: stagedTypes, dateFrom: stagedDateFrom,
     dateTo: stagedDateTo, paymentFilter: stagedPayment,
-    showDeleted: stagedShowDeleted,
+    showDeleted: stagedShowDeleted, filterContact: stagedContact,
   })
-
+  const hasAnyFilter     = activeFilterCount > 0 || !!search
   const dateRangeInvalid = !!(
     stagedDateFrom && stagedDateTo &&
     new Date(stagedDateFrom) > new Date(stagedDateTo)
   )
 
+  // ── Bulk print ─────────────────────────────────────────────────────────────
+  const bulkPrintUrl = useMemo(() => {
+    const base = `${getApiBase()}/documents/bulk_print/`
+    
+    // Specific docs selected → no query params needed, ids go in POST body
+    if (selectedDocIds.length > 0) return base
+
+    // Print all matching → pass active filters as query string
+    // so backend's filter_queryset() picks them up exactly like the list view
+    const params = new URLSearchParams()
+
+    if (search)        params.set('search', search)
+    if (filterContact) params.set('contact', filterContact)
+
+    params.set('is_active', showDeleted ? 'false' : 'true')
+    params.set('ordering', '-date,-created_at')
+
+    if (selectedTypes.length === 1)    params.set('type', selectedTypes[0])
+    else if (selectedTypes.length > 1) params.set('type', selectedTypes.join(','))
+
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo)   params.set('date_to', dateTo)
+
+    if (paymentFilter === 'paid')   params.set('is_paid', 'true')
+    if (paymentFilter === 'unpaid') params.set('is_paid', 'false')
+
+    const qs = params.toString()
+    return qs ? `${base}?${qs}` : base
+  }, [
+    selectedDocIds, search, filterContact, showDeleted,
+    selectedTypes, dateFrom, dateTo, paymentFilter,
+  ])
+  const bulkPrintBody = isAllPagesSelected || selectedDocIds.length === 0
+  ? {}
+  : { ids: selectedDocIds } 
+
+  const toggleSelectMode = () => {
+    setIsSelectMode(v => !v)
+    setSelectedDocIds([])
+    setIsAllPagesSelected(false)
+  }
+
+  const toggleDocSelect = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setIsAllPagesSelected(false)
+    setSelectedDocIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    )
+  }
+
+  const selectCurrentPage = () => {
+    setIsAllPagesSelected(false)
+    setSelectedDocIds(docs.map(d => d.id))
+  }
+
+  const selectAllPages = () => {
+    setIsAllPagesSelected(true)
+    setSelectedDocIds([])
+  }
+
+  const deselectAll = () => {
+    setIsAllPagesSelected(false)
+    setSelectedDocIds([])
+  }
+
+  const selectAll = () => setSelectedDocIds(docs.map(d => d.id))
+
+
   return (
     <div className="pb-10">
 
-      {/* ── Search + Filter button ──────────────────────────────────────────── */}
-      <div className="px-4 pt-4 pb-3 flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by doc ID, contact..."
-            className="pl-9 h-11 rounded-xl"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="px-4 pt-4 pb-3">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by doc ID, contact..."
+              className="pl-9 h-11 rounded-xl"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Bulk print toggle */}
+          <button
+            onClick={toggleSelectMode}
+            className={cn(
+              'flex items-center justify-center h-11 w-11 rounded-xl border transition-colors shrink-0',
+              isSelectMode
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
+            )}
+            title={isSelectMode ? 'Exit select mode' : 'Select to bulk print'}
+          >
+            <Printer className="h-4 w-4" />
+          </button>
+
+          {/* Filter */}
+          <button
+            onClick={handleOpenFilter}
+            className={cn(
+              'relative flex items-center justify-center h-11 w-11 rounded-xl border transition-colors shrink-0',
+              activeFilterCount > 0
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
+            )}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-black flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
-        <button
-          onClick={handleOpenFilter}
-          className={cn(
-            'relative flex items-center justify-center h-11 w-11 rounded-xl border transition-colors shrink-0',
-            activeFilterCount > 0
-              ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-              : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
+
+        {/* Bulk print toolbar */}
+        {isSelectMode && (
+            <div className="mt-2 px-1 space-y-2">
+              <div className="flex items-center justify-between">
+                
+                {/* Left: selection status */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {isAllPagesSelected ? (
+                    <span className="text-xs font-semibold text-primary">
+                      ✓ All {totalCount} documents selected
+                    </span>
+                  ) : selectedDocIds.length > 0 ? (
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      {selectedDocIds.length} of {docs.length} selected
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      Tap documents to select
+                    </span>
+                  )}
+
+                  {/* Deselect */}
+                  {(isAllPagesSelected || selectedDocIds.length > 0) && (
+                    <button
+                      onClick={deselectAll}
+                      className="text-xs font-bold text-muted-foreground underline underline-offset-2"
+                    >
+                      Deselect
+                    </button>
+                  )}
+                </div>
+
+                {/* Right: Print button */}
+                <Button
+                  size="sm" className="h-8 gap-1.5 shrink-0"
+                  onClick={() => setBulkPrintOpen(true)}
+                  disabled={!isAllPagesSelected && selectedDocIds.length === 0 && docs.length === 0}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  {isAllPagesSelected
+                    ? `Print All (${totalCount})`
+                    : selectedDocIds.length > 0
+                    ? `Print ${selectedDocIds.length}`
+                    : `Print All (${totalCount})`}
+                </Button>
+              </div>
+
+              {/* Second row: page selection actions */}
+              <div className="flex items-center gap-3">
+                {/* Select current page */}
+                {!isAllPagesSelected && selectedDocIds.length < docs.length && (
+                  <button
+                    onClick={selectCurrentPage}
+                    className="text-xs font-bold text-primary underline underline-offset-2"
+                  >
+                    Select this page ({docs.length})
+                  </button>
+                )}
+
+                {/* Upgrade to all pages — shown only when current page is fully selected */}
+                {!isAllPagesSelected && totalPages > 1 && selectedDocIds.length === docs.length && docs.length > 0 && (
+                  <button
+                    onClick={selectAllPages}
+                    className="text-xs font-bold text-primary underline underline-offset-2"
+                  >
+                    Select all {totalCount} across all pages →
+                  </button>
+                )}
+
+                {/* Or directly select all pages */}
+                {!isAllPagesSelected && selectedDocIds.length < docs.length && totalPages > 1 && (
+                  <button
+                    onClick={selectAllPages}
+                    className="text-xs font-bold text-muted-foreground underline underline-offset-2"
+                  >
+                    Select all {totalCount}
+                  </button>
+                )}
+              </div>
+            </div>
           )}
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          {activeFilterCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-black flex items-center justify-center">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+
       </div>
 
-      {/* ── Active filter summary pills ─────────────────────────────────────── */}
+      {/* ── Active filter pills ──────────────────────────────────────────────── */}
       {activeFilterCount > 0 && (
         <div className="mx-4 mb-3 flex items-center gap-2 flex-wrap">
-          {/* Selected types pills */}
           {selectedTypes.map(t => (
-            <span key={t} className="flex items-center gap-1 text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg">
+            <span
+              key={t}
+              className="flex items-center gap-1 text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg"
+            >
               {allTypeOptions.find(o => o.value === t)?.label ?? t}
-              <button onClick={() => setSelectedTypes(prev => prev.filter(x => x !== t))} className="ml-0.5 hover:text-destructive">
+              <button
+                onClick={() => setSelectedTypes(prev => prev.filter(x => x !== t))}
+                className="ml-0.5 hover:text-destructive"
+              >
                 <X className="h-3 w-3" />
               </button>
             </span>
           ))}
+          {filterContact && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg">
+              👤 {resolvedContactName}
+              <button
+                onClick={() => setFilterContact('')}
+                className="ml-0.5 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
           {paymentFilter && (
             <span className="flex items-center gap-1 text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg">
               {PAYMENT_FILTERS.find(p => p.value === paymentFilter)?.label}
-              <button onClick={() => setPaymentFilter('')} className="ml-0.5 hover:text-destructive">
+              <button
+                onClick={() => setPaymentFilter('')}
+                className="ml-0.5 hover:text-destructive"
+              >
                 <X className="h-3 w-3" />
               </button>
             </span>
@@ -284,7 +684,7 @@ export function DocumentsPage() {
           {showDeleted && (
             <span className="flex items-center gap-1 text-[11px] font-semibold bg-destructive/10 text-destructive border border-destructive/20 px-2.5 py-1 rounded-lg">
               Deleted
-              <button onClick={() => setShowDeleted(false)} className="ml-0.5 hover:text-destructive/70">
+              <button onClick={() => setShowDeleted(false)} className="ml-0.5">
                 <X className="h-3 w-3" />
               </button>
             </span>
@@ -298,10 +698,21 @@ export function DocumentsPage() {
         </div>
       )}
 
-      {/* ── Document list ───────────────────────────────────────────────────── */}
+      {/* ── Total count ──────────────────────────────────────────────────────── */}
+      {!isLoading && totalCount > 0 && (
+        <div className="px-4 mb-2">
+          <p className="text-[11px] text-muted-foreground">
+            {totalCount} document{totalCount !== 1 ? 's' : ''}
+          </p>
+        </div>
+      )}
+
+      {/* ── Document list ────────────────────────────────────────────────────── */}
       <div className="px-4 space-y-2.5">
         {isLoading ? (
-          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
+          Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))
         ) : docs.length === 0 ? (
           <div className="text-center py-16 flex flex-col items-center">
             <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
@@ -325,6 +736,7 @@ export function DocumentsPage() {
             const isPaid     = doc.is_paid || (payStatus?.is_paid ?? false)
             const remaining  = payStatus ? Number(payStatus.remaining) : 0
             const hasBalance = payStatus !== null && Number(doc.total_amount) > 0
+            const isSelected = isAllPagesSelected || selectedDocIds.includes(doc.id)
 
             return (
               <Card
@@ -333,11 +745,30 @@ export function DocumentsPage() {
                   'cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
                   !doc.is_active
                     ? 'opacity-70 bg-muted/40 border-dashed'
+                    : isSelected
+                    ? 'border-primary bg-primary/5 shadow-md'
                     : 'hover:bg-muted/20 border-border',
                 )}
-                onClick={() => router.push(`/documents/${doc.id}`)}
+                onClick={e => {
+                  if (isSelectMode) {
+                    toggleDocSelect(doc.id, e)
+                  } else {
+                    router.push(`/documents/${doc.id}`)
+                  }
+                }}
               >
                 <CardContent className="p-4 flex items-center gap-3">
+                  {isSelectMode && (
+                    <div className={cn(
+                      'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
+                      isSelected
+                        ? 'bg-primary border-primary'
+                        : 'border-border bg-background',
+                    )}>
+                      {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                  )}
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                       <span className={cn(
@@ -357,13 +788,16 @@ export function DocumentsPage() {
                           <Clock className="h-2.5 w-2.5" /> Partial
                         </span>
                       )}
-                      {hasBalance && !isPaid && remaining > 0 && remaining >= Number(doc.total_amount) && (
+                      {hasBalance && !isPaid && remaining >= Number(doc.total_amount) && (
                         <span className="flex items-center gap-0.5 text-[10px] font-semibold text-rose-700 bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-md shrink-0">
                           <AlertCircle className="h-2.5 w-2.5" /> Unpaid
                         </span>
                       )}
                       {!doc.is_active && (
-                        <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5 font-semibold shrink-0">
+                        <Badge
+                          variant="destructive"
+                          className="text-[10px] h-5 rounded-md px-1.5 font-semibold shrink-0"
+                        >
                           Deleted
                         </Badge>
                       )}
@@ -375,9 +809,13 @@ export function DocumentsPage() {
                         {doc.contact_name}
                       </p>
                     ) : (
-                      <p className="text-xs text-muted-foreground/50 truncate mt-0.5 italic">No contact</p>
+                      <p className="text-xs text-muted-foreground/50 truncate mt-0.5 italic">
+                        No contact
+                      </p>
                     )}
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{fmtDate(doc.date)}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {fmtDate(doc.date)}
+                    </p>
                   </div>
 
                   <div className="flex flex-col items-end justify-center gap-1 shrink-0">
@@ -389,7 +827,9 @@ export function DocumentsPage() {
                         Due {fmtAmount(remaining)}
                       </p>
                     )}
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                    {!isSelectMode && (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -398,11 +838,56 @@ export function DocumentsPage() {
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          FILTER SHEET
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Pagination ───────────────────────────────────────────────────────── */}
+      {totalPages > 1 && (
+        <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+          <Button
+            variant="outline" size="sm"
+            className="h-9 gap-1.5 rounded-xl"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={!hasPrev}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" /> Prev
+          </Button>
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-xs font-bold tabular-nums">{page} / {totalPages}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+            </span>
+          </div>
+          <Button
+            variant="outline" size="sm"
+            className="h-9 gap-1.5 rounded-xl"
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={!hasNext}
+          >
+            Next <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {/* ── Bulk print sheet ─────────────────────────────────────────────────── */}
+      <DocPrintSheet
+        open={bulkPrintOpen}
+        onClose={() => setBulkPrintOpen(false)}
+        title={
+          isAllPagesSelected
+            ? `Bulk Print — All ${totalCount} documents`
+            : selectedDocIds.length > 0
+            ? `Bulk Print — ${selectedDocIds.length} documents`
+            : `Bulk Print — All ${totalCount} documents`
+        }
+        url={bulkPrintUrl}
+        method="POST"
+        fetchBody={bulkPrintBody}
+      />
+
+      {/* ── Filter sheet ─────────────────────────────────────────────────────── */}
       <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
-        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto"
+        >
           <SheetHeader className="mb-5">
             <div className="flex items-center justify-between">
               <SheetTitle className="text-left flex items-center gap-2">
@@ -420,7 +905,7 @@ export function DocumentsPage() {
 
           <div className="space-y-6">
 
-            {/* ── Document Type (multi-select) ────────────────────────────── */}
+            {/* Document Type */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -437,14 +922,19 @@ export function DocumentsPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {allTypeOptions.map(opt => {
-                  const isSelected = stagedTypes.includes(opt.value)
+                  const isSelected   = stagedTypes.includes(opt.value)
+                  const isDisabled   = !!stagedPayment && !HAS_BALANCE.has(opt.value)
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => toggleStagedType(opt.value)}
+                      onClick={() => !isDisabled && toggleStagedType(opt.value)}
+                      disabled={isDisabled}
+                      title={isDisabled ? 'Not applicable when a payment filter is active' : undefined}
                       className={cn(
                         'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all',
-                        isSelected
+                        isDisabled
+                          ? 'opacity-30 cursor-not-allowed bg-muted text-muted-foreground border-border'
+                          : isSelected
                           ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                           : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
                       )}
@@ -455,6 +945,16 @@ export function DocumentsPage() {
                   )
                 })}
               </div>
+              {stagedPayment ? (
+                <p className="text-[10px] text-amber-600 mt-2 ml-1 font-medium">
+                  Only Bill, Invoice, CN & DN support payment status filters
+                </p>
+              ) : stagedTypes.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground mt-2 ml-1">
+                  No type selected — showing all types
+                </p>
+              ) : null}
+            </div>
               {stagedTypes.length === 0 && (
                 <p className="text-[10px] text-muted-foreground mt-2 ml-1">
                   No type selected — showing all types
@@ -464,39 +964,62 @@ export function DocumentsPage() {
 
             <Separator />
 
-            {/* ── Payment Status ──────────────────────────────────────────── */}
+            {/* Contact */}
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-                Payment Status
+                Contact
               </p>
-              <div className="grid grid-cols-4 gap-2">
-                {PAYMENT_FILTERS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setStagedPayment(opt.value)}
-                    className={cn(
-                      'h-10 rounded-xl text-xs font-semibold border transition-all',
-                      stagedPayment === opt.value
-                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                        : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              {stagedPayment && (
+              <SearchableSelect
+                options={contactOptions}
+                value={stagedContact}
+                onChange={setStagedContact}
+                placeholder="All contacts"
+                title="Filter by Contact"
+                searchPlaceholder="Search contacts..."
+                clearable
+              />
+              {stagedContact && (
                 <p className="text-[10px] text-muted-foreground mt-2 ml-1">
-                  {stagedPayment === 'partial'
-                    ? 'Partial filter applied client-side after fetch'
-                    : 'Only applies to Bills, Invoices, CN & DN'}
+                  Showing documents for this contact only
                 </p>
               )}
             </div>
-
-            <Separator />
-
-            {/* ── Date Range ──────────────────────────────────────────────── */}
+              {stagedPaymentApplicable && (
+                <>
+                  <Separator />
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                      Payment Status
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {PAYMENT_FILTERS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => handleStagedPaymentChange(opt.value)}
+                          className={cn(
+                            'h-10 rounded-xl text-xs font-semibold border transition-all',
+                            stagedPayment === opt.value
+                              ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                              : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {stagedPayment && (
+                      <p className="text-[10px] text-muted-foreground mt-2 ml-1">
+                        {stagedPayment === 'partial'
+                          ? 'Partial is filtered client-side after fetch'
+                          : 'Non-applicable document types have been hidden'}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+          <Separator />
+          <div>
+            {/* Date Range */}
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
                 Date Range
@@ -526,11 +1049,19 @@ export function DocumentsPage() {
                   ⚠️ "From" date is after "To" date
                 </p>
               )}
+              {(stagedDateFrom || stagedDateTo) && !dateRangeInvalid && (
+                <button
+                  onClick={() => { setStagedDateFrom(''); setStagedDateTo('') }}
+                  className="mt-2 text-[11px] font-semibold text-muted-foreground hover:text-destructive underline underline-offset-2"
+                >
+                  Clear dates
+                </button>
+              )}
             </div>
 
             <Separator />
 
-            {/* ── Document Status ─────────────────────────────────────────── */}
+            {/* Document Status */}
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
                 Document Status
@@ -563,7 +1094,6 @@ export function DocumentsPage() {
 
           </div>
 
-          {/* ── Apply / Cancel ──────────────────────────────────────────────── */}
           <div className="flex gap-3 mt-8">
             <Button
               variant="outline"

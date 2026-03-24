@@ -28,26 +28,32 @@ import {
   ArrowUpRight, ArrowDownLeft, ChevronRight,
   Phone, Building2, MapPin, FileText, MoreVertical,
   TrendingUp, TrendingDown, Minus, Trash2, Pencil,
-  BookOpen, AlertCircle, LayoutList, Table2,
+  BookOpen, AlertCircle, LayoutList, Table2, Printer, X,
+  CalendarRange,
 } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ContactEditSheet } from './ContactEditSheet'
-import { SendReceiveSheet } from './SendReceiveSheet'
-import { ContactLedger }    from './ContactLedger'
-import { TransactionCard }  from '@/components/shared/TransactionCard'
-import { DOC_TYPE_LABELS }  from '@/models/document'
+import { ContactEditSheet }   from './ContactEditSheet'
+import { SendReceiveSheet }   from './SendReceiveSheet'
+import { computeOpeningBalanceAt, ContactLedger }      from './ContactLedger'
+import { TransactionCard }    from '@/components/shared/TransactionCard'
+import { PrintSheet }         from '@/components/shared/PrintSheet'
+import { DOC_TYPE_LABELS }    from '@/models/document'
 import { SearchableSelect, SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 import { toast } from 'sonner'
 
 
 const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
-const getDocLabel = (t: string | null | undefined): string => t ? (DOC_LABELS[t] ?? t) : ''
+const getDocLabel = (t: string | null | undefined): string =>
+  t ? (DOC_LABELS[t] ?? t) : ''
 
 
-function computeRunningCF(openingBalance: number, txns: FinancialTransaction[]): number {
+function computeRunningCF(
+  openingBalance: number,
+  txns: FinancialTransaction[],
+): number {
   return txns.reduce((cf, t) => {
     if (t.document_type === 'expense') return cf
     if (t.type === 'contra')           return cf
@@ -61,25 +67,63 @@ interface Props { id: number }
 
 export function ContactDetailPage({ id }: Props) {
   const router       = useRouter()
-  const setPageTitle = useUIStore((s) => s.setPageTitle)
-  const openDocSheet = useUIStore((s) => s.openDocCreateSheet)
+  const setPageTitle = useUIStore(s => s.setPageTitle)
+  const openDocSheet = useUIStore(s => s.openDocCreateSheet)
 
   const { data: contact, isLoading }                = useContact(id)
   const { data: ledger,  isLoading: loadingLedger } = useContactLedger(id)
-  const { data: docsData }                          = useDocuments({ contact: id })
-  const { data: accountsData }                      = useAccounts({ is_active: true })
+  const txns: FinancialTransaction[] = useMemo(() => {
+    if (!ledger) return []
+    return Array.isArray(ledger.results) ? ledger.results : []
+  }, [ledger])
+  const { data: docsData }   = useDocuments({ contact: id, ordering: '-date' })
+  const { data: accountsData } = useAccounts({ is_active: true })
 
   const updateTxn = useUpdateTransaction(id)
   const deleteTxn = useDeleteTransaction(id)
 
-  const [editOpen,  setEditOpen]  = useState(false)
-  const [activeTab, setActiveTab] = useState<'ledger' | 'docs'>('ledger')
+  const [editOpen,   setEditOpen]   = useState(false)
+  const [activeTab,  setActiveTab]  = useState<'ledger' | 'docs'>('ledger')
   const [ledgerView, setLedgerView] = useState<'ledger' | 'list'>('ledger')
 
   const [srSheet, setSrSheet] = useState<{ open: boolean; mode: 'send' | 'receive' }>({
     open: false, mode: 'send',
   })
 
+  // ── Print state ────────────────────────────────────────────────────────────
+  // Step 1: print options sheet (pick date range)
+  // Step 2: actual PrintSheet (generate PDF)
+  const [printOptionsOpen, setPrintOptionsOpen] = useState(false)
+  const [printView,        setPrintView]        = useState<'ledger' | 'list'>('ledger')
+  const [printDateFrom,    setPrintDateFrom]    = useState('')
+  const [printDateTo,      setPrintDateTo]      = useState('')
+  const [printSheetOpen,   setPrintSheetOpen]   = useState(false)
+
+  const printDateRangeInvalid = !!(
+    printDateFrom && printDateTo &&
+    new Date(printDateFrom) > new Date(printDateTo)
+  )
+
+  const handleOpenPrintOptions = (view: 'ledger' | 'list') => {
+    setPrintView(view)
+    setPrintOptionsOpen(true)
+  }
+
+  const handleGeneratePrint = () => {
+    setPrintOptionsOpen(false)
+    setPrintSheetOpen(true)
+  }
+
+  const handleClosePrint = () => {
+    setPrintSheetOpen(false)
+    // Small delay so sheet closes cleanly before resetting dates
+    setTimeout(() => {
+      setPrintDateFrom('')
+      setPrintDateTo('')
+    }, 300)
+  }
+
+  // ── edit txn ───────────────────────────────────────────────────────────────
   const [editTxn,        setEditTxn]        = useState<FinancialTransaction | null>(null)
   const [confirmDelOpen, setConfirmDelOpen] = useState(false)
   const [txnAmount,      setTxnAmount]      = useState('')
@@ -99,12 +143,11 @@ export function ContactDetailPage({ id }: Props) {
     if (contact) setPageTitle(getContactDisplayName(contact))
   }, [contact, setPageTitle])
 
-  const docs     = docsData?.results    ?? []
-  const txns     = ledger               ?? []
+  const docs     = docsData?.results     ?? []
   const accounts = accountsData?.results ?? []
 
-  const accountMap = useMemo(() =>
-    Object.fromEntries(accounts.map(a => [a.id, a.name])),
+  const accountMap = useMemo(
+    () => Object.fromEntries(accounts.map(a => [a.id, a.name])),
     [accounts],
   )
 
@@ -125,6 +168,31 @@ export function ContactDetailPage({ id }: Props) {
     })
   }, [txns, contact])
 
+  // ── Print query params — built from selections in print options sheet ───────
+  const printQueryParams = useMemo(() => {
+    const p: Record<string, unknown> = {
+      contact:  id,
+      ordering: 'date',
+    }
+    if (printDateFrom) p.date_from = printDateFrom
+    if (printDateTo)   p.date_to   = printDateTo
+    // ↑ Do NOT send opening_balance_at — backend computes it from
+    //   compute_opening_balance_for_print(contact, date_from) which is
+    //   the single source of truth and handles both intra/cross-month correctly
+    return p
+  }, [id, printDateFrom, printDateTo])
+
+  // Label for how many txns match date range (client-side estimate)
+  const filteredTxnCount = useMemo(() => {
+    if (!printDateFrom && !printDateTo) return txns.length
+    return txns.filter(t => {
+      const d = new Date(t.date)
+      if (printDateFrom && d < new Date(printDateFrom)) return false
+      if (printDateTo   && d > new Date(printDateTo))   return false
+      return true
+    }).length
+  }, [txns, printDateFrom, printDateTo])
+
   const accountOptions: SearchableSelectOption[] = [
     { value: '', label: 'None', sublabel: 'No account' },
     ...accounts.map(a => ({
@@ -134,7 +202,7 @@ export function ContactDetailPage({ id }: Props) {
     })),
   ]
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Handlers ───────────────────────────────────────────────────────────────
   const handleEditTxn = (txn: FinancialTransaction) => {
     if (txn.type !== 'actual') {
       toast.info('Only settled (actual) transactions can be edited')
@@ -152,7 +220,8 @@ export function ContactDetailPage({ id }: Props) {
 
   const handleUpdateTxn = async () => {
     if (!editTxn || !txnAmount || Number(txnAmount) <= 0) {
-      toast.error('Enter a valid amount'); return
+      toast.error('Enter a valid amount')
+      return
     }
     const origSign  = Number(editTxn.amount) >= 0 ? 1 : -1
     const newAmount = String(origSign * Number(txnAmount))
@@ -166,7 +235,9 @@ export function ContactDetailPage({ id }: Props) {
       })
       toast.success('Transaction updated')
       setEditTxn(null)
-    } catch { toast.error('Failed to update') }
+    } catch {
+      toast.error('Failed to update')
+    }
   }
 
   const handleDeleteTxn = async () => {
@@ -176,22 +247,26 @@ export function ContactDetailPage({ id }: Props) {
       toast.success('Transaction deleted')
       setConfirmDelOpen(false)
       setEditTxn(null)
-    } catch { toast.error('Failed to delete') }
+    } catch {
+      toast.error('Failed to delete')
+    }
   }
 
   if (isLoading) return <ContactDetailSkeleton />
   if (!contact)  return null
 
+  const contactDisplayName = getContactDisplayName(contact)
+
   return (
     <div className="pb-10">
 
-      {/* ── Header ────────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 space-y-4">
         <div className="flex items-start justify-between">
           <div className="min-w-0 pr-2">
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-2xl font-black text-foreground/90 tracking-tight truncate">
-                {getContactDisplayName(contact)}
+                {contactDisplayName}
               </h1>
               {!contact.is_active && (
                 <Badge variant="destructive" className="text-[10px] h-5 rounded-md px-1.5 shrink-0">
@@ -205,6 +280,7 @@ export function ContactDetailPage({ id }: Props) {
               </p>
             )}
           </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-9 w-9 bg-muted/50 -mr-2 shrink-0">
@@ -259,10 +335,10 @@ export function ContactDetailPage({ id }: Props) {
               </p>
               <p className="text-sm font-medium text-muted-foreground mt-1.5 flex items-center gap-1">
                 {runningCF > 0
-                  ? <><TrendingUp   className="h-4 w-4 text-red-500"           /> You owe them</>
+                  ? <><TrendingUp   className="h-4 w-4 text-red-500"            /> You owe them</>
                   : runningCF < 0
-                    ? <><TrendingDown className="h-4 w-4 text-emerald-500"     /> They owe you</>
-                    : <><Minus        className="h-4 w-4 text-muted-foreground" /> Fully settled</>
+                  ? <><TrendingDown className="h-4 w-4 text-emerald-500"        /> They owe you</>
+                  : <><Minus        className="h-4 w-4 text-muted-foreground"   /> Fully settled</>
                 }
               </p>
             </div>
@@ -312,9 +388,13 @@ export function ContactDetailPage({ id }: Props) {
 
       <Separator className="my-6" />
 
-      {/* ── Tabs ──────────────────────────────────────────────────────── */}
+      {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
       <div className="px-4">
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'ledger' | 'docs')} className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={v => setActiveTab(v as 'ledger' | 'docs')}
+          className="w-full"
+        >
           <TabsList className="w-full h-12 bg-muted/60 p-1 rounded-xl mb-4">
             <TabsTrigger
               value="ledger"
@@ -330,45 +410,61 @@ export function ContactDetailPage({ id }: Props) {
             </TabsTrigger>
           </TabsList>
 
-          {/* ── Ledger Tab ────────────────────────────────────────────── */}
+          {/* ── Ledger Tab ───────────────────────────────────────────────────── */}
           <TabsContent value="ledger" className="space-y-3 outline-none">
             {loadingLedger ? (
               <Skeleton className="h-75 w-full rounded-xl" />
             ) : (
               <>
-                {/* View mode toggle */}
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    {ledgerView === 'ledger'
-                      ? 'Scroll horizontally for details'
-                      : 'Use ⋮ menu on each row to edit or delete'}
+                {/* Toolbar */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {ledgerView === 'ledger'
+                        ? 'Scroll horizontally for details'
+                        : 'Use ⋮ menu to edit or delete'}
+                    </span>
                   </span>
-                  <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-                    <button
-                      onClick={() => setLedgerView('ledger')}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all',
-                        ledgerView === 'ledger'
-                          ? 'bg-background shadow-sm text-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Print — icon-only on mobile, label on larger screens */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 rounded-lg"
+                      disabled={txns.length === 0}
+                      onClick={() => handleOpenPrintOptions(ledgerView)}
+                      title={ledgerView === 'ledger' ? 'Print Ledger' : 'Print PDF'}
                     >
-                      <Table2 className="h-3.5 w-3.5" />
-                      Ledger
-                    </button>
-                    <button
-                      onClick={() => setLedgerView('list')}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all',
-                        ledgerView === 'list'
-                          ? 'bg-background shadow-sm text-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      <LayoutList className="h-3.5 w-3.5" />
-                      List
-                    </button>
+                      <Printer className="h-3.5 w-3.5" />
+                    </Button>
+
+                    {/* View toggle */}
+                    <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                      <button
+                        onClick={() => setLedgerView('ledger')}
+                        className={cn(
+                          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all',
+                          ledgerView === 'ledger'
+                            ? 'bg-background shadow-sm text-foreground'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <Table2 className="h-3.5 w-3.5" /> Ledger
+                      </button>
+                      <button
+                        onClick={() => setLedgerView('list')}
+                        className={cn(
+                          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all',
+                          ledgerView === 'list'
+                            ? 'bg-background shadow-sm text-foreground'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <LayoutList className="h-3.5 w-3.5" /> List
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -386,13 +482,15 @@ export function ContactDetailPage({ id }: Props) {
                   <div className="space-y-2">
                     {txnsWithRunningCF.length === 0 ? (
                       <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
-                        <p className="text-sm font-medium text-muted-foreground">No transactions yet</p>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          No transactions yet
+                        </p>
                         <p className="text-xs text-muted-foreground/60 mt-1">
                           Send / Receive or create a document to get started
                         </p>
                       </div>
                     ) : (
-                      txnsWithRunningCF.map((txn) => (
+                      txnsWithRunningCF.map(txn => (
                         <TransactionCard
                           key={txn.id}
                           txn={txn}
@@ -417,14 +515,14 @@ export function ContactDetailPage({ id }: Props) {
             )}
           </TabsContent>
 
-          {/* ── Documents Tab ─────────────────────────────────────────── */}
+          {/* ── Documents Tab ────────────────────────────────────────────────── */}
           <TabsContent value="docs" className="space-y-3 outline-none">
             {docs.length === 0 ? (
               <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
                 <p className="text-sm font-medium text-muted-foreground">No documents found</p>
               </div>
             ) : (
-              docs.map((doc) => (
+              docs.map(doc => (
                 <Card
                   key={doc.id}
                   className="cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm border-border/80 hover:bg-muted/20"
@@ -433,7 +531,10 @@ export function ContactDetailPage({ id }: Props) {
                   <CardContent className="p-4 flex items-center justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wider rounded-md px-1.5 border border-border">
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] uppercase font-bold tracking-wider rounded-md px-1.5 border border-border"
+                        >
                           {getDocLabel(doc.type)}
                         </Badge>
                         <span className="text-sm font-bold text-foreground/90 truncate">
@@ -469,7 +570,203 @@ export function ContactDetailPage({ id }: Props) {
         </Tabs>
       </div>
 
-      {/* ── Sheets ────────────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          PRINT OPTIONS SHEET — date range picker before generating PDF
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Sheet open={printOptionsOpen} onOpenChange={setPrintOptionsOpen}>
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl px-4 pb-10 max-h-[80vh] overflow-y-auto"
+        >
+          <SheetHeader className="mb-5">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-left flex items-center gap-2">
+                <Printer className="h-4 w-4" />
+                Print{' '}
+                {printView === 'ledger' ? 'Ledger' : 'Transaction List'}
+              </SheetTitle>
+              <button
+                onClick={() => setPrintOptionsOpen(false)}
+                className="p-1.5 rounded-full hover:bg-muted/60 transition-colors"
+              >
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+          </SheetHeader>
+
+          <div className="space-y-6">
+
+            {/* Contact info summary */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/40 border border-muted">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-sm font-black text-primary">
+                  {contactDisplayName.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold truncate">{contactDisplayName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {txns.length} total transaction{txns.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            {/* Date Range */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <CalendarRange className="h-3.5 w-3.5" />
+                  Date Range
+                </p>
+                {(printDateFrom || printDateTo) && (
+                  <button
+                    onClick={() => { setPrintDateFrom(''); setPrintDateTo('') }}
+                    className="text-[11px] font-semibold text-muted-foreground hover:text-destructive underline underline-offset-2"
+                  >
+                    Clear dates
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground">From</label>
+                  <input
+                    type="date"
+                    value={printDateFrom}
+                    onChange={e => setPrintDateFrom(e.target.value)}
+                    className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground">To</label>
+                  <input
+                    type="date"
+                    value={printDateTo}
+                    onChange={e => setPrintDateTo(e.target.value)}
+                    className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+
+              {printDateRangeInvalid && (
+                <p className="text-[11px] text-destructive mt-2 ml-1 font-semibold">
+                  ⚠️ "From" date is after "To" date
+                </p>
+              )}
+
+              {/* Transaction count estimate */}
+              {!printDateRangeInvalid && (
+                <p className="text-[11px] text-muted-foreground mt-2 ml-1">
+                  {printDateFrom || printDateTo
+                    ? `~${filteredTxnCount} transaction${filteredTxnCount !== 1 ? 's' : ''} in range`
+                    : `All ${txns.length} transactions will be included`
+                  }
+                </p>
+              )}
+            </div>
+
+            {/* Quick range presets */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                Quick Presets
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  {
+                    label: 'This Month',
+                    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+                      .toISOString().split('T')[0],
+                    to: new Date().toISOString().split('T')[0],
+                  },
+                  {
+                    label: 'Last Month',
+                    from: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+                      .toISOString().split('T')[0],
+                    to: new Date(new Date().getFullYear(), new Date().getMonth(), 0)
+                      .toISOString().split('T')[0],
+                  },
+                  {
+                    label: 'This Year',
+                    from: `${new Date().getFullYear()}-01-01`,
+                    to: new Date().toISOString().split('T')[0],
+                  },
+                  {
+                    label: 'Last Year',
+                    from: `${new Date().getFullYear() - 1}-01-01`,
+                    to: `${new Date().getFullYear() - 1}-12-31`,
+                  },
+                ].map(preset => {
+                  const isActive = printDateFrom === preset.from && printDateTo === preset.to
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() => {
+                        setPrintDateFrom(preset.from)
+                        setPrintDateTo(preset.to)
+                      }}
+                      className={cn(
+                        'px-3 py-2 rounded-xl text-xs font-semibold border transition-all',
+                        isActive
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
+                      )}
+                    >
+                      {preset.label}
+                    </button>
+                  )
+                })}
+                {(printDateFrom || printDateTo) && (
+                  <button
+                    onClick={() => { setPrintDateFrom(''); setPrintDateTo('') }}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold border border-border bg-background text-muted-foreground hover:bg-muted/50 transition-all"
+                  >
+                    All time
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-8">
+            <Button
+              variant="outline"
+              className="flex-1 h-12 rounded-2xl font-semibold"
+              onClick={() => setPrintOptionsOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 h-12 rounded-2xl font-bold shadow-md shadow-primary/20 gap-2"
+              onClick={handleGeneratePrint}
+              disabled={printDateRangeInvalid || filteredTxnCount === 0}
+            >
+              <Printer className="h-4 w-4" />
+              Generate PDF
+              {filteredTxnCount > 0 && (
+                <span className="ml-1 bg-primary-foreground/20 text-primary-foreground text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                  {filteredTxnCount}
+                </span>
+              )}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Actual Print Sheet ───────────────────────────────────────────────── */}
+      <PrintSheet
+        open={printSheetOpen}
+        onClose={handleClosePrint}
+        title={
+          printView === 'ledger'
+            ? `Ledger — ${contactDisplayName}`
+            : `Transactions — ${contactDisplayName}`
+        }
+        view={printView}
+        queryParams={printQueryParams}
+      />
+
+      {/* ── Sheets ──────────────────────────────────────────────────────────── */}
       <ContactEditSheet
         contact={contact}
         open={editOpen}
@@ -482,9 +779,15 @@ export function ContactDetailPage({ id }: Props) {
         onClose={() => setSrSheet({ open: false, mode: 'send' })}
       />
 
-      {/* ── Transaction edit sheet ────────────────────────────────────── */}
-      <Sheet open={!!editTxn && !confirmDelOpen} onOpenChange={v => { if (!v) setEditTxn(null) }}>
-        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto">
+      {/* ── Transaction edit sheet ───────────────────────────────────────────── */}
+      <Sheet
+        open={!!editTxn && !confirmDelOpen}
+        onOpenChange={v => { if (!v) setEditTxn(null) }}
+      >
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl px-4 pb-10 max-h-[90vh] overflow-y-auto"
+        >
           {editTxn && (
             <>
               <SheetHeader className="mb-5">
@@ -504,7 +807,10 @@ export function ContactDetailPage({ id }: Props) {
               <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-muted mb-5">
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant="default" className="text-[10px] uppercase font-bold tracking-wider rounded-md h-5 px-1.5">
+                    <Badge
+                      variant="default"
+                      className="text-[10px] uppercase font-bold tracking-wider rounded-md h-5 px-1.5"
+                    >
                       actual
                     </Badge>
                     {editTxn.document && (
@@ -526,7 +832,8 @@ export function ContactDetailPage({ id }: Props) {
                   'text-lg font-black shrink-0',
                   Number(editTxn.amount) >= 0 ? 'text-red-600' : 'text-emerald-600',
                 )}>
-                  {Number(editTxn.amount) >= 0 ? '+' : ''}{fmtAmount(editTxn.amount)}
+                  {Number(editTxn.amount) >= 0 ? '+' : ''}
+                  {fmtAmount(editTxn.amount)}
                 </p>
               </div>
 
@@ -534,8 +841,8 @@ export function ContactDetailPage({ id }: Props) {
                 <div className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-5 flex gap-2 items-start">
                   <span className="mt-0.5">⚠️</span>
                   <span>
-                    This is linked to a document. Editing the amount here may cause a
-                    discrepancy with the document total.
+                    This is linked to a document. Editing the amount here may cause
+                    a discrepancy with the document total.
                   </span>
                 </div>
               )}
@@ -578,7 +885,10 @@ export function ContactDetailPage({ id }: Props) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span></Label>
+                  <Label>
+                    Notes{' '}
+                    <span className="text-xs text-muted-foreground ml-1 font-normal">(optional)</span>
+                  </Label>
                   <Input
                     placeholder="Add a note..."
                     className="h-11 rounded-xl"
@@ -599,11 +909,13 @@ export function ContactDetailPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ── Confirm delete dialog ──────────────────────────────────────── */}
+      {/* ── Confirm delete dialog ────────────────────────────────────────────── */}
       <AlertDialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>
         <AlertDialogContent className="rounded-2xl max-w-sm">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl font-black">Delete Transaction?</AlertDialogTitle>
+            <AlertDialogTitle className="text-xl font-black">
+              Delete Transaction?
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2.5 text-sm font-medium pt-2">
                 <p>
@@ -620,14 +932,17 @@ export function ContactDetailPage({ id }: Props) {
                 )}
                 {editTxn?.document && !editTxn.is_document_deleted && (
                   <p className="text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100 leading-tight">
-                    ⚠️ This is linked to a document. The document balance will become unpaid again.
+                    ⚠️ This is linked to a document. The document balance will
+                    become unpaid again.
                   </p>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-4 gap-2">
-            <AlertDialogCancel className="h-11 rounded-xl border-border">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="h-11 rounded-xl border-border">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteTxn}
               disabled={deleteTxn.isPending}

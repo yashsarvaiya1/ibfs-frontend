@@ -8,9 +8,9 @@ import {
   DropdownMenu, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { fmtAmount, fmtDate, cn } from '@/lib/utils'
+import { fmtDate, txnAmountLabel, cn } from '@/lib/utils'   // txnAmountLabel replaces fmtAmount here
 import { DOC_TYPE_LABELS } from '@/models/document'
-import { FinancialTransaction } from '@/models/transaction'
+import type { FinancialTransaction } from '@/models/transaction'
 import { MoreVertical, Pencil, Trash2, ExternalLink } from 'lucide-react'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
@@ -19,11 +19,11 @@ const getDocLabel = (t: string | null | undefined): string =>
 
 export interface TransactionCardProps {
   txn:          FinancialTransaction
-  runningCf?:   number                           // optional running balance (Dr/Cr)
-  accountName?: string                           // resolved payment account name
-  contactName?: string                           // explicit contact name string
-  showContact?: boolean                          // auto-show txn.contact_name if available
-  onEdit?:      () => void                       // caller closes over txn — NO id arg
+  runningCf?:   number
+  accountName?: string
+  contactName?: string
+  showContact?: boolean
+  onEdit?:      () => void
   onDelete?:    (id: number) => void | Promise<void>
   className?:   string
 }
@@ -38,36 +38,29 @@ export function TransactionCard({
   onDelete,
   className,
 }: TransactionCardProps) {
-  const router  = useRouter()
-  const amount  = Number(txn.amount)
-  const isIncoming = amount < 0   // negative = they owe us / incoming
-  const canEdit = txn.type === 'actual'
-  const hasMenu = !!(onEdit || onDelete)
+  const router   = useRouter()
+  const amount   = Number(txn.amount)
+  const isCredit = amount < 0    // negative = they owe us / money incoming = green
+  const canEdit  = txn.type === 'actual'
+  const hasMenu  = !!(onEdit || onDelete)
 
-  // Resolve contact display: explicit prop wins, then txn.contact_name if showContact
+  // Fix 1: contact_name is already typed on FinancialTransaction — no cast needed
   const resolvedContact =
     contactName ??
-    (showContact && 'contact_name' in txn && txn.contact_name
-      ? (txn as FinancialTransaction & { contact_name?: string }).contact_name
-      : undefined)
+    (showContact ? (txn.contact_name ?? undefined) : undefined)
 
   const typeBadgeVariant: Record<string, 'default' | 'secondary' | 'outline'> = {
-    actual:  'default',
-    record:  'secondary',
-    contra:  'outline',
+    actual: 'default',
+    record: 'secondary',
+    contra: 'outline',
   }
 
   return (
-    <Card
-      className={cn(
-        'rounded-xl border-border/60 shadow-sm transition-all',
-        className,
-      )}
-    >
+    <Card className={cn('rounded-xl border-border/60 shadow-sm transition-all', className)}>
       <CardContent className="p-3.5">
         <div className="flex items-start gap-2">
 
-          {/* ── Left: meta ───────────────────────────────────────────── */}
+          {/* ── Left: meta ────────────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
 
             {/* Row 1: type badge · doc link · doc-deleted badge · contact */}
@@ -125,18 +118,18 @@ export function TransactionCard({
             )}
           </div>
 
-          {/* ── Right: amount · running CF · menu ────────────────────── */}
+          {/* ── Right: amount · running CF · menu ─────────────────────── */}
           <div className="flex flex-col items-end gap-0.5 shrink-0">
 
             <div className="flex items-center gap-0.5">
+              {/* Fix 2: txnAmountLabel handles sign + absolute value correctly */}
               <p className={cn(
                 'text-base font-black tabular-nums',
-                isIncoming ? 'text-emerald-600' : 'text-red-600',
+                isCredit ? 'text-emerald-600' : 'text-red-600',
               )}>
-                {amount >= 0 ? '+' : ''}{fmtAmount(amount)}
+                {txnAmountLabel(txn.amount)}
               </p>
 
-              {/* 3-dot menu — only shown if at least one action is provided */}
               {hasMenu && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -188,7 +181,11 @@ export function TransactionCard({
                     ? 'text-emerald-500'
                     : 'text-muted-foreground',
               )}>
-                {fmtAmount(Math.abs(runningCf))}
+                {/* Absolute value — Dr/Cr suffix tells direction */}
+                ₹{Math.abs(runningCf).toLocaleString('en-IN', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
                 <span className="font-normal text-[9px] ml-0.5">
                   {runningCf > 0 ? 'Dr' : runningCf < 0 ? 'Cr' : ''}
                 </span>
