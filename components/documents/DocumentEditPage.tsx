@@ -153,7 +153,9 @@ export function DocumentEditPage({ id }: { id: number }) {
   const [showCharges,        setShowCharges]        = useState(false)
   const [productPickerOpen,  setProductPickerOpen]  = useState(false)
   const [lineItems,          setLineItems]          = useState<LineItemRow[]>([])
-  const [simpleRows,         setSimpleRows]         = useState<SimpleRow[]>([])
+  const [simpleRows, setSimpleRows] = useState<{ key: string; name: string; amount: string; type: string }[]>(
+    [{ key: crypto.randomUUID(), name: '', amount: '', type: 'charge' }]
+  )
   const [charges,            setCharges]            = useState<Charge[]>([])
   const [taxes,              setTaxes]              = useState<Tax[]>([])
   const [previewOpen,        setPreviewOpen]        = useState(false)
@@ -180,12 +182,16 @@ export function DocumentEditPage({ id }: { id: number }) {
     setVoucherAmount(doc.total_amount ? String(doc.total_amount) : '')
 
     if (IS_EXPENSE_TYPE.includes(doc.type as DocumentType)) {
-      // expense / interest: stored as simple name+amount line items
       const items = doc.line_items ?? []
       setSimpleRows(
         items.length > 0
-          ? items.map(l => ({ key: crypto.randomUUID(), name: l.name, amount: String(l.amount ?? '') }))
-          : [{ key: crypto.randomUUID(), name: '', amount: '' }]
+          ? items.map(l => ({
+              key:    crypto.randomUUID(),
+              name:   l.name,
+              amount: String(l.amount ?? ''),
+              type:   (l as any).type ?? 'charge',   // ← add this
+            }))
+          : [{ key: crypto.randomUUID(), name: '', amount: '', type: 'charge' }]
       )
     } else {
       const items = doc.line_items ?? []
@@ -268,11 +274,16 @@ export function DocumentEditPage({ id }: { id: number }) {
   ]
 
   // ── Simple row handlers (expense / interest) ─────────────────────────────────
-  const addSimpleRow    = () => setSimpleRows(p => [...p, { key: crypto.randomUUID(), name: '', amount: '' }])
-  const removeSimpleRow = (key: string) => setSimpleRows(p => p.filter(r => r.key !== key))
-  const updateSimpleRow = (key: string, field: 'name' | 'amount', value: string) =>
+  const addSimpleRow = () =>
+    setSimpleRows(p => [...p, { key: crypto.randomUUID(), name: '', amount: '', type: 'charge' }])
+
+  const removeSimpleRow = (key: string) =>
+    setSimpleRows(p => p.filter(r => r.key !== key))
+
+  const updateSimpleRow = (key: string, field: 'name' | 'amount' | 'type', value: string) =>
     setSimpleRows(p => p.map(r => r.key !== key ? r : { ...r, [field]: value }))
-  const simpleTotal     = simpleRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+
+  const simpleTotal = simpleRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
 
   // ── Line item handlers (regular docs) ────────────────────────────────────────
   const handleProductPickerConfirm = (selected: any[]) => {

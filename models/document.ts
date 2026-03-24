@@ -121,7 +121,7 @@ export interface DocumentCreate {
   notes?:           string
   payment_account?: number
   interest_lines?:  { name: string; amount: number; type: 'charge' | 'discount' }[]
-  toggle?:          'charge' | 'credit'
+  toggle?:          'we_pay' | 'we_receive'
 }
 
 export interface DocumentUpdate {
@@ -180,7 +180,7 @@ export interface StandaloneInterestPayload {
   reference?:  number
   date?:       string
   line_items:  { name: string; amount: number }[]
-  toggle:      'charge' | 'credit'
+  toggle: 'we_pay' | 'we_receive'
 }
 
 export interface ReferenceData {

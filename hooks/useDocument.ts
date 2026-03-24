@@ -9,6 +9,7 @@ import type {
   MoveStockPayload, DeleteDocumentPayload,
   StandaloneInterestPayload, BulkPrintPayload,
 } from '@/models/document'
+import { contactKey } from './useContact'
 
 export const DOCUMENTS_KEY    = ['documents'] as const
 export const documentKey      = (id: number) => ['documents', id] as const
@@ -146,10 +147,14 @@ export function useStandaloneInterest() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: StandaloneInterestPayload) => documentService.standaloneInterest(data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['contacts'] })
+      // ✅ refetchType: 'all' forces refetch even if component is unmounted/inactive
+      qc.invalidateQueries({
+        queryKey: ['contacts'],
+        refetchType: 'all',
+      })
     },
   })
 }

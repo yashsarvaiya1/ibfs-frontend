@@ -71,7 +71,7 @@ export function ContactDetailPage({ id }: Props) {
   const openDocSheet = useUIStore(s => s.openDocCreateSheet)
 
   const { data: contact, isLoading }                = useContact(id)
-  const { data: ledger,  isLoading: loadingLedger } = useContactLedger(id)
+  const { data: ledger, isLoading: loadingLedger } = useContactLedger(id, { page_size: 1000 })
   const txns: FinancialTransaction[] = useMemo(() => {
     if (!ledger) return []
     return Array.isArray(ledger.results) ? ledger.results : []
