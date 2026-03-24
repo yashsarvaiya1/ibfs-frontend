@@ -3,14 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountService } from '@/services/accountService'
 import type {
   AccountCreate, AccountUpdate,
-  TransferPayload, AdjustBalancePayload, SetBalancePayload
+  TransferPayload, AdjustBalancePayload, SetBalancePayload,
+  AccountTransactionsParams,
 } from '@/models/account'
 
 export const ACCOUNTS_KEY = ['accounts'] as const
 export const accountKey   = (id: number) => ['accounts', id] as const
 
-// Must match TRANSACTIONS_KEY exported from hooks/useTransaction.ts
-// Partial key match — invalidates ALL transaction queries (all filters/params)
+// Partial key — invalidates ALL transaction queries
 const TRANSACTIONS_BASE_KEY = ['transactions'] as const
 
 export function useAccounts(params?: { is_active?: boolean }) {
@@ -72,7 +72,6 @@ export function useTransfer() {
     mutationFn: (data: TransferPayload) => accountService.transfer(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
-      // Two contra f.txns were created — transaction history must refresh
       qc.invalidateQueries({ queryKey: TRANSACTIONS_BASE_KEY })
     },
   })
@@ -85,8 +84,26 @@ export function useAdjustBalance(id: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: accountKey(id) })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
-      // New actual f.txn was created — transaction history must refresh
       qc.invalidateQueries({ queryKey: TRANSACTIONS_BASE_KEY })
     },
+  })
+}
+
+/**
+ * Paginated transaction history for a single payment account.
+ * Returns AccountTransactionsResponse which includes balance_before_period.
+ * Use balance_before_period as the "Balance B/F" row in account statement views.
+ */
+export const accountTxnsKey = (id: number, params?: AccountTransactionsParams) =>
+  ['accounts', id, 'transactions', params] as const
+
+export function useAccountTransactions(
+  id: number,
+  params?: AccountTransactionsParams,
+) {
+  return useQuery({
+    queryKey: accountTxnsKey(id, params),
+    queryFn:  () => accountService.transactions(id, params),
+    enabled:  !!id,
   })
 }

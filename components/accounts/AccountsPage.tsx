@@ -191,6 +191,7 @@ export function AccountsPage() {
                   </Label>
                   <Input
                     placeholder="Account number"
+                    inputMode="numeric" 
                     value={accountNumber}
                     onChange={e => setAccountNumber(e.target.value)}
                   />
@@ -230,6 +231,7 @@ export function AccountsPage() {
               </Label>
               <Input
                 type="number"
+                inputMode="decimal"
                 placeholder="0.00"
                 value={balance}
                 onChange={e => setBalance(e.target.value)}

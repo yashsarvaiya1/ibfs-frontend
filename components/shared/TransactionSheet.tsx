@@ -10,13 +10,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { SearchableSelect } from '@/components/shared/common/SearchableSelect'
 import type { SearchableSelectGroup } from '@/components/shared/common/SearchableSelect'
 import { fmtAmount, fmtDate } from '@/lib/utils'
 import { DOC_TYPE_LABELS } from '@/models/document'
+import type { SendReceivePayload } from '@/models/transaction'
 import { toast } from 'sonner'
 import { Plus, Trash2, Search, X, FileText, User, ChevronRight } from 'lucide-react'
 
@@ -33,7 +33,7 @@ function InterestLinesModal({
   onClose,
   lines,
   onChange,
-  mainMode, // 'send' | 'receive' — used to explain sign logic
+  mainMode,
 }: {
   open:     boolean
   onClose:  () => void
@@ -80,17 +80,17 @@ function InterestLinesModal({
               <Input
                 className="w-24"
                 type="number"
+                inputMode="decimal"
                 placeholder="0"
                 value={line.amount}
                 onChange={e => updateLine(i, { amount: e.target.value })}
               />
-              {/* Charge / Discount toggle */}
               <button
                 type="button"
                 onClick={() =>
                   updateLine(i, { type: line.type === 'charge' ? 'discount' : 'charge' })
                 }
-                className={`text-[11px] font-semibold px-2 py-1 rounded-lg border shrink-0 ${
+                className={`text-[11px] font-semibold px-2 py-1 rounded-lg border shrink-0 transition-colors ${
                   line.type === 'charge'
                     ? 'bg-red-50 border-red-200 text-red-600'
                     : 'bg-emerald-50 border-emerald-200 text-emerald-600'
@@ -133,13 +133,15 @@ interface ExpenseLine {
 
 // ─── Contact Picker ───────────────────────────────────────────────────────────
 
-interface ContactPickerProps {
+function ContactPicker({
+  open,
+  onClose,
+  onSelect,
+}: {
   open:     boolean
   onClose:  () => void
   onSelect: (id: string, name: string) => void
-}
-
-function ContactPicker({ open, onClose, onSelect }: ContactPickerProps) {
+}) {
   const [search, setSearch] = useState('')
   const { data } = useContacts({ is_active: true })
   const contacts = data?.results ?? []
@@ -178,7 +180,10 @@ function ContactPicker({ open, onClose, onSelect }: ContactPickerProps) {
             filtered.map(c => (
               <button
                 key={c.id}
-                onClick={() => { onSelect(c.id.toString(), c.company_name || c.contact_name); onClose() }}
+                onClick={() => {
+                  onSelect(c.id.toString(), c.company_name || c.contact_name)
+                  onClose()
+                }}
                 className="w-full flex items-center gap-3 p-3 rounded-xl border bg-muted/30 active:scale-[0.99] transition-transform text-left"
               >
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -225,44 +230,41 @@ export function TransactionSheet() {
   const [date,          setDate]          = useState('')
   const [selectedDocId, setSelectedDocId] = useState('')
 
-  // ── Toggle state ────────────────────────────────────────────────────────────
-  const [isExpense,       setIsExpense]       = useState(false)
-  const [addInterest,     setAddInterest]     = useState(false)
-  const [interestLines,   setInterestLines]   = useState<InterestLine[]>([])
-  const [expenseLines,    setExpenseLines]    = useState<ExpenseLine[]>([{ name: '', amount: '' }])
+  // ── Toggle state ─────────────────────────────────────────────────────────────
+  const [isExpense,         setIsExpense]         = useState(false)
+  const [addInterest,       setAddInterest]       = useState(false)
+  const [interestLines,     setInterestLines]     = useState<InterestLine[]>([])
+  const [expenseLines,      setExpenseLines]      = useState<ExpenseLine[]>([{ name: '', amount: '' }])
   const [interestModalOpen, setInterestModalOpen] = useState(false)
-
-  // ── Sub-pickers ─────────────────────────────────────────────────────────────
   const [contactPickerOpen, setContactPickerOpen] = useState(false)
 
   const sendMutation    = useSend(contactId ? Number(contactId) : 0)
   const receiveMutation = useReceive(contactId ? Number(contactId) : 0)
   const isPending       = sendMutation.isPending || receiveMutation.isPending
 
-  // ── Derived from settings ───────────────────────────────────────────────────
-  const autoTransaction  = settings?.auto_transaction ?? true
-  const enableVouchers   = settings?.enable_vouchers  ?? false
+  const autoTransaction = settings?.auto_transaction ?? true   // used for display info if needed
+  const enableVouchers  = settings?.enable_vouchers  ?? false
 
-  // Selected account type — needed for voucher trigger
-  const selectedAccount  = accounts?.results.find(a => a.id.toString() === accountId)
-  const isCashAccount    = selectedAccount?.type === 'cash'
+  const selectedAccount = accounts?.results.find(a => a.id.toString() === accountId)
+  const isCashAccount   = selectedAccount?.type === 'cash'
+  const voucherMode     = enableVouchers && isCashAccount && !isExpense
 
-  // Voucher mode: enabled + cash account selected + send or receive
-  const voucherMode = enableVouchers && isCashAccount && !isExpense
-
-  // ── Documents for contact — only fetch when contact is selected ─────────────
+  // Only fetch when contact is selected — `undefined` keeps the hook disabled
   const { data: docsData } = useDocuments(
     contactId ? { contact: Number(contactId), page_size: 50 } : undefined
   )
 
+  // ── Document groups (Unpaid / Paid) ─────────────────────────────────────────
   const docGroups = useMemo((): SearchableSelectGroup[] => {
     const docs = docsData?.results ?? []
     if (docs.length === 0) return []
 
-    // payment_status is null for no-payment types (po, pi, quotation, challan, interest, expense)
-    // is_paid lives inside payment_status object per DocumentListSerializer
-    const unpaid = docs.filter(d => !d.payment_status?.is_paid)
-    const paid   = docs.filter(d =>  d.payment_status?.is_paid)
+    // A doc is "effectively paid" if the manual flag is set OR transactions sum to zero
+    const isPaidDoc = (d: typeof docs[0]) =>
+      d.is_paid || d.payment_status?.is_paid === true
+
+    const unpaid = docs.filter(d => !isPaidDoc(d))
+    const paid   = docs.filter(d =>  isPaidDoc(d))
 
     const toOption = (d: typeof docs[0]) => ({
       value:    d.id.toString(),
@@ -277,7 +279,7 @@ export function TransactionSheet() {
     return groups
   }, [docsData])
 
-  // Account options for SearchableSelect
+  // ── Account options ─────────────────────────────────────────────────────────
   const accountOptions = useMemo(() =>
     (accounts?.results ?? []).map(a => ({
       value:    a.id.toString(),
@@ -291,7 +293,7 @@ export function TransactionSheet() {
   // ── Reset on open ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!transactionSheetOpen) return
-    setMode(transactionSheetMode ?? 'send')
+    setMode(transactionSheetMode)
     setAmount('')
     setAccountId('')
     setNotes('')
@@ -312,74 +314,60 @@ export function TransactionSheet() {
     }
   }, [transactionSheetOpen, transactionSheetMode, transactionSheetContactId, allContacts])
 
-  // Clear doc when contact changes
   const handleContactSelect = (id: string, name: string) => {
     setContactId(id)
     setContactName(name)
-    setSelectedDocId('')
+    setSelectedDocId('')  // clear linked doc when contact changes
   }
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!contactId)                      { toast.error('Select a contact');        return }
-    if (!accountId)                      { toast.error('Select an account');       return }
+    if (!contactId && !isExpense)  { toast.error('Select a contact');              return }
+    if (!accountId)                { toast.error('Select an account');             return }
 
-    // Expense mode — validate line items
-    if (isExpense) {
-      const validLines = expenseLines.filter(l => l.name && Number(l.amount) > 0)
-      if (validLines.length === 0)       { toast.error('Add at least one expense item'); return }
-    } else if (!voucherMode) {
-      // Normal amount mode
-      if (!amount || Number(amount) <= 0) { toast.error('Enter a valid amount');   return }
+    const validExpenseLines = expenseLines.filter(l => l.name.trim() && Number(l.amount) > 0)
+    const validInterestLines = interestLines.filter(l => l.name.trim() && Number(l.amount) > 0)
+
+    if (isExpense || voucherMode) {
+      if (validExpenseLines.length === 0) {
+        toast.error(isExpense ? 'Add at least one expense item' : 'Add at least one item')
+        return
+      }
     } else {
-      // Voucher mode — validate lines
-      const validLines = expenseLines.filter(l => l.name && Number(l.amount) > 0)
-      if (validLines.length === 0)       { toast.error('Add at least one item');   return }
+      if (!amount || Number(amount) <= 0) { toast.error('Enter a valid amount'); return }
     }
 
-    // Build payload
-    const totalExpenseAmount = expenseLines
-      .filter(l => l.name && Number(l.amount) > 0)
-      .reduce((s, l) => s + Number(l.amount), 0)
+    const lineTotal = validExpenseLines.reduce((s, l) => s + Number(l.amount), 0)
 
-    const payload: Record<string, unknown> = {
+    // Build typed payload — no `as any`
+    const payload: SendReceivePayload = {
+      amount:          (isExpense || voucherMode) ? lineTotal.toString() : amount,
       payment_account: Number(accountId),
       date,
-      notes: notes || '',
-      document: selectedDocId ? Number(selectedDocId) : undefined,
+      notes:           notes.trim() || undefined,
+      document:        selectedDocId ? Number(selectedDocId) : undefined,
     }
 
     if (isExpense) {
-      payload.is_expense  = true
-      payload.amount      = totalExpenseAmount.toString()
-      payload.line_items  = expenseLines
-        .filter(l => l.name && Number(l.amount) > 0)
-        .map(l => ({ name: l.name, amount: Number(l.amount) }))
+      payload.is_expense = true
+      payload.line_items = validExpenseLines.map(l => ({ name: l.name, amount: Number(l.amount) }))
     } else if (voucherMode) {
-      payload.amount      = totalExpenseAmount.toString()
-      payload.line_items  = expenseLines
-        .filter(l => l.name && Number(l.amount) > 0)
-        .map(l => ({ name: l.name, amount: Number(l.amount) }))
-    } else {
-      payload.amount = amount
+      payload.line_items = validExpenseLines.map(l => ({ name: l.name, amount: Number(l.amount) }))
     }
 
-    // Interest lines — sign is opposite of main actual
-    if (addInterest && interestLines.length > 0) {
-      payload.interest_lines = interestLines
-        .filter(l => l.name && Number(l.amount) > 0)
-        .map(l => ({
-          name:   l.name,
-          amount: Number(l.amount),
-          type:   l.type,
-        }))
+    if (addInterest && validInterestLines.length > 0) {
+      payload.interest_lines = validInterestLines.map(l => ({
+        name:   l.name,
+        amount: Number(l.amount),
+        type:   l.type,
+      }))
     }
 
     try {
       if (mode === 'send') {
-        await sendMutation.mutateAsync(payload as any)
+        await sendMutation.mutateAsync(payload)
       } else {
-        await receiveMutation.mutateAsync(payload as any)
+        await receiveMutation.mutateAsync(payload)
       }
       toast.success(mode === 'send' ? 'Payment sent' : 'Payment received')
       closeTransactionSheet()
@@ -388,11 +376,67 @@ export function TransactionSheet() {
     }
   }
 
-  // ── Computed net interest for display ───────────────────────────────────────
   const interestNet = interestLines.reduce((sum, l) => {
     const a = Number(l.amount) || 0
     return sum + (l.type === 'charge' ? a : -a)
   }, 0)
+
+  // ── Line item editor — shared between expense and voucher modes ─────────────
+  const renderLineItems = (label: string) => (
+    <div className="space-y-2">
+      <Label>
+        {label} <span className="text-destructive">*</span>
+        {voucherMode && !isExpense && (
+          <span className="text-xs text-muted-foreground ml-1">(Cash Voucher)</span>
+        )}
+      </Label>
+      {expenseLines.map((line, i) => (
+        <div key={i} className="flex gap-2">
+          <Input
+            className="flex-1"
+            placeholder={isExpense ? 'Item name' : 'Description'}
+            value={line.name}
+            onChange={e =>
+              setExpenseLines(prev =>
+                prev.map((l, idx) => idx === i ? { ...l, name: e.target.value } : l)
+              )
+            }
+          />
+          <Input
+            className="w-24"
+            type="number"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={line.amount}
+            onChange={e =>
+              setExpenseLines(prev =>
+                prev.map((l, idx) => idx === i ? { ...l, amount: e.target.value } : l)
+              )
+            }
+          />
+          {expenseLines.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setExpenseLines(prev => prev.filter((_, idx) => idx !== i))}
+            >
+              <Trash2 className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+      ))}
+      <Button
+        type="button" variant="outline" size="sm"
+        className="w-full gap-1.5"
+        onClick={() => setExpenseLines(prev => [...prev, { name: '', amount: '' }])}
+      >
+        <Plus className="h-4 w-4" /> Add Item
+      </Button>
+      <div className="flex justify-between text-sm font-semibold pt-1">
+        <span className="text-muted-foreground">Total</span>
+        <span>{fmtAmount(expenseLines.reduce((s, l) => s + (Number(l.amount) || 0), 0))}</span>
+      </div>
+    </div>
+  )
 
   return (
     <>
@@ -405,14 +449,20 @@ export function TransactionSheet() {
           <div className="space-y-4">
 
             {/* ── Send / Receive tabs ─────────────────────────────────────── */}
-            <Tabs value={mode} onValueChange={v => { setMode(v as 'send' | 'receive'); setIsExpense(false) }}>
+            <Tabs
+              value={mode}
+              onValueChange={v => {
+                setMode(v as 'send' | 'receive')
+                setIsExpense(false)
+              }}
+            >
               <TabsList className="w-full">
                 <TabsTrigger value="send"    className="flex-1">Send</TabsTrigger>
                 <TabsTrigger value="receive" className="flex-1">Receive</TabsTrigger>
               </TabsList>
             </Tabs>
 
-            {/* ── Expense toggle — only on Send ───────────────────────────── */}
+            {/* ── Expense toggle — send only ───────────────────────────────── */}
             {mode === 'send' && (
               <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40">
                 <div>
@@ -423,19 +473,24 @@ export function TransactionSheet() {
               </div>
             )}
 
-            {/* ── Contact picker ──────────────────────────────────────────── */}
+            {/* ── Contact picker ───────────────────────────────────────────── */}
             {!transactionSheetContactId && (
               <div className="space-y-1.5">
                 <Label>
                   Contact
                   {!isExpense && <span className="text-destructive ml-0.5">*</span>}
-                  {isExpense && <span className="text-xs text-muted-foreground ml-1">(optional for expense)</span>}
+                  {isExpense && (
+                    <span className="text-xs text-muted-foreground ml-1">(optional for expense)</span>
+                  )}
                 </Label>
                 {contactId ? (
                   <div className="flex items-center gap-2 p-3 rounded-xl border bg-muted/40">
                     <User className="h-4 w-4 text-primary shrink-0" />
                     <span className="flex-1 text-sm font-medium">{contactName}</span>
-                    <button type="button" onClick={() => { setContactId(''); setContactName(''); setSelectedDocId('') }}>
+                    <button
+                      type="button"
+                      onClick={() => { setContactId(''); setContactName(''); setSelectedDocId('') }}
+                    >
                       <X className="h-4 w-4 text-muted-foreground" />
                     </button>
                   </div>
@@ -460,7 +515,7 @@ export function TransactionSheet() {
               </div>
             )}
 
-            {/* ── Account picker — SearchableSelect ──────────────────────── */}
+            {/* ── Account picker ───────────────────────────────────────────── */}
             <div className="space-y-1.5">
               <Label>Account <span className="text-destructive">*</span></Label>
               <SearchableSelect
@@ -474,125 +529,34 @@ export function TransactionSheet() {
               />
             </div>
 
-            {/* ── Amount input — 3 modes ──────────────────────────────────── */}
-            {isExpense ? (
-              // Mode A: Expense — line items (name + amount)
-              <div className="space-y-2">
-                <Label>Expense Items <span className="text-destructive">*</span></Label>
-                {expenseLines.map((line, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input
-                      className="flex-1"
-                      placeholder="Item name"
-                      value={line.name}
-                      onChange={e =>
-                        setExpenseLines(prev =>
-                          prev.map((l, idx) => idx === i ? { ...l, name: e.target.value } : l)
-                        )
-                      }
-                    />
-                    <Input
-                      className="w-24"
-                      type="number"
-                      placeholder="0.00"
-                      value={line.amount}
-                      onChange={e =>
-                        setExpenseLines(prev =>
-                          prev.map((l, idx) => idx === i ? { ...l, amount: e.target.value } : l)
-                        )
-                      }
-                    />
-                    {expenseLines.length > 1 && (
-                      <button type="button" onClick={() => setExpenseLines(prev => prev.filter((_, idx) => idx !== i))}>
-                        <Trash2 className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <Button
-                  type="button" variant="outline" size="sm"
-                  className="w-full gap-1.5"
-                  onClick={() => setExpenseLines(prev => [...prev, { name: '', amount: '' }])}
-                >
-                  <Plus className="h-4 w-4" /> Add Item
-                </Button>
-                <div className="flex justify-between text-sm font-semibold pt-1">
-                  <span className="text-muted-foreground">Total</span>
-                  <span>{fmtAmount(expenseLines.reduce((s, l) => s + (Number(l.amount) || 0), 0))}</span>
+            {/* ── Amount — 3 modes ─────────────────────────────────────────── */}
+            {isExpense
+              ? renderLineItems('Expense Items')
+              : voucherMode
+              ? renderLineItems(mode === 'send' ? 'Payment Items' : 'Receipt Items')
+              : (
+                <div className="space-y-1.5">
+                  <Label>Amount <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={e => setAmount(e.target.value)}
+                  />
                 </div>
-              </div>
-            ) : voucherMode ? (
-              // Mode B: Voucher — line items (cash account + enableVouchers)
-              <div className="space-y-2">
-                <Label>
-                  {mode === 'send' ? 'Payment Items' : 'Receipt Items'}
-                  <span className="text-destructive ml-0.5">*</span>
-                  <span className="text-xs text-muted-foreground ml-1">(Cash Voucher)</span>
-                </Label>
-                {expenseLines.map((line, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input
-                      className="flex-1"
-                      placeholder="Description"
-                      value={line.name}
-                      onChange={e =>
-                        setExpenseLines(prev =>
-                          prev.map((l, idx) => idx === i ? { ...l, name: e.target.value } : l)
-                        )
-                      }
-                    />
-                    <Input
-                      className="w-24"
-                      type="number"
-                      placeholder="0.00"
-                      value={line.amount}
-                      onChange={e =>
-                        setExpenseLines(prev =>
-                          prev.map((l, idx) => idx === i ? { ...l, amount: e.target.value } : l)
-                        )
-                      }
-                    />
-                    {expenseLines.length > 1 && (
-                      <button type="button" onClick={() => setExpenseLines(prev => prev.filter((_, idx) => idx !== i))}>
-                        <Trash2 className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <Button
-                  type="button" variant="outline" size="sm"
-                  className="w-full gap-1.5"
-                  onClick={() => setExpenseLines(prev => [...prev, { name: '', amount: '' }])}
-                >
-                  <Plus className="h-4 w-4" /> Add Item
-                </Button>
-                <div className="flex justify-between text-sm font-semibold pt-1">
-                  <span className="text-muted-foreground">Total</span>
-                  <span>{fmtAmount(expenseLines.reduce((s, l) => s + (Number(l.amount) || 0), 0))}</span>
-                </div>
-              </div>
-            ) : (
-              // Mode C: Normal amount
-              <div className="space-y-1.5">
-                <Label>Amount <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
-                />
-              </div>
-            )}
+              )
+            }
 
-            {/* ── Interest / Adjustment toggle (not available for expense) ── */}
+            {/* ── Interest / Adjustment toggle ─────────────────────────────── */}
             {!isExpense && (
               <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40">
                 <div>
                   <p className="text-sm font-medium">Add Interest / Adjustment</p>
                   {addInterest && interestNet !== 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Net: <span className={interestNet > 0 ? 'text-red-500' : 'text-emerald-600'}>
+                      Net:{' '}
+                      <span className={interestNet > 0 ? 'text-red-500' : 'text-emerald-600'}>
                         {interestNet > 0 ? '+' : ''}{fmtAmount(interestNet)}
                       </span>
                     </p>
@@ -622,7 +586,7 @@ export function TransactionSheet() {
               </div>
             )}
 
-            {/* ── Document link — only when contact selected, not expense ─── */}
+            {/* ── Document link ────────────────────────────────────────────── */}
             {contactId && !isExpense && (
               <div className="space-y-1.5">
                 <Label>
@@ -649,15 +613,18 @@ export function TransactionSheet() {
               </div>
             )}
 
-            {/* ── Date ────────────────────────────────────────────────────── */}
+            {/* ── Date ─────────────────────────────────────────────────────── */}
             <div className="space-y-1.5">
               <Label>Date</Label>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
 
-            {/* ── Notes ───────────────────────────────────────────────────── */}
+            {/* ── Notes ────────────────────────────────────────────────────── */}
             <div className="space-y-1.5">
-              <Label>Notes <span className="text-xs text-muted-foreground">(optional)</span></Label>
+              <Label>
+                Notes{' '}
+                <span className="text-xs text-muted-foreground">(optional)</span>
+              </Label>
               <Input
                 placeholder="Add a note..."
                 value={notes}
@@ -678,14 +645,12 @@ export function TransactionSheet() {
         </SheetContent>
       </Sheet>
 
-      {/* Contact picker */}
       <ContactPicker
         open={contactPickerOpen}
         onClose={() => setContactPickerOpen(false)}
         onSelect={handleContactSelect}
       />
 
-      {/* Interest modal */}
       <InterestLinesModal
         open={interestModalOpen}
         onClose={() => setInterestModalOpen(false)}

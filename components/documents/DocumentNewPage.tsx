@@ -498,13 +498,13 @@ export function DocumentNewPage() {
     if (docType === 'interest') {
       const validRows = interestRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one interest entry'); return }
-      const toggle = interestDirection === 'pay' ? 'credit' : 'charge'
+      const toggle = interestDirection === 'pay' ? 'we_pay' : 'we_receive'
       try {
         const result = await standaloneInterest.mutateAsync({
           contact:    contactId         ? Number(contactId)         : undefined,
           reference:  interestLinkedDoc ? Number(interestLinkedDoc) : undefined,
           date,
-          line_items: validRows.map(r => ({ name: r.name, amount: Number(r.amount) })),
+          line_items: validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type })),
           toggle,
         })
         toast.success('Interest document created')
@@ -901,7 +901,7 @@ export function DocumentNewPage() {
                 // const isPos  = impact > 0
 
                 const isPos =
-                  (interestDirection === 'pay'     && r.type === 'charge')  ||
+                  (interestDirection === 'pay'     && r.type === 'charge') ||
                   (interestDirection === 'receive' && r.type === 'discount')
                 return (
                   <div key={i} className="flex justify-between items-center text-sm">
