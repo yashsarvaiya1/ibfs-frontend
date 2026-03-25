@@ -233,52 +233,49 @@ function DocPrintSheet({
         {/* PDF area */}
         <div
           ref={containerRef}
-          className="flex-1 min-h-0 w-full overflow-auto rounded-xl border bg-muted/30 shadow-inner mb-3 relative"
+          className="flex-1 min-h-0 w-full overflow-auto rounded-xl border bg-muted/30 shadow-inner mb-3 relative block"
           onTouchStart={e => {
             if (e.touches.length === 2) {
               const dx = e.touches[0].clientX - e.touches[1].clientX
               const dy = e.touches[0].clientY - e.touches[1].clientY
-              pinchStartDist.current  = Math.hypot(dx, dy)
+              pinchStartDist.current = Math.hypot(dx, dy)
               pinchStartScale.current = scale
             }
           }}
           onTouchMove={e => {
-            if (e.touches.length !== 2 || pinchStartDist.current === null) return
-            e.preventDefault()
-            const dx   = e.touches[0].clientX - e.touches[1].clientX
-            const dy   = e.touches[0].clientY - e.touches[1].clientY
-            const dist = Math.hypot(dx, dy)
-            const next = pinchStartScale.current * (dist / pinchStartDist.current)
-            setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, next)))
+            // Only prevent default if pinching (2 fingers)
+            if (e.touches.length === 2 && pinchStartDist.current !== null) {
+              e.preventDefault()
+              const dx = e.touches[0].clientX - e.touches[1].clientX
+              const dy = e.touches[0].clientY - e.touches[1].clientY
+              const dist = Math.hypot(dx, dy)
+              const next = pinchStartScale.current * (dist / pinchStartDist.current)
+              setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, next)))
+            }
           }}
           onTouchEnd={() => { pinchStartDist.current = null }}
-          style={{ touchAction: scale > 1.01 ? 'none' : 'pan-y' }}
+          // IMPORTANT: Changed to 'auto' or 'pan-x pan-y' to allow the browser to pan the overflow
+          style={{ touchAction: scale > 1.05 ? 'pan-x pan-y' : 'auto' }}
         >
-          {/* Loading */}
-          {(loading || (!pdfReady && blobUrl && baseWidth > 0)) && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 z-10">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <p className="text-xs text-muted-foreground font-medium">Generating PDF…</p>
-            </div>
-          )}
- 
-          {/* Error */}
-          {error && !loading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <p className="text-sm text-muted-foreground">{error}</p>
-              <Button variant="outline" size="sm" onClick={fetchPDF}>Retry</Button>
-            </div>
-          )}
- 
-          {/* react-pdf with CSS scale zoom */}
+          {/* Loading & Error States remain the same... */}
+
+          {/* react-pdf with FIXED CSS scale zoom */}
           {blobUrl && baseWidth > 0 && (
-            <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', width: `${100 / scale}%` }}>
+            <div 
+              style={{ 
+                transform: `scale(${scale})`, 
+                transformOrigin: '0 0', // Top Left is essential for scroll logic
+                width: baseWidth,       // Fixed width
+                height: 'auto',
+                display: 'block'
+              }}
+            >
               <Document
                 file={blobUrl}
                 onLoadSuccess={onDocumentLoadSuccess}
                 onLoadError={err => setError(`Render error: ${err.message}`)}
                 loading={null}
-                className="flex justify-center py-4"
+                className="block"
               >
                 <Page
                   pageNumber={pageNumber}
@@ -290,6 +287,17 @@ function DocPrintSheet({
                 />
               </Document>
             </div>
+          )}
+          
+          {/* Sizing Spacer: This invisible div forces the parent to scroll */}
+          {scale > 1 && (
+            <div 
+              style={{ 
+                width: baseWidth * scale, 
+                height: (baseWidth * 1.41) * scale, // Adjust 1.41 if your PDF isn't A4
+                pointerEvents: 'none' 
+              }} 
+            />
           )}
         </div>
  

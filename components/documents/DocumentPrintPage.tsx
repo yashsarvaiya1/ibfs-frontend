@@ -106,45 +106,79 @@ export function DocumentPrintPage({ id }: Props) {
     }
   }
 
-  const handleWhatsApp = (phone: string) => {
-    // Trigger PDF download first via direct URL — on Android Chrome PWA,
-    // opening a Content-Disposition:attachment URL in _blank triggers a download
-    // automatically (direct user gesture path, no blob security block).
-    const dlLink = document.createElement('a')
-    dlLink.href = pdfUrl
-    dlLink.target = '_blank'
-    dlLink.rel = 'noopener noreferrer'
-    document.body.appendChild(dlLink)
-    dlLink.click()
-    document.body.removeChild(dlLink)
+  const handleWhatsApp = async (phone: string) => {
+    if (!phone) return;
+    setIsDownloading(true);
 
-    const sanitised = phone.replace(/\D/g, '')
-    const intl      = sanitised.startsWith('91') ? sanitised : `91${sanitised}`
-    const name      = contact?.name ?? ''
-    const total     = doc.total_amount ? `₹${doc.total_amount}` : ''
-    const terms     = doc.payment_terms ? `\nPayment Terms: ${doc.payment_terms}` : ''
-    const msg       = [
-      `Hello ${name},`,
-      `Your ${getDocLabel(doc.type)} *#${doc.doc_id}* dated ${fmtDate(doc.date)} is ready.`,
-      `Total Amount: *${total}*${terms}`,
-      `Thank you for your business!`,
-    ].join('\n')
-    window.open(
-      `https://api.whatsapp.com/send?phone=${intl}&text=${encodeURIComponent(msg)}`,
-      '_blank', 'noopener,noreferrer',
-    )
-    setWaOpen(false)
-  }
+    try {
+      const response = await api.get<Blob>(pdfUrl, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      
+      // Create a temporary URL
+      const url = window.URL.createObjectURL(blob);
+
+      // ✅ TRICK: Use window.location.assign for small blobs 
+      // OR the hidden anchor method but with specific attributes
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${doc.type.toUpperCase()}_${doc.doc_id}.pdf`;
+      
+      document.body.appendChild(a);
+      a.click();
+
+      // Small delay before cleanup to ensure the browser registers the click
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+
+      // WhatsApp Redirect
+      const sanitised = phone.replace(/\D/g, '');
+      const intl = sanitised.startsWith('91') ? sanitised : `91${sanitised}`;
+      const msg = `Hello ${contact?.name ?? ''},\nYour ${getDocLabel(doc.type)} *#${doc.doc_id}* is ready.\nTotal: *₹${doc.total_amount}*`;
+
+      // ✅ Delay WhatsApp slightly so it doesn't "steal" focus 
+      // from the download starting
+      setTimeout(() => {
+        window.open(
+          `https://api.whatsapp.com/send?phone=${intl}&text=${encodeURIComponent(msg)}`,
+          '_blank', 'noopener,noreferrer'
+        );
+        setWaOpen(false);
+      }, 500);
+
+    } catch (error) {
+      toast.error("Failed to process request");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const handleWhatsAppClick = () => {
-    if (!contact) return
-    if (allPhones.length > 1) {
-      setSelectedPhone(allPhones[0]?.number ?? '')
-      setWaOpen(true)
-    } else {
-      handleWhatsApp(contact.phone ?? '')
+    if (!contact) {
+      toast.error("No contact information found");
+      return;
     }
-  }
+
+    // Find the first valid phone number
+    const firstPhone = allPhones[0]?.number || contact.phone || '';
+    
+    if (!firstPhone) {
+      toast.error("No phone number available for this contact");
+      return;
+    }
+
+    // ✅ FORCE state update before opening the sheet
+    setSelectedPhone(firstPhone);
+
+    if (allPhones.length > 1) {
+      setWaOpen(true);
+    } else {
+      // If only one phone, just run the function
+      handleWhatsApp(firstPhone);
+    }
+  };
 
   const handleRecordPayment = async () => {
     if (!paidAmount || Number(paidAmount) <= 0) { toast.error('Enter a valid amount'); return }
@@ -411,13 +445,22 @@ export function DocumentPrintPage({ id }: Props) {
         {(contact?.phone || allPhones.length > 0) ? (
           <>
             <Button
-              variant="outline"
-              className="flex-1 h-11 rounded-xl gap-2 border-green-500/40 text-green-700 hover:bg-green-50 font-semibold"
-              onClick={handleWhatsAppClick}
-              disabled={isDownloading}
+              className="flex-1 h-12 rounded-2xl bg-green-600 hover:bg-green-700 gap-2 font-bold text-white"
+              // ✅ Remove !selectedPhone check here because handleWhatsAppClick handles the logic
+              disabled={isDownloading} 
+              onClick={handleWhatsAppClick} // ✅ Use the click handler here
             >
-              <MessageCircle className="h-4 w-4" />
-              WhatsApp
+              {isDownloading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Preparing...
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="h-4 w-4" />
+                  Send via WhatsApp
+                </>
+              )}
             </Button>
             <Button
               variant="outline"

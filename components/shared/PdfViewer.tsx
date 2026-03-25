@@ -32,13 +32,11 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
   const [blobUrl,    setBlobUrl]    = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const [scale,      setScale]      = useState(1.0)
+  const [aspectRatio, setAspectRatio] = useState(1.414)
 
-  // We render the PDF once at full container width, then CSS-scale it.
-  // This avoids re-rendering react-pdf (which causes flicker) on every zoom step.
   const containerRef = useRef<HTMLDivElement>(null)
   const [baseWidth,  setBaseWidth]  = useState(0)
 
-  // Pinch tracking — refs so no re-render during gesture
   const pinchStartDist  = useRef<number | null>(null)
   const pinchStartScale = useRef(1.0)
 
@@ -94,7 +92,6 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
     setPdfReady(true)
   }, [])
 
-  // ── Pinch zoom — CSS transform only, no PDF re-render ────────────────────
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX
@@ -106,7 +103,7 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length !== 2 || pinchStartDist.current === null) return
-    e.preventDefault()
+    e.preventDefault() 
     const dx   = e.touches[0].clientX - e.touches[1].clientX
     const dy   = e.touches[0].clientY - e.touches[1].clientY
     const dist = Math.hypot(dx, dy)
@@ -120,7 +117,6 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
 
   const zoomIn  = () => setScale(s => Math.min(MAX_SCALE, +(s + SCALE_STEP).toFixed(1)))
   const zoomOut = () => setScale(s => Math.max(MIN_SCALE, +(s - SCALE_STEP).toFixed(1)))
-
   const handleRetry = () => { setRetryCount(c => c + 1); setScale(1.0) }
 
   if (error) {
@@ -144,18 +140,11 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
 
   return (
     <div className={`flex flex-col h-full w-full overflow-hidden ${className ?? ''}`}>
-
-      {/* ── Scroll container ─────────────────────────────────────────────── */}
       <div
         ref={containerRef}
         className="flex-1 min-h-0 w-full overflow-auto bg-muted/20 relative"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        // When zoomed in allow free pan; at 1× let browser handle normally
-        style={{ touchAction: scale > 1.01 ? 'none' : 'pan-y' }}
+        style={{ touchAction: 'pan-x pan-y' }}
       >
-        {/* Loading overlay */}
         {loading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/60">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -165,43 +154,54 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
           </div>
         )}
 
-        {/* CSS-scaled wrapper — scale() here, NOT on Page width */}
+        {/* Double Wrapper Fix Applied Here */}
         <div
           style={{
-            // transform-origin top-center so zoom expands downward/sideways
-            transform:       `scale(${scale})`,
-            transformOrigin: 'top center',
-            // Make the outer container scrollable to the scaled size
-            width:   `${100 / scale}%`,
-            // Height expands naturally with content
+            width: baseWidth * scale,
+            height: (baseWidth * aspectRatio) * scale,
+            position: 'relative',
           }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
-          {blobUrl && baseWidth > 0 && (
-            <Document
-              file={blobUrl}
-              onLoadSuccess={onDocumentLoadSuccess}
-              onLoadError={err => { setError(`Render error: ${err.message}`); setLoading(false) }}
-              loading={null}
-              className="flex justify-center py-4"
-            >
-              <Page
-                pageNumber={pageNumber}
-                width={baseWidth}   // fixed — never changes, no re-render on zoom
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-                onRenderSuccess={onPageRenderSuccess}
-                onRenderError={err => { setError(`Page render error: ${err.message}`); setLoading(false) }}
-              />
-            </Document>
-          )}
+          <div
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: baseWidth,
+              height: baseWidth * aspectRatio,
+            }}
+          >
+            {blobUrl && baseWidth > 0 && (
+              <Document
+                file={blobUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={err => { setError(`Render error: ${err.message}`); setLoading(false) }}
+                loading={null}
+              >
+                <Page
+                  pageNumber={pageNumber}
+                  width={baseWidth} // Never change this on zoom
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                  onLoadSuccess={(page: any) => {
+                    setAspectRatio(page.originalHeight / page.originalWidth)
+                  }}
+                  onRenderSuccess={onPageRenderSuccess}
+                  onRenderError={err => { setError(`Page render error: ${err.message}`); setLoading(false) }}
+                />
+              </Document>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Bottom controls bar — zoom + page nav ────────────────────────── */}
       {pdfReady && (
-        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t bg-background gap-2">
-
-          {/* Page navigation */}
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t bg-background gap-2 z-20 relative">
           <div className="flex items-center gap-1.5">
             {numPages > 1 ? (
               <>
@@ -228,7 +228,6 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
             )}
           </div>
 
-          {/* Zoom controls */}
           <div className="flex items-center gap-1.5">
             <button
               onClick={zoomOut}
@@ -256,7 +255,6 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
               </button>
             )}
           </div>
-
         </div>
       )}
     </div>

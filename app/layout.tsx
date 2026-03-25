@@ -32,6 +32,10 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'IBFS',
   },
+  // Add this section:
+  icons: {
+    apple: '/logo.svg', // Or a 180x180 PNG for best results
+  }
 }
 
 export default function RootLayout({

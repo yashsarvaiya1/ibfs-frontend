@@ -50,6 +50,9 @@ export function PrintSheet({
   const [numPages,   setNumPages]   = useState(0)
   const [pageNumber, setPageNumber] = useState(1)
   const [scale,      setScale]      = useState(1.0)
+  
+  // Track aspect ratio to calculate proper scroll dimensions
+  const [aspectRatio, setAspectRatio] = useState(1.414) 
 
   const MIN_SCALE = 1.0
   const MAX_SCALE = 4.0
@@ -59,8 +62,6 @@ export function PrintSheet({
   const containerRef = useRef<HTMLDivElement>(null)
   const [pageWidth,  setPageWidth]  = useState(0)
 
-  // Measure container width — delayed to let Sheet slide-up animation finish
-  // before we read getBoundingClientRect (which returns 0 during animation)
   useEffect(() => {
     if (!open) return
     const measure = () => {
@@ -69,7 +70,6 @@ export function PrintSheet({
       const w = el.getBoundingClientRect().width
       if (w > 0) setPageWidth(Math.floor(w))
     }
-    // 350ms covers the Sheet open animation on all devices
     const t = setTimeout(measure, 350)
     const ro = new ResizeObserver(measure)
     if (containerRef.current) ro.observe(containerRef.current)
@@ -94,7 +94,7 @@ export function PrintSheet({
       if (blobUrl) { URL.revokeObjectURL(blobUrl); setBlobUrl(null) }
       setPdfReady(false)
     }
-  }, [open, queryKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, queryKey]) 
 
   const fetchPDF = async () => {
     setLoading(true)
@@ -130,7 +130,6 @@ export function PrintSheet({
 
   const handlePrint = () => {
     if (!blobUrl) { toast.error('Preview not ready'); return }
-    // Open blob URL in a new tab and trigger print — works on desktop
     const win = window.open(blobUrl, '_blank')
     if (win) {
       win.onload = () => win.print()
@@ -171,32 +170,12 @@ export function PrintSheet({
           </div>
         </SheetHeader>
 
-        {/* PDF render area */}
+        {/* Outer Scroll Container */}
         <div
           ref={containerRef}
           className="flex-1 min-h-0 w-full overflow-auto rounded-xl border bg-muted/30 shadow-inner mb-3 relative"
-          onTouchStart={e => {
-            if (e.touches.length === 2) {
-              const dx = e.touches[0].clientX - e.touches[1].clientX
-              const dy = e.touches[0].clientY - e.touches[1].clientY
-              lastDist.current  = Math.hypot(dx, dy)
-              lastScale.current = scale
-            }
-          }}
-          onTouchMove={e => {
-            if (e.touches.length === 2 && lastDist.current !== null) {
-              e.preventDefault()
-              const dx   = e.touches[0].clientX - e.touches[1].clientX
-              const dy   = e.touches[0].clientY - e.touches[1].clientY
-              const dist = Math.hypot(dx, dy)
-              const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, lastScale.current * (dist / lastDist.current)))
-              setScale(next)
-            }
-          }}
-          onTouchEnd={() => { lastDist.current = null }}
-          style={{ touchAction: scale > 1 ? 'none' : 'pan-x pan-y' }}
+          style={{ touchAction: 'pan-x pan-y' }} // Re-enable native single-finger panning!
         >
-          {/* Loading spinner */}
           {(loading || (!pdfReady && blobUrl && pageWidth > 0)) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 z-10">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -206,9 +185,8 @@ export function PrintSheet({
             </div>
           )}
 
-          {/* Error state */}
           {error && !loading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center z-10">
               <FileWarning className="h-8 w-8 text-destructive" />
               <p className="text-sm text-muted-foreground">{error}</p>
               <Button variant="outline" size="sm" onClick={fetchPDF} className="gap-2">
@@ -217,31 +195,72 @@ export function PrintSheet({
             </div>
           )}
 
-          {/* react-pdf — works on iOS Safari and Android Chrome (no iframe blob URLs) */}
           {blobUrl && pageWidth > 0 && (
-            <Document
-              file={blobUrl}
-              onLoadSuccess={onDocumentLoadSuccess}
-              onLoadError={err => {
-                setError(`Render error: ${err.message}`)
+            /* Sizing Wrapper: Dictates physical bounds to the browser scrollbars */
+            <div
+              style={{
+                width: pageWidth * scale,
+                height: (pageWidth * aspectRatio) * scale,
+                minHeight: '100%',
+                position: 'relative',
               }}
-              loading={null}
-              className="flex justify-center py-4"
+              onTouchStart={e => {
+                if (e.touches.length === 2) {
+                  const dx = e.touches[0].clientX - e.touches[1].clientX
+                  const dy = e.touches[0].clientY - e.touches[1].clientY
+                  lastDist.current  = Math.hypot(dx, dy)
+                  lastScale.current = scale
+                }
+              }}
+              onTouchMove={e => {
+                if (e.touches.length === 2 && lastDist.current !== null) {
+                  e.preventDefault() // Only block native pinch, allow single finger scroll
+                  const dx   = e.touches[0].clientX - e.touches[1].clientX
+                  const dy   = e.touches[0].clientY - e.touches[1].clientY
+                  const dist = Math.hypot(dx, dy)
+                  const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, lastScale.current * (dist / lastDist.current)))
+                  setScale(next)
+                }
+              }}
+              onTouchEnd={() => { lastDist.current = null }}
             >
-              <Page
-                pageNumber={pageNumber}
-                width={Math.floor(pageWidth * scale)}
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-                onRenderSuccess={onPageRenderSuccess}
-                onRenderError={err => setError(`Page error: ${err.message}`)}
-              />
-            </Document>
+              {/* Scaling Wrapper: Visual scaling via GPU, no re-renders */}
+              <div
+                style={{
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: pageWidth,
+                  height: pageWidth * aspectRatio,
+                }}
+              >
+                <Document
+                  file={blobUrl}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  onLoadError={err => setError(`Render error: ${err.message}`)}
+                  loading={null}
+                >
+                  <Page
+                    pageNumber={pageNumber}
+                    width={pageWidth} // Locked! Never multiply this by scale
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    onLoadSuccess={(page: any) => {
+                       // Capture the actual PDF aspect ratio to calculate scroll bounds
+                       setAspectRatio(page.originalHeight / page.originalWidth)
+                    }}
+                    onRenderSuccess={onPageRenderSuccess}
+                    onRenderError={err => setError(`Page error: ${err.message}`)}
+                  />
+                </Document>
+              </div>
+            </div>
           )}
 
-          {/* Page controls inside scroll area — only for multi-page */}
           {pdfReady && numPages > 1 && (
-            <div className="sticky bottom-0 flex items-center gap-3 justify-center py-2 bg-background/90 border-t">
+            <div className="sticky bottom-0 left-0 right-0 flex items-center gap-3 justify-center py-2 bg-background/90 border-t z-20">
               <button
                 onClick={() => setPageNumber(p => Math.max(1, p - 1))}
                 disabled={pageNumber <= 1}
@@ -263,7 +282,7 @@ export function PrintSheet({
           )}
         </div>
 
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 mt-auto">
           <Button
             variant="outline" className="flex-1 gap-2"
             onClick={handlePrint} disabled={loading || !pdfReady}
