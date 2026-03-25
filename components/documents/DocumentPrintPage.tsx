@@ -17,12 +17,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { SearchableSelect, type SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 import { PdfViewer } from '@/components/shared/PdfViewer'
 import { toast } from 'sonner'
+import api from '@/lib/axios'
 import {
   ArrowLeft, Download, MessageCircle,
   Phone, CheckCircle2, Clock, AlertCircle,
   IndianRupee, CreditCard, Tag, Building2,
   Calendar, Hash, User, MapPin, BadgeCheck,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Loader2,
 } from 'lucide-react'
 
 const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
@@ -51,6 +52,7 @@ export function DocumentPrintPage({ id }: Props) {
   const [paidDate,      setPaidDate]      = useState(() => new Date().toISOString().split('T')[0])
   const [paidNotes,     setPaidNotes]     = useState('')
   const [infoOpen,      setInfoOpen]      = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   if (isLoading) return (
     <div className="flex flex-col gap-3 p-4" style={{ height: '100dvh' }}>
@@ -81,43 +83,102 @@ export function DocumentPrintPage({ id }: Props) {
   }))
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleDownload = () => {
-    const a    = document.createElement('a')
-    a.href     = pdfUrl
-    a.download = `${doc.type.toUpperCase()}_${doc.doc_id}_${doc.date}.pdf`
-    a.target   = '_blank'
-    a.click()
-  }
 
-  const handleWhatsApp = (phone: string) => {
-    handleDownload()
-    const sanitised = phone.replace(/\D/g, '')
-    const intl      = sanitised.startsWith('91') ? sanitised : `91${sanitised}`
-    const name      = contact?.name ?? ''
-    const total     = doc.total_amount ? `₹${doc.total_amount}` : ''
-    const terms     = doc.payment_terms ? `\nPayment Terms: ${doc.payment_terms}` : ''
-    const msg       = [
-      `Hello ${name},`,
-      `Your ${getDocLabel(doc.type)} *#${doc.doc_id}* dated ${fmtDate(doc.date)} is ready.`,
-      `Total Amount: *${total}*${terms}`,
-      `Thank you for your business!`,
-    ].join('\n')
-    window.open(
-      `https://api.whatsapp.com/send?phone=${intl}&text=${encodeURIComponent(msg)}`,
-      '_blank', 'noopener,noreferrer',
-    )
-    setWaOpen(false)
-  }
-
-  const handleWhatsAppClick = () => {
-    if (!contact) return
-    if (allPhones.length > 1) {
-      setSelectedPhone(allPhones[0]?.number ?? '')
-      setWaOpen(true)
-    } else {
-      handleWhatsApp(contact.phone ?? '')
+  // Bug #2 fix: fetch PDF as authenticated blob instead of bare anchor click
+  const handleDownload = async () => {
+    if (isDownloading) return
+    setIsDownloading(true)
+    try {
+      const response = await api.get<Blob>(pdfUrl, { responseType: 'blob' })
+      const blob     = new Blob([response.data], { type: 'application/pdf' })
+      const url      = URL.createObjectURL(blob)
+      const a        = document.createElement('a')
+      a.href         = url
+      a.download     = `${doc.type.toUpperCase()}_${doc.doc_id}_${doc.date}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to download PDF')
+    } finally {
+      setIsDownloading(false)
     }
   }
+
+  const handleWhatsApp = async (phone: string) => {
+    if (!phone) return;
+    setIsDownloading(true);
+
+    try {
+      const response = await api.get<Blob>(pdfUrl, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      
+      // Create a temporary URL
+      const url = window.URL.createObjectURL(blob);
+
+      // ✅ TRICK: Use window.location.assign for small blobs 
+      // OR the hidden anchor method but with specific attributes
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${doc.type.toUpperCase()}_${doc.doc_id}.pdf`;
+      
+      document.body.appendChild(a);
+      a.click();
+
+      // Small delay before cleanup to ensure the browser registers the click
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+
+      // WhatsApp Redirect
+      const sanitised = phone.replace(/\D/g, '');
+      const intl = sanitised.startsWith('91') ? sanitised : `91${sanitised}`;
+      const msg = `Hello ${contact?.name ?? ''},\nYour ${getDocLabel(doc.type)} *#${doc.doc_id}* is ready.\nTotal: *₹${doc.total_amount}*`;
+
+      // ✅ Delay WhatsApp slightly so it doesn't "steal" focus 
+      // from the download starting
+      setTimeout(() => {
+        window.open(
+          `https://api.whatsapp.com/send?phone=${intl}&text=${encodeURIComponent(msg)}`,
+          '_blank', 'noopener,noreferrer'
+        );
+        setWaOpen(false);
+      }, 500);
+
+    } catch (error) {
+      toast.error("Failed to process request");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleWhatsAppClick = () => {
+    if (!contact) {
+      toast.error("No contact information found");
+      return;
+    }
+
+    // Find the first valid phone number
+    const firstPhone = allPhones[0]?.number || contact.phone || '';
+    
+    if (!firstPhone) {
+      toast.error("No phone number available for this contact");
+      return;
+    }
+
+    // ✅ FORCE state update before opening the sheet
+    setSelectedPhone(firstPhone);
+
+    if (allPhones.length > 1) {
+      setWaOpen(true);
+    } else {
+      // If only one phone, just run the function
+      handleWhatsApp(firstPhone);
+    }
+  };
 
   const handleRecordPayment = async () => {
     if (!paidAmount || Number(paidAmount) <= 0) { toast.error('Enter a valid amount'); return }
@@ -168,16 +229,12 @@ export function DocumentPrintPage({ id }: Props) {
   }
 
   return (
-    // ✅ 100dvh = dynamic viewport height — accounts for mobile browser chrome
-    // ✅ overflow-hidden on root — the ONLY scroll lives inside PdfViewer
     <div
       className="flex flex-col bg-background overflow-hidden"
       style={{ height: '100dvh' }}
     >
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          TOP BAR
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ TOP BAR ══════════════════════════════════════════════════════════ */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b bg-background z-20">
         <button
           onClick={() => router.back()}
@@ -201,13 +258,10 @@ export function DocumentPrintPage({ id }: Props) {
           )}
         </div>
 
-        {/* Spacer to visually balance back button */}
         <div className="w-7 shrink-0" />
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          COLLAPSIBLE DOC INFO
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ COLLAPSIBLE DOC INFO ══════════════════════════════════════════════ */}
       <div className="shrink-0 border-b bg-muted/20">
         <button
           onClick={() => setInfoOpen(v => !v)}
@@ -221,7 +275,8 @@ export function DocumentPrintPage({ id }: Props) {
             {doc.due_date && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock className="h-3.5 w-3.5 shrink-0" />
-                <span>Due: {fmtDate(doc.due_date)}</span>
+                {/* Bug #5: show "Valid Till" for quotation, "Due" for others */}
+                <span>{doc.type === 'quotation' ? 'Valid Till' : 'Due'}: {fmtDate(doc.due_date)}</span>
               </div>
             )}
             {doc.total_amount && (
@@ -297,9 +352,7 @@ export function DocumentPrintPage({ id }: Props) {
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          PAYMENT BANNER — unpaid / partial
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ PAYMENT BANNER — unpaid / partial ════════════════════════════════ */}
       {payStatus && !isFullyPaid && (
         <div className={cn(
           'shrink-0 flex items-center justify-between px-4 py-3 border-b gap-3',
@@ -352,9 +405,7 @@ export function DocumentPrintPage({ id }: Props) {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          FULLY PAID BANNER
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ FULLY PAID BANNER ════════════════════════════════════════════════ */}
       {isFullyPaid && (payStatus || manualPaid) && (
         <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-emerald-50 border-b border-emerald-200">
           <div className="flex items-center gap-2 min-w-0">
@@ -384,39 +435,43 @@ export function DocumentPrintPage({ id }: Props) {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          PDF VIEWER
-          ✅ flex-1 + min-h-0 = shrinks to fill only available space
-          ✅ overflow-hidden = no wrapper scroll, PdfViewer owns its own scroll
-          ✅ w-full + min-w-0 = no horizontal overflow on mobile
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ PDF VIEWER ═══════════════════════════════════════════════════════ */}
       <div className="flex-1 min-h-0 min-w-0 w-full overflow-hidden">
         <PdfViewer url={pdfUrl} className="h-full w-full block" />
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          BOTTOM ACTION BAR
-          ✅ shrink-0 = never compressed by PDF viewer
-          ✅ pb-safe = respects iOS home indicator
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ BOTTOM ACTION BAR ════════════════════════════════════════════════ */}
       <div className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex items-center gap-3 z-20">
         {(contact?.phone || allPhones.length > 0) ? (
           <>
             <Button
-              variant="outline"
-              className="flex-1 h-11 rounded-xl gap-2 border-green-500/40 text-green-700 hover:bg-green-50 font-semibold"
-              onClick={handleWhatsAppClick}
+              className="flex-1 h-12 rounded-2xl bg-green-600 hover:bg-green-700 gap-2 font-bold text-white"
+              // ✅ Remove !selectedPhone check here because handleWhatsAppClick handles the logic
+              disabled={isDownloading} 
+              onClick={handleWhatsAppClick} // ✅ Use the click handler here
             >
-              <MessageCircle className="h-4 w-4" />
-              WhatsApp
+              {isDownloading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Preparing...
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="h-4 w-4" />
+                  Send via WhatsApp
+                </>
+              )}
             </Button>
             <Button
               variant="outline"
               className="flex-1 h-11 rounded-xl gap-2 font-semibold"
               onClick={handleDownload}
+              disabled={isDownloading}
             >
-              <Download className="h-4 w-4" />
-              Download
+              {isDownloading
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Download className="h-4 w-4" />}
+              {isDownloading ? 'Downloading…' : 'Download'}
             </Button>
           </>
         ) : (
@@ -424,16 +479,17 @@ export function DocumentPrintPage({ id }: Props) {
             variant="outline"
             className="flex-1 h-11 rounded-xl gap-2 font-semibold"
             onClick={handleDownload}
+            disabled={isDownloading}
           >
-            <Download className="h-4 w-4" />
-            Download PDF
+            {isDownloading
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Download className="h-4 w-4" />}
+            {isDownloading ? 'Downloading…' : 'Download PDF'}
           </Button>
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          WHATSAPP SHEET
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ WHATSAPP SHEET ═══════════════════════════════════════════════════ */}
       <Sheet open={waOpen} onOpenChange={setWaOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-4">
@@ -445,7 +501,7 @@ export function DocumentPrintPage({ id }: Props) {
           <div className="flex items-start gap-2.5 text-xs text-muted-foreground bg-muted/50 rounded-xl p-3 mb-4">
             <Download className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
             <span className="leading-snug">
-              PDF will be <strong>downloaded automatically</strong>. Open WhatsApp, find the chat, and attach the downloaded file.
+              The PDF will <strong>download automatically</strong>. Then open WhatsApp, go to the chat, tap the attach icon and select the file from <strong>Downloads</strong>.
             </span>
           </div>
           <div className="space-y-2">
@@ -493,9 +549,7 @@ export function DocumentPrintPage({ id }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          RECORD PAYMENT SHEET
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ RECORD PAYMENT SHEET ═════════════════════════════════════════════ */}
       <Sheet open={payOpen} onOpenChange={setPayOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[85vh] overflow-y-auto">
           <SheetHeader className="mb-5">

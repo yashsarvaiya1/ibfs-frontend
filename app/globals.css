@@ -125,6 +125,11 @@
   }
 }
 
+.pdf-container-overscroll-fix {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* globals.css — add at the bottom */
 .no-scrollbar {
   scrollbar-width: none;

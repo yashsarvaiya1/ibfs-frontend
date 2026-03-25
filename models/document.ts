@@ -97,6 +97,7 @@ export interface DocumentListItem {
   contact:        number | null
   contact_name:   string | null
   date:           string
+  due_date:       string | null 
   total_amount:   string | null
   is_active:      boolean
   is_paid:        boolean
@@ -209,15 +210,17 @@ export interface BulkPrintPayload {
 // ── Document list / filter params ─────────────────────────────────────────────
 export interface DocumentListParams {
   type?:      DocumentType
-  contact?:   number         // DV-03
+  contact?:   number
   date_from?: string
   date_to?:   string
   reference?: number
-  is_paid?:   boolean        // BF-08: only pass true|false — never empty string
+  is_paid?:   boolean | string    // ← allow string 'true'/'false' (param serializer fix)
+  is_due?:    string              // ← ADD THIS — 'true' to filter overdue docs
   page?:      number
-  page_size?: number         // GD-03: 20 | 50 | 100
+  page_size?: number
   search?:    string
   ordering?:  string
+  is_active?: string              // ← ADD THIS — already used in page but missing from type
 }
 
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {

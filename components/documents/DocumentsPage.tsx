@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocuments } from '@/hooks/useDocument'
@@ -22,10 +22,19 @@ import {
   Search, ChevronRight, ChevronLeft, FileText, Trash2,
   CheckCircle2, Clock, AlertCircle,
   SlidersHorizontal, X, Check, Printer, Download, Loader2,
+  ZoomIn, ZoomOut,
 } from 'lucide-react'
+import { Document, Page, pdfjs } from 'react-pdf'
+import 'react-pdf/dist/Page/AnnotationLayer.css'
+import 'react-pdf/dist/Page/TextLayer.css'
 import { env } from 'next-runtime-env'
 import { toast } from 'sonner'
 import type { Settings } from '@/models/settings'
+ 
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString()
 
 
 // ─── Types & constants ────────────────────────────────────────────────────────
@@ -67,14 +76,15 @@ const TYPE_BADGE_COLORS: Record<string, string> = {
 
 const HAS_BALANCE = new Set(['bill', 'invoice', 'cn', 'dn'])
 
+type PaymentFilter = '' | 'paid' | 'unpaid' | 'partial' | 'due'
+
 const PAYMENT_FILTERS = [
   { label: 'All',     value: '' },
   { label: 'Paid',    value: 'paid' },
   { label: 'Unpaid',  value: 'unpaid' },
   { label: 'Partial', value: 'partial' },
+  { label: 'Due',     value: 'due' },
 ] as const
-
-type PaymentFilter = '' | 'paid' | 'unpaid' | 'partial'
 
 function getApiBase(): string {
   const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
@@ -114,32 +124,61 @@ interface DocPrintSheetProps {
 function DocPrintSheet({
   open, onClose, title, url, fetchBody, method = 'GET',
 }: DocPrintSheetProps) {
-  const iframeRef             = useRef<HTMLIFrameElement>(null)
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
+  const [blobUrl,    setBlobUrl]    = useState<string | null>(null)
+  const [loading,    setLoading]    = useState(false)
+  const [pdfReady,   setPdfReady]   = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
+  const [numPages,   setNumPages]   = useState(0)
+  const [pageNumber, setPageNumber] = useState(1)
+  const [scale,      setScale]      = useState(1.0)
+ 
+  const MIN_SCALE = 1.0
+  const MAX_SCALE = 3.0
+ 
+  const containerRef    = useRef<HTMLDivElement>(null)
+  const [baseWidth,     setBaseWidth]  = useState(0)
+  const pinchStartDist  = useRef<number | null>(null)
+  const pinchStartScale = useRef(1.0)
+ 
+  // Measure after sheet animation settles (350ms)
   useEffect(() => {
-    if (!open && blobUrl) {
-      URL.revokeObjectURL(blobUrl)
-      setBlobUrl(null)
+    if (!open) return
+    const measure = () => {
+      const el = containerRef.current
+      if (!el) return
+      const w = el.getBoundingClientRect().width
+      if (w > 0) setBaseWidth(Math.floor(w))
     }
-  }, [open]) // eslint-disable-line
-
+    const t = setTimeout(measure, 350)
+    const ro = new ResizeObserver(measure)
+    if (containerRef.current) ro.observe(containerRef.current)
+    return () => { clearTimeout(t); ro.disconnect() }
+  }, [open])
+ 
   useEffect(() => {
-    if (open) fetchPDF()
-  }, [open, url]) // eslint-disable-line
-
+    if (open) {
+      if (blobUrl) { URL.revokeObjectURL(blobUrl); setBlobUrl(null) }
+      setPdfReady(false)
+      setError(null)
+      setNumPages(0)
+      setPageNumber(1)
+      setScale(1.0)
+      fetchPDF()
+    } else {
+      if (blobUrl) { URL.revokeObjectURL(blobUrl); setBlobUrl(null) }
+      setPdfReady(false)
+    }
+  }, [open, url]) // eslint-disable-line react-hooks/exhaustive-deps
+ 
   const fetchPDF = async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch(url, {
         method,
         credentials: 'include',
         ...(method === 'POST' && fetchBody
-          ? {
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(fetchBody),
-            }
+          ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fetchBody) }
           : {}),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -147,14 +186,28 @@ function DocPrintSheet({
       setBlobUrl(URL.createObjectURL(blob))
     } catch (err) {
       console.error('Doc PDF error:', err)
+      setError('Failed to load PDF')
       toast.error('Failed to load PDF')
     } finally {
       setLoading(false)
     }
   }
-
-  const handlePrint = () => iframeRef.current?.contentWindow?.print()
-
+ 
+  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
+    setNumPages(numPages)
+    setPageNumber(1)
+  }, [])
+ 
+  const onPageRenderSuccess = useCallback(() => {
+    setPdfReady(true)
+  }, [])
+ 
+  const handlePrint = () => {
+    if (!blobUrl) return
+    const win = window.open(blobUrl, '_blank')
+    if (win) win.onload = () => win.print()
+  }
+ 
   const handleDownload = () => {
     if (!blobUrl) return
     const a    = document.createElement('a')
@@ -164,60 +217,123 @@ function DocPrintSheet({
     a.click()
     document.body.removeChild(a)
   }
-
+ 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
-      <SheetContent
-        side="bottom"
-        className="rounded-t-2xl px-4 pb-6 h-[92vh] flex flex-col"
-      >
+      <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-6 h-[92vh] flex flex-col">
         <SheetHeader className="mb-3 shrink-0">
           <div className="flex items-center justify-between">
             <SheetTitle className="text-left">{title}</SheetTitle>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="p-1.5 rounded-full hover:bg-muted/60 transition-colors"
-            >
+            <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-muted/60 transition-colors">
               <X className="h-5 w-5 text-muted-foreground" />
             </button>
           </div>
         </SheetHeader>
+ 
+        {/* PDF area */}
+        <div
+          ref={containerRef}
+          className="flex-1 min-h-0 w-full overflow-auto rounded-xl border bg-muted/30 shadow-inner mb-3 relative block"
+          onTouchStart={e => {
+            if (e.touches.length === 2) {
+              const dx = e.touches[0].clientX - e.touches[1].clientX
+              const dy = e.touches[0].clientY - e.touches[1].clientY
+              pinchStartDist.current = Math.hypot(dx, dy)
+              pinchStartScale.current = scale
+            }
+          }}
+          onTouchMove={e => {
+            // Only prevent default if pinching (2 fingers)
+            if (e.touches.length === 2 && pinchStartDist.current !== null) {
+              e.preventDefault()
+              const dx = e.touches[0].clientX - e.touches[1].clientX
+              const dy = e.touches[0].clientY - e.touches[1].clientY
+              const dist = Math.hypot(dx, dy)
+              const next = pinchStartScale.current * (dist / pinchStartDist.current)
+              setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, next)))
+            }
+          }}
+          onTouchEnd={() => { pinchStartDist.current = null }}
+          // IMPORTANT: Changed to 'auto' or 'pan-x pan-y' to allow the browser to pan the overflow
+          style={{ touchAction: scale > 1.05 ? 'pan-x pan-y' : 'auto' }}
+        >
+          {/* Loading & Error States remain the same... */}
 
-        <div className="flex-1 overflow-hidden rounded-xl border bg-muted/30 shadow-inner mb-3 relative min-h-0">
-          {loading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 z-10">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <p className="text-xs text-muted-foreground font-medium">Generating PDF…</p>
+          {/* react-pdf with FIXED CSS scale zoom */}
+          {blobUrl && baseWidth > 0 && (
+            <div 
+              style={{ 
+                transform: `scale(${scale})`, 
+                transformOrigin: '0 0', // Top Left is essential for scroll logic
+                width: baseWidth,       // Fixed width
+                height: 'auto',
+                display: 'block'
+              }}
+            >
+              <Document
+                file={blobUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={err => setError(`Render error: ${err.message}`)}
+                loading={null}
+                className="block"
+              >
+                <Page
+                  pageNumber={pageNumber}
+                  width={baseWidth}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                  onRenderSuccess={onPageRenderSuccess}
+                  onRenderError={err => setError(`Page error: ${err.message}`)}
+                />
+              </Document>
             </div>
           )}
-          {blobUrl && (
-            <iframe
-              ref={iframeRef}
-              src={blobUrl}
-              className="w-full h-full rounded-lg"
-              title="Document Preview"
+          
+          {/* Sizing Spacer: This invisible div forces the parent to scroll */}
+          {scale > 1 && (
+            <div 
+              style={{ 
+                width: baseWidth * scale, 
+                height: (baseWidth * 1.41) * scale, // Adjust 1.41 if your PDF isn't A4
+                pointerEvents: 'none' 
+              }} 
             />
           )}
-          {!blobUrl && !loading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <p className="text-sm text-muted-foreground">Preview failed to load</p>
-              <Button variant="outline" size="sm" onClick={fetchPDF}>Retry</Button>
-            </div>
-          )}
         </div>
-
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant="outline" className="flex-1 gap-2"
-            onClick={handlePrint} disabled={loading || !blobUrl}
-          >
+ 
+        {/* Controls */}
+        <div className="flex gap-2 shrink-0 items-center">
+          <Button variant="outline" className="flex-1 gap-2" onClick={handlePrint} disabled={loading || !pdfReady}>
             <Printer className="h-4 w-4" /> Print
           </Button>
-          <Button
-            className="flex-1 gap-2"
-            onClick={handleDownload} disabled={loading || !blobUrl}
-          >
+          {pdfReady && numPages > 1 && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => setPageNumber(p => Math.max(1, p - 1))} disabled={pageNumber <= 1}
+                className="w-8 h-8 rounded-full border flex items-center justify-center disabled:opacity-25 hover:bg-muted">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-[11px] font-bold tabular-nums bg-muted px-1.5 py-1 rounded-full min-w-9 text-center">
+                {pageNumber}/{numPages}
+              </span>
+              <button onClick={() => setPageNumber(p => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages}
+                className="w-8 h-8 rounded-full border flex items-center justify-center disabled:opacity-25 hover:bg-muted">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          {pdfReady && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => setScale(s => Math.max(MIN_SCALE, +(s - 0.3).toFixed(1)))} disabled={scale <= MIN_SCALE}
+                className="w-8 h-8 rounded-full border flex items-center justify-center disabled:opacity-25 hover:bg-muted">
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <button onClick={() => setScale(s => Math.min(MAX_SCALE, +(s + 0.3).toFixed(1)))} disabled={scale >= MAX_SCALE}
+                className="w-8 h-8 rounded-full border flex items-center justify-center disabled:opacity-25 hover:bg-muted">
+                <ZoomIn className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          <Button className="flex-1 gap-2" onClick={handleDownload} disabled={loading || !blobUrl}>
             <Download className="h-4 w-4" /> Save PDF
           </Button>
         </div>
@@ -379,8 +495,10 @@ export function DocumentsPage() {
     if (dateTo)   p.date_to   = dateTo
 
     // Partial is handled client-side; paid/unpaid go to backend
-    if (paymentFilter === 'paid')   p.is_paid = true
-    if (paymentFilter === 'unpaid') p.is_paid = false
+    if (paymentFilter === 'paid')   p.is_paid = 'true'
+    if (paymentFilter === 'unpaid') p.is_paid = 'false'
+    // Bug #4: due filter — backend handles via is_due=true
+    if (paymentFilter === 'due')    p.is_due  = 'true'
 
     return p
   }, [
@@ -450,6 +568,7 @@ export function DocumentsPage() {
 
     if (paymentFilter === 'paid')   params.set('is_paid', 'true')
     if (paymentFilter === 'unpaid') params.set('is_paid', 'false')
+    if (paymentFilter === 'due')    params.set('is_due',  'true')
 
     const qs = params.toString()
     return qs ? `${base}?${qs}` : base
@@ -793,6 +912,11 @@ export function DocumentsPage() {
                           <AlertCircle className="h-2.5 w-2.5" /> Unpaid
                         </span>
                       )}
+                      {hasBalance && !isPaid && doc.due_date && new Date(doc.due_date) < new Date() && (
+                        <span className="flex items-center gap-0.5 text-[10px] font-semibold text-red-700 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded-md shrink-0">
+                          <AlertCircle className="h-2.5 w-2.5" /> Due
+                        </span>
+                      )}
                       {!doc.is_active && (
                         <Badge
                           variant="destructive"
@@ -991,8 +1115,10 @@ export function DocumentsPage() {
                     <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
                       Payment Status
                     </p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {PAYMENT_FILTERS.map(opt => (
+
+                    {/* 5 options: 2 rows — row1: All/Paid/Unpaid, row2: Partial/Due */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {PAYMENT_FILTERS.slice(0, 3).map(opt => (
                         <button
                           key={opt.value}
                           onClick={() => handleStagedPaymentChange(opt.value)}
@@ -1007,10 +1133,29 @@ export function DocumentsPage() {
                         </button>
                       ))}
                     </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {PAYMENT_FILTERS.slice(3).map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => handleStagedPaymentChange(opt.value)}
+                          className={cn(
+                            'h-10 rounded-xl text-xs font-semibold border transition-all',
+                            stagedPayment === opt.value
+                              ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                              : 'bg-background text-muted-foreground border-border hover:bg-muted/50',
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
                     {stagedPayment && (
                       <p className="text-[10px] text-muted-foreground mt-2 ml-1">
                         {stagedPayment === 'partial'
                           ? 'Partial is filtered client-side after fetch'
+                          : stagedPayment === 'due'
+                          ? 'Documents with a passed due date and outstanding balance'
                           : 'Non-applicable document types have been hidden'}
                       </p>
                     )}
