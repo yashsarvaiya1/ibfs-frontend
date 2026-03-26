@@ -78,7 +78,8 @@ export function PrintSheet({
 
   const queryKey = useMemo(
     () => JSON.stringify({ ...queryParams, view }),
-    [queryParams, view],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(queryParams), view],
   )
 
   useEffect(() => {
