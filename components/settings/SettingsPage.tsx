@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { LogOut } from 'lucide-react'
+import { BusinessPrintSettings } from './BusinessPrintSettings'
 
 interface ToggleRowProps {
   label:       string
@@ -54,6 +55,7 @@ function ImageUploadRow({ label, description, value, onChange, onPreview, disabl
         value={value}
         onChange={onChange}
         context="settings"
+        accept="image/jpeg,image/png,image/webp"
         maxFiles={1}
         disabled={disabled}
         onPreview={onPreview}       // ✅ wired
@@ -157,6 +159,7 @@ export function SettingsPage() {
       </Card>
 
       {/* ── Automation ────────────────────────────────────────────────── */}
+      <BusinessPrintSettings />
       <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
           Automation
@@ -209,7 +212,7 @@ export function SettingsPage() {
           <CardContent className="p-4 divide-y">
             <ImageUploadRow
               label="Letterhead"
-              description="Shown at the top of printed documents. Tap thumbnail to preview."
+              description="Upload a PNG, JPEG or WebP banner or full-page letterhead. Its proportions are preserved."
               value={headerUrls}
               onChange={handleHeaderChange}
               onPreview={idx => openPreview(headerUrls, idx)}   // ✅
@@ -218,7 +221,7 @@ export function SettingsPage() {
             <div className="pt-3">
               <ImageUploadRow
                 label="Signature"
-                description="Shown at the bottom of printed documents. Tap thumbnail to preview."
+                description="Placed below totals, at the right. Transparent PNG signatures stay transparent."
                 value={signUrls}
                 onChange={handleSignChange}
                 onPreview={idx => openPreview(signUrls, idx)}   // ✅
