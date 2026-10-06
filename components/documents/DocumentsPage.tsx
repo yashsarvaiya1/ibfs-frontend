@@ -858,7 +858,7 @@ export function DocumentsPage() {
               <Card
                 key={doc.id}
                 className={cn(
-                  'cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
+                  'py-0 cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
                   !doc.is_active
                     ? 'opacity-70 bg-muted/40 border-dashed'
                     : isSelected

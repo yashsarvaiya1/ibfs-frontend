@@ -105,7 +105,7 @@ export function ContactsPage() {
             <Card
               key={contact.id}
               className={cn(
-                'cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
+                'py-0 cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
                 !contact.is_active
                   ? 'opacity-70 bg-muted/40 border-dashed'
                   : 'border-border/80 hover:bg-muted/20',

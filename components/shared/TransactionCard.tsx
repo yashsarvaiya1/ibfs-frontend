@@ -1,5 +1,11 @@
 'use client'
 
+import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import api from '@/lib/axios'
+import { apiError } from '@/lib/apiError'
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from '@/components/ui/alert-dialog'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -45,7 +51,11 @@ export function TransactionCard({
   const openAllocation = useUIStore(s => s.openPaymentAllocation)
   const canAllocate = txn.type === 'actual' && txn.document_type !== 'expense'
   const canEdit  = txn.type === 'actual'
-  const hasMenu  = !!(onEdit || onDelete || canAllocate)
+  const canReverse = txn.type === 'contra' && !!txn.transfer_group && !txn.is_reversed
+  const [confirmReverse,setConfirmReverse] = useState(false)
+  const qc=useQueryClient()
+  const reverse=useMutation({mutationFn:()=>api.post(`/transactions/${txn.id}/reverse_transfer/`),onSuccess:()=>{qc.invalidateQueries({queryKey:['transactions']});qc.invalidateQueries({queryKey:['accounts']});toast.success('Transfer reversed');setConfirmReverse(false)},onError:error=>toast.error(apiError(error,'Could not reverse transfer'))})
+  const hasMenu  = !!(onEdit || onDelete || canAllocate || canReverse)
 
   // Fix 1: contact_name is already typed on FinancialTransaction — no cast needed
   const resolvedContact =
@@ -102,6 +112,7 @@ export function TransactionCard({
               )}
             </div>
 
+            {txn.is_reversed && <Badge variant="outline" className="text-[10px]">Reversed transfer</Badge>}
             {/* Row 2: date · account */}
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
               <span>{fmtDate(txn.date)}</span>
@@ -145,6 +156,7 @@ export function TransactionCard({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-40">
+                    {canReverse && <DropdownMenuItem onClick={()=>setConfirmReverse(true)}>Reverse transfer</DropdownMenuItem>}
                     {canAllocate && <DropdownMenuItem onClick={() => openAllocation(txn.id)}><Split className="mr-2 h-3.5 w-3.5" /> Allocate payment</DropdownMenuItem>}
                     {onEdit && (
                       <DropdownMenuItem
@@ -199,6 +211,7 @@ export function TransactionCard({
           </div>
         </div>
       </CardContent>
+      <AlertDialog open={confirmReverse} onOpenChange={setConfirmReverse}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reverse this transfer?</AlertDialogTitle><AlertDialogDescription>Both account balances will be restored. The original entries and their reversal stay in history.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><Button disabled={reverse.isPending} onClick={()=>reverse.mutate()}>{reverse.isPending ? 'Reversing…' : 'Reverse transfer'}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </Card>
   )
 }
