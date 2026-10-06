@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
+import { OpeningBalanceInput } from './OpeningBalanceInput'
+import { apiError } from '@/lib/apiError'
 
 interface Props { open: boolean; onClose: () => void }
 
@@ -38,6 +40,7 @@ export function ContactCreateSheet({ open, onClose }: Props) {
       return
     }
     const ob = obAmount ? Number(obAmount) : 0
+    if (!Number.isFinite(ob) || ob < 0) { toast.error('Enter a valid opening balance amount'); return }
     // They owe us = negative (they owe us money = negative CF for us)
     const opening_balance = obType === 'they_owe_us' ? -Math.abs(ob) : Math.abs(ob)
 
@@ -55,8 +58,8 @@ export function ContactCreateSheet({ open, onClose }: Props) {
       })
       toast.success('Contact created')
       handleClose()
-    } catch {
-      toast.error('Failed to create contact')
+    } catch (error) {
+      toast.error(apiError(error, 'Failed to create contact'))
     }
   }
 
@@ -107,16 +110,7 @@ export function ContactCreateSheet({ open, onClose }: Props) {
             <Input placeholder="Notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          <div className="space-y-2">
-            <Label>Opening Balance <span className="text-xs text-muted-foreground">(optional)</span></Label>
-            <Input type="number" placeholder="0.00" value={obAmount} onChange={(e) => setObAmount(e.target.value)} />
-            <Tabs value={obType} onValueChange={(v) => setObType(v as 'they_owe_us' | 'we_owe_them')}>
-              <TabsList className="w-full">
-                <TabsTrigger value="they_owe_us" className="flex-1 text-xs">They owe us</TabsTrigger>
-                <TabsTrigger value="we_owe_them" className="flex-1 text-xs">We owe them</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          <OpeningBalanceInput amount={obAmount} direction={obType} onAmount={setObAmount} onDirection={setObType} />
 
           <Button className="w-full" onClick={handleSave} disabled={createContact.isPending}>
             {createContact.isPending ? 'Saving...' : 'Save Contact'}

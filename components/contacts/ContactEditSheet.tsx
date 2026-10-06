@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Trash2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { apiError } from '@/lib/apiError'
+import { OpeningBalanceInput, type OpeningBalanceDirection } from './OpeningBalanceInput'
 
 interface Props { contact: Contact; open: boolean; onClose: () => void }
 
@@ -20,6 +22,8 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
   const [gstin,       setGstin]       = useState(contact.gstin ?? '')
   const [address,     setAddress]     = useState(contact.address ?? '')
   const [notes,       setNotes]       = useState(contact.notes ?? '')
+  const [obAmount, setObAmount] = useState(String(Math.abs(Number(contact.opening_balance))))
+  const [obType, setObType] = useState<OpeningBalanceDirection>(Number(contact.opening_balance) > 0 ? 'we_owe_them' : 'they_owe_us')
 
   useEffect(() => {
     if (open) {
@@ -29,6 +33,8 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
       setGstin(contact.gstin ?? '')
       setAddress(contact.address ?? '')
       setNotes(contact.notes ?? '')
+      setObAmount(String(Math.abs(Number(contact.opening_balance))))
+      setObType(Number(contact.opening_balance) > 0 ? 'we_owe_them' : 'they_owe_us')
     }
   }, [open, contact])
 
@@ -39,6 +45,8 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
       toast.error('Name and phone are required')
       return
     }
+    const opening = Number(obAmount || 0)
+    if (!Number.isFinite(opening) || opening < 0) { toast.error('Enter a valid opening balance amount'); return }
     try {
       await updateContact.mutateAsync({
         contact_name: contactName,
@@ -47,10 +55,11 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
         gstin:   gstin   || null,
         address: address || null,
         notes:   notes   || null,
+        opening_balance: String(obType === 'they_owe_us' ? -opening : opening),
       })
       toast.success('Contact updated')
       onClose()
-    } catch { toast.error('Failed to update') }
+    } catch (error) { toast.error(apiError(error, 'Failed to update contact')) }
   }
 
   // FIX 2: removed confirm() — button is visually distinct (red=delete, green=restore)
@@ -144,6 +153,7 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
               placeholder="optional"
             />
           </div>
+          <OpeningBalanceInput amount={obAmount} direction={obType} onAmount={setObAmount} onDirection={setObType} />
           <Button
             className="w-full h-12 mt-2 rounded-xl text-md font-bold"
             onClick={handleSave}
