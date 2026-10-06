@@ -54,6 +54,6 @@ Offline access needs a separate vault password. Save files while online, then un
 
 See [reports and comparisons](../backend/docs/REPORTS.md), [PDF layout](../backend/docs/PDF_LAYOUT.md), [offline behavior](../backend/docs/OFFLINE.md) and the [implementation checklist](../backend/docs/IMPROVEMENT_CHECKLIST.md). GST exports support CA review; they do not file returns, generate IRNs or determine eligible ITC. Full double-entry accounting and multi-company support are deferred.
 
-For small shared-core VMs, use `WEB_CONCURRENCY=1` and `BACKEND_HEALTH_START_PERIOD=600s` in the private Compose `.env`. Backend health probes allow slow first-time migrations and mark readiness immediately once the application responds. See the backend deployment guide for diagnostics.
+For small shared-core VMs, use `WEB_CONCURRENCY=1` in the private Compose `.env`. Compose uses service startup ordering without health checks. The backend entrypoint waits for PostgreSQL and completes migrations and administrator setup before serving requests. The frontend can start before the backend is ready; allow startup to finish before opening the app. See the backend deployment guide for diagnostics.
 
 `docker-compose.vm.yml` is the image-only VM configuration with backend `127.0.0.1:8001:8000` and frontend `127.0.0.1:3001:3000`. Copy it to the existing VM deployment directory as `docker-compose.yml`, retaining its private `.env` and existing Compose project name so the same data volumes are used.
