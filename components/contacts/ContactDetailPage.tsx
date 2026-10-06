@@ -1,6 +1,6 @@
 'use client'
 
-import { businessDate } from '@/lib/businessDate'
+import { businessDate, businessMonthRange } from '@/lib/businessDate'
 
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -88,6 +88,7 @@ export function ContactDetailPage({ id }: Props) {
   const [editOpen,   setEditOpen]   = useState(false)
   const [activeTab,  setActiveTab]  = useState<'ledger' | 'docs'>('ledger')
   const [ledgerView, setLedgerView] = useState<'ledger' | 'list'>('ledger')
+  const [ledgerDateRange, setLedgerDateRange] = useState({ from: '', to: '' })
 
   const [srSheet, setSrSheet] = useState<{ open: boolean; mode: 'send' | 'receive' }>({
     open: false, mode: 'send',
@@ -109,6 +110,10 @@ export function ContactDetailPage({ id }: Props) {
 
   const handleOpenPrintOptions = (view: 'ledger' | 'list') => {
     setPrintView(view)
+    if (view === 'ledger') {
+      setPrintDateFrom(ledgerDateRange.from)
+      setPrintDateTo(ledgerDateRange.to)
+    }
     setPrintOptionsOpen(true)
   }
 
@@ -170,17 +175,6 @@ export function ContactDetailPage({ id }: Props) {
     //   the single source of truth and handles both intra/cross-month correctly
     return p
   }, [id, printDateFrom, printDateTo])
-
-  // Label for how many txns match date range (client-side estimate)
-  const filteredTxnCount = useMemo(() => {
-    if (!printDateFrom && !printDateTo) return txns.length
-    return txns.filter(t => {
-      const d = new Date(t.date)
-      if (printDateFrom && d < new Date(printDateFrom)) return false
-      if (printDateTo   && d > new Date(printDateTo))   return false
-      return true
-    }).length
-  }, [txns, printDateFrom, printDateTo])
 
   const accountOptions: SearchableSelectOption[] = [
     { value: '', label: 'None', sublabel: 'No account' },
@@ -270,9 +264,9 @@ export function ContactDetailPage({ id }: Props) {
             )}
           </div>
 
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 bg-muted/50 -mr-2 shrink-0">
+              <Button aria-label="Contact actions" variant="ghost" size="icon" className="h-9 w-9 bg-muted/50 -mr-2 shrink-0">
                 <MoreVertical className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
@@ -422,9 +416,10 @@ export function ContactDetailPage({ id }: Props) {
                       variant="outline"
                       size="icon"
                       className="h-8 w-8 rounded-lg"
-                      disabled={txns.length === 0}
+                      disabled={loadingLedger}
                       onClick={() => handleOpenPrintOptions(ledgerView)}
                       title={ledgerView === 'ledger' ? 'Print Ledger' : 'Print PDF'}
+                      aria-label={ledgerView === 'ledger' ? 'Print Ledger' : 'Print PDF'}
                     >
                       <Printer className="h-3.5 w-3.5" />
                     </Button>
@@ -460,6 +455,7 @@ export function ContactDetailPage({ id }: Props) {
                 {/* Ledger View */}
                 {ledgerView === 'ledger' && (
                   <ContactLedger
+                  onRangeChange={setLedgerDateRange}
                     contactId={id}
                     openingBalance={Number(contact.opening_balance ?? 0)}
                     onEditTxn={handleEditTxn}
@@ -623,7 +619,7 @@ export function ContactDetailPage({ id }: Props) {
                   <label className="text-xs font-semibold text-muted-foreground">From</label>
                   <input
                     type="date"
-                    value={printDateFrom}
+                    aria-label="Print from date" value={printDateFrom}
                     onChange={e => setPrintDateFrom(e.target.value)}
                     className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
@@ -632,7 +628,7 @@ export function ContactDetailPage({ id }: Props) {
                   <label className="text-xs font-semibold text-muted-foreground">To</label>
                   <input
                     type="date"
-                    value={printDateTo}
+                    aria-label="Print to date" value={printDateTo}
                     onChange={e => setPrintDateTo(e.target.value)}
                     className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
@@ -648,10 +644,7 @@ export function ContactDetailPage({ id }: Props) {
               {/* Transaction count estimate */}
               {!printDateRangeInvalid && (
                 <p className="text-[11px] text-muted-foreground mt-2 ml-1">
-                  {printDateFrom || printDateTo
-                    ? `~${filteredTxnCount} transaction${filteredTxnCount !== 1 ? 's' : ''} in range`
-                    : `All ${txns.length} transactions will be included`
-                  }
+                  All entries in the selected date range will be included, across every page.
                 </p>
               )}
             </div>
@@ -665,16 +658,13 @@ export function ContactDetailPage({ id }: Props) {
                 {[
                   {
                     label: 'This Month',
-                    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-                      .toISOString().split('T')[0],
+                    from: businessMonthRange().from,
                     to: businessDate(),
                   },
                   {
                     label: 'Last Month',
-                    from: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
-                      .toISOString().split('T')[0],
-                    to: new Date(new Date().getFullYear(), new Date().getMonth(), 0)
-                      .toISOString().split('T')[0],
+                    from: businessMonthRange(-1).from,
+                    to: businessMonthRange(-1).to,
                   },
                   {
                     label: 'This Year',
@@ -729,15 +719,11 @@ export function ContactDetailPage({ id }: Props) {
             <Button
               className="flex-1 h-12 rounded-2xl font-bold shadow-md shadow-primary/20 gap-2"
               onClick={handleGeneratePrint}
-              disabled={printDateRangeInvalid || filteredTxnCount === 0}
+              disabled={printDateRangeInvalid}
             >
               <Printer className="h-4 w-4" />
               Generate PDF
-              {filteredTxnCount > 0 && (
-                <span className="ml-1 bg-primary-foreground/20 text-primary-foreground text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                  {filteredTxnCount}
-                </span>
-              )}
+
             </Button>
           </div>
         </SheetContent>

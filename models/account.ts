@@ -36,6 +36,7 @@ export interface SetBalancePayload {
 
 // ── Account transactions params (PaymentAccountViewSet.transactions) ──────────
 export interface AccountTransactionsParams {
+  view?: 'list' | 'ledger'
   date_from?:   string
   date_to?:     string
   type?:        'record' | 'actual' | 'contra'

@@ -60,6 +60,10 @@ For small shared-core VMs, use `WEB_CONCURRENCY=1` in the private Compose `.env`
 
 Detailed document forms show the backend-calculated total outside the charges panel, including live per-item tax updates and calculation errors. Discount entry can use a currency amount or a percentage of the items subtotal before charges/GST. Reports now have separate **FY business report** (April–March activity, receipts/payments, monthly breakdown) and **GST report** (month/custom-date tax accumulation) options with PDF/CSV exports.
 
-Each priced item also has an optional discount section with amount/percentage entry. Item discounts are applied first; the overall discount applies to the remaining items subtotal. Create, edit, reference copying and local drafts retain both levels of discount, and the total summary lists item and overall deductions separately.
+Each priced item also has an optional discount section with amount/percentage entry. Item discounts are applied first; the overall discount applies to the remaining items subtotal. Create, edit, reference copying and local drafts retain both levels of discount, and the compact summary shows the gross subtotal, a single combined discount, charges when present, tax and total.
 
 Live totals include unfinished item rows, so entering quantities/rates before descriptions still updates the total. Saving requires descriptions for valued or product-linked rows. Preview requests time out after 20 seconds; errors and offline states explain the issue and offer retry instead of showing an indefinite calculating message or an outdated amount.
+
+Contact opening balances can be edited, cleared or switched between “They owe us” and “We owe them.” Payment adjustment forms use **Charge** and **Waiver**: a waiver settles part of the amount due without changing cash paid/received. Document item discounts remain separate from payment waivers.
+
+Contact and account ledgers have date filters and PDF download/print. PDFs include every matching entry, across all pages. Contact print options start with the visible ledger dates; account List/Ledger controls switch the screen and PDF format. Running balances include preceding entries and previous pages. See [ledger signs and edit behavior](../backend/docs/REPORTS.md#ledgers-and-document-edits).

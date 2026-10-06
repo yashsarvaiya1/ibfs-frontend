@@ -16,7 +16,10 @@ const api = axios.create({
 
 // ✅ baseURL injected at request time — reads runtime env, not build-time
 api.interceptors.request.use((config) => {
-  config.baseURL = getApiBase()
+  const base = getApiBase()
+  const url = config.url ?? ''
+  // Preview links already use app-root API/media URLs. Do not prefix them again.
+  config.baseURL = url === base || url.startsWith(`${base}/`) || url.startsWith('/media/') ? '' : base
 
   const token = useAuthStore.getState().csrfToken
   if (token && !['get','head','options'].includes(config.method?.toLowerCase() ?? 'get')) config.headers['X-CSRFToken'] = token
