@@ -4,7 +4,7 @@ import { businessDate } from '@/lib/businessDate'
 
 import { useState, useEffect, useMemo } from 'react'
 import { useUIStore } from '@/stores/uiStore'
-import { useAccounts } from '@/hooks/useAccount'
+import { useAccounts, useAccount } from '@/hooks/useAccount'
 import { useContacts, useSend, useReceive } from '@/hooks/useContact'
 import { useDocuments } from '@/hooks/useDocument'
 import { useSettings } from '@/hooks/useSettings'
@@ -247,7 +247,7 @@ export function TransactionSheet() {
   const autoTransaction = settings?.auto_transaction ?? true   // used for display info if needed
   const enableVouchers  = settings?.enable_vouchers  ?? false
 
-  const selectedAccount = accounts?.results.find(a => a.id.toString() === accountId)
+  const { data: selectedAccount } = useAccount(Number(accountId))
   const isCashAccount   = selectedAccount?.type === 'cash'
   const voucherMode     = enableVouchers && isCashAccount && !isExpense
 

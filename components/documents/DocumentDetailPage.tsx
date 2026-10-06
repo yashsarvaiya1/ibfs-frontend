@@ -22,10 +22,7 @@ import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select, SelectContent, SelectItem,
-  SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+import { SearchableSelect } from '@/components/shared/common/SearchableSelect'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuSeparator,
@@ -636,21 +633,9 @@ export function DocumentDetailPage({ id }: Props) {
 
             <div className="space-y-1.5">
               <Label>Account <span className="text-destructive">*</span></Label>
-              <Select
-                value={payAccount || '__none__'}
-                onValueChange={v => setPayAccount(v === '__none__' ? '' : v)}
-              >
-                <SelectTrigger className="h-11 rounded-xl font-medium">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map(a => (
-                    <SelectItem key={a.id} value={String(a.id)}>
-                      {a.name} — {a.type} — {fmtAmount(a.current_balance)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect resource="accounts" value={payAccount} onChange={setPayAccount}
+                options={accounts.map(a => ({ value: String(a.id), label: a.name, sublabel: `${a.type} · ${fmtAmount(a.current_balance)}` }))}
+                placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." />
             </div>
 
             <div className="space-y-1.5">
