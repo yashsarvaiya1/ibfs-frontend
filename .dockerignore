@@ -21,3 +21,7 @@ build/
 .gitignore
 .vscode
 DS_Store
+
+.vne
+.env.*
+!.env.example

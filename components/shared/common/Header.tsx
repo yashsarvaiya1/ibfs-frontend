@@ -1,5 +1,7 @@
 'use client'
 
+import { sessionService } from '@/services/sessionService'
+import { toast } from 'sonner'
 import { useUIStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSettings } from '@/hooks/useSettings'
@@ -15,13 +17,15 @@ import Image from 'next/image'
 export function Header() {
   const pageTitle = useUIStore((s) => s.pageTitle)
   const username  = useAuthStore((s) => s.username)
-  const logout    = useAuthStore((s) => s.logout)
   const router    = useRouter()
   const pathname  = usePathname()
   const { data: settings } = useSettings()
 
   const isRoot = pathname === '/'
-  const handleLogout = () => { logout(); router.replace('/login') }
+  const handleLogout = async () => {
+    try { await sessionService.logout(); router.replace('/login') }
+    catch { toast.error('Could not sign out. Try again.') }
+  }
 
   const logoUrl = settings?.header_image_url ?? null
 

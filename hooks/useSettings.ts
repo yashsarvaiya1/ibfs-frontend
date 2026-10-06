@@ -6,7 +6,7 @@ import type { SettingsUpdate } from '@/models/settings'
 export const SETTINGS_KEY = ['settings'] as const
 
 export function useSettings() {
-  const isAuthenticated = useAuthStore((s) => !!s.credentials)   // ← guard
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)   // ← guard
 
   return useQuery({
     queryKey: SETTINGS_KEY,
