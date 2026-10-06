@@ -135,7 +135,7 @@ export function DocumentDetailPage({ id }: Props) {
   const taxes          = doc.taxes           ?? []
   const attachmentUrls = doc.attachment_urls ?? []
 
-  const lineSubtotal = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const lineSubtotal = Number(doc.calculated_totals?.subtotal ?? lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0))
   const chargeTotal  = charges.reduce((s, c)   => s + (Number(c.amount) || 0), 0)
   const taxBase      = lineSubtotal + chargeTotal - Number(doc.discount ?? 0)
 
@@ -481,6 +481,7 @@ export function DocumentDetailPage({ id }: Props) {
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm leading-tight text-foreground/90">{item.name}</p>
                       {doc.tax_mode === 'item' && item.taxes?.map((tax, index) => <p key={index} className="text-xs text-muted-foreground mt-1">{tax.name} {tax.percentage}%</p>)}
+                      {Number(doc.calculated_totals?.line_details?.[i]?.discount ?? item.discount) > 0 && <p className="text-xs text-emerald-600 mt-1">Item discount{item.discount_percentage != null ? ` (${item.discount_percentage}%)` : ''}: −{fmtAmount(doc.calculated_totals?.line_details?.[i]?.discount ?? item.discount ?? 0)}</p>}
                       {item.hsn && (
                         <p className="text-[10px] uppercase font-bold text-muted-foreground/70 tracking-wider mt-1">
                           HSN: {item.hsn}
@@ -488,7 +489,7 @@ export function DocumentDetailPage({ id }: Props) {
                       )}
                     </div>
                     <p className="font-bold text-sm ml-3 shrink-0">
-                      {item.amount ? fmtAmount(item.amount) : '—'}
+                      {item.amount != null ? fmtAmount(doc.calculated_totals?.line_details?.[i]?.net_amount ?? item.amount) : '—'}
                     </p>
                   </div>
                   {(item.quantity != null || item.rate != null) && (
@@ -509,7 +510,7 @@ export function DocumentDetailPage({ id }: Props) {
               ))}
               {Number(doc.discount) > 0 && (
                 <div className="flex justify-between text-sm font-medium text-emerald-600">
-                  <span>Discount</span>
+                  <span>Overall discount{doc.discount_percentage != null ? ` (${Number(doc.discount_percentage)}%)` : ''}</span>
                   <span>−{fmtAmount(doc.discount)}</span>
                 </div>
               )}

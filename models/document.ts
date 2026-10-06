@@ -19,6 +19,8 @@ export type TaxMode = 'document' | 'item'
 export type SupplyCategory = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst' | 'export' | 'import'
 
 export interface LineItem {
+  discount?: number | null
+  discount_percentage?: number | null
   taxes?: Tax[]
   supply_category?: SupplyCategory | null
   unit?:       string
@@ -85,7 +87,7 @@ export interface Document {
   tax_mode: TaxMode
   supply_category: SupplyCategory | null
   supplier_invoice_number: string | null
-  calculated_totals?: { taxes: { name: string; percentage: string | number; amount: string | number }[] } | null
+  calculated_totals?: { subtotal?: string | number; line_details?: { net_amount: string | number; discount: string | number }[]; taxes: { name: string; percentage: string | number; amount: string | number }[] } | null
   date:                 string
   due_date:             string | null
   payment_terms:        string | null

@@ -5,6 +5,7 @@ import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
 import { deleteOffline, loadOffline, observeVault } from '@/lib/offline/vault'
 import { useAuthStore } from '@/stores/authStore'
 import { ItemTaxes } from './ItemTaxes'
+import { ItemDiscount, taxPreviewSubtotal } from './ItemDiscount'
 import { DiscountInput } from './DiscountInput'
 import { DocumentTotalsSummary } from './DocumentTotalsSummary'
 import { useDocumentTotals } from '@/hooks/useDocumentTotals'
@@ -550,7 +551,7 @@ export function DocumentNewPage() {
   }, [offlineDraftId, docType, owner])
 
   // ── Totals ──────────────────────────────────────────────────────────────────
-  const lineTotal    = lineItems.reduce((s, l) => s + Number(l.amount), 0)
+  const lineTotal    = taxPreviewSubtotal(lineItems)
   const expenseTotal = expenseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
   const discountAmt  = discountMode === 'percentage' ? Math.round(lineTotal * (Number(discount) || 0)) / 100 : Number(discount) || 0
   const taxPreview = useDocumentTotals({ type: docType as DocumentType, date, tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, supply_category: supplyCategory || null }, !isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && lineItems.some(item => item.name.trim()))
@@ -1232,6 +1233,7 @@ export function DocumentNewPage() {
                       className="h-9 rounded-lg text-xs text-muted-foreground"
                     />
                   )}
+                  {docType !== 'challan' && <ItemDiscount item={item} label={`item ${idx + 1}`} onChange={patch => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, ...patch } : row))} />}
                   {taxMode === 'item' && docType !== 'challan' && <ItemTaxes label={`item ${idx + 1}`} taxes={item.taxes ?? []} category={item.supply_category} onCategory={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, supply_category: value } : row))} onChange={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, taxes: value } : row))} />}
                 </CardContent>
               </Card>

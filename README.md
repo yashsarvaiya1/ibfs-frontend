@@ -59,3 +59,5 @@ For small shared-core VMs, use `WEB_CONCURRENCY=1` in the private Compose `.env`
 `docker-compose.vm.yml` is the image-only VM configuration with backend `127.0.0.1:8001:8000` and frontend `127.0.0.1:3001:3000`. Copy it to the existing VM deployment directory as `docker-compose.yml`, retaining its private `.env` and existing Compose project name so the same data volumes are used.
 
 Detailed document forms show the backend-calculated total outside the charges panel, including live per-item tax updates and calculation errors. Discount entry can use a currency amount or a percentage of the items subtotal before charges/GST. Reports now have separate **FY business report** (April–March activity, receipts/payments, monthly breakdown) and **GST report** (month/custom-date tax accumulation) options with PDF/CSV exports.
+
+Each priced item also has an optional discount section with amount/percentage entry. Item discounts are applied first; the overall discount applies to the remaining items subtotal. Create, edit, reference copying and local drafts retain both levels of discount, and the total summary lists item and overall deductions separately.

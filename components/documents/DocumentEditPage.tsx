@@ -2,6 +2,7 @@
 import { businessDate } from '@/lib/businessDate'
 import { DocumentTaxDetails } from './DocumentTaxDetails'
 import { ItemTaxes } from './ItemTaxes'
+import { ItemDiscount, taxPreviewSubtotal } from './ItemDiscount'
 import { DiscountInput } from './DiscountInput'
 import { DocumentTotalsSummary } from './DocumentTotalsSummary'
 import { useDocumentTotals } from '@/hooks/useDocumentTotals'
@@ -365,7 +366,7 @@ export function DocumentEditPage({ id }: { id: number }) {
   }
 
   // ── Totals ───────────────────────────────────────────────────────────────────
-  const lineTotal    = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const lineTotal    = taxPreviewSubtotal(lineItems)
   const discountAmt  = discountMode === 'percentage' ? Math.round(lineTotal * (Number(discount) || 0)) / 100 : Number(discount) || 0
 
   const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : 0
@@ -776,8 +777,6 @@ export function DocumentEditPage({ id }: { id: number }) {
                       value={item.hsn ?? ''} onChange={e => updateLineItem(item.key, 'hsn', e.target.value || null)}
                       className="h-9 bg-muted/20 text-sm font-mono tracking-wider" />
 
-                    {taxMode === 'item' && docType !== 'challan' && <ItemTaxes label={`item ${idx + 1}`} taxes={item.taxes ?? []} category={item.supply_category} onCategory={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, supply_category: value } : row))} onChange={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, taxes: value } : row))} />}
-
                     {/* Qty / Rate / Amount */}
                     {docType !== 'challan' && (
                       <div className="grid grid-cols-3 gap-3">
@@ -809,6 +808,9 @@ export function DocumentEditPage({ id }: { id: number }) {
                           onChange={e => updateLineItem(item.key, 'quantity', Number(e.target.value))} />
                       </div>
                     )}
+                    {docType !== 'challan' && <ItemDiscount item={item} label={`item ${idx + 1}`} onChange={patch => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, ...patch } : row))} />}
+                  {taxMode === 'item' && docType !== 'challan' && <ItemTaxes label={`item ${idx + 1}`} taxes={item.taxes ?? []} category={item.supply_category} onCategory={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, supply_category: value } : row))} onChange={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, taxes: value } : row))} />}
+
                   </CardContent>
                 </Card>
               ))}
