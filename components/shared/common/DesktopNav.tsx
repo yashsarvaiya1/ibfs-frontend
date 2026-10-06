@@ -16,6 +16,7 @@ const links = [
   { href:'/inventory', label:'Inventory', icon:Package },
   { href:'/stock-transactions', label:'Stock history', icon:Boxes },
   { href:'/reports', label:'Reports & CA exports', icon:ChartNoAxesCombined },
+  { href:'/offline', label:'Offline files & drafts', icon:FileText },
   { href:'/settings', label:'Settings', icon:Settings },
 ]
 

@@ -1,5 +1,12 @@
 'use client'
 import { DocumentTaxDetails } from './DocumentTaxDetails'
+import { apiError } from '@/lib/apiError'
+import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
+import { deleteOffline, loadOffline, observeVault } from '@/lib/offline/vault'
+import { useAuthStore } from '@/stores/authStore'
+import { ItemTaxes } from './ItemTaxes'
+import { useDocumentTotals } from '@/hooks/useDocumentTotals'
+import type { TaxMode, SupplyCategory } from '@/models/document'
 
 import { businessDate } from '@/lib/businessDate'
 
@@ -197,6 +204,11 @@ export function DocumentNewPage() {
   const setPageTitle = useUIStore(s => s.setPageTitle)
 
   const docType      = (searchParams.get('type') ?? 'bill') as DocumentType
+  const offlineDraftId = searchParams.get('offline_draft')
+  const owner = useAuthStore(s => s.username)
+  const [offlineDraftError, setOfflineDraftError] = useState('')
+  const loadedOfflineDraft = useRef<string | null>(null)
+  const [restoredDraftId, setRestoredDraftId] = useState<string | null>(null)
   const preContactId = searchParams.get('contact') ?? ''
 
   useEffect(() => { setPageTitle(`New ${getDocLabel(docType)}`) }, [docType, setPageTitle])
@@ -235,6 +247,9 @@ export function DocumentNewPage() {
   const [paymentTerms,     setPaymentTerms]     = useState('')
   const [placeOfSupply, setPlaceOfSupply] = useState('')
   const [reverseCharge, setReverseCharge] = useState<boolean | null>(null)
+  const [taxMode, setTaxMode] = useState<TaxMode>('document')
+  const [supplyCategory, setSupplyCategory] = useState<SupplyCategory | ''>('')
+  const [supplierNumber, setSupplierNumber] = useState('')
   const [notes,            setNotes]            = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
   const [discount,         setDiscount]         = useState('')
@@ -410,6 +425,8 @@ export function DocumentNewPage() {
     if (!paymentTerms && refDoc.payment_terms) {
       setPaymentTerms(refDoc.payment_terms)
     }
+    setTaxMode(docType === 'challan' ? 'document' : refDoc.tax_mode ?? 'document')
+    setSupplyCategory(refDoc.supply_category ?? '')
     if (!placeOfSupply && refDoc.place_of_supply) setPlaceOfSupply(refDoc.place_of_supply)
     if (reverseCharge === null && refDoc.reverse_charge !== null) setReverseCharge(refDoc.reverse_charge)
 
@@ -490,10 +507,44 @@ export function DocumentNewPage() {
   const removeCharge = (i: number) => setCharges(p => p.filter((_, idx) => idx !== i))
   const updateCharge = (i: number, f: keyof Charge, v: string) =>
     setCharges(p => p.map((c, idx) => idx === i ? { ...c, [f]: f === 'amount' ? Number(v) : v } : c))
-  const addTax    = () => setTaxes(p => [...p, { name: '', percentage: 0 }])
+  const addTax    = () => { if (taxMode === 'item') { toast.info('Add taxes on each item in per-item mode'); return } setTaxes(p => [...p, { name: '', percentage: 0 }]) }
   const removeTax = (i: number) => setTaxes(p => p.filter((_, idx) => idx !== i))
   const updateTax = (i: number, f: keyof Tax, v: string) =>
     setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
+
+  useEffect(() => {
+    if (!offlineDraftId || loadedOfflineDraft.current === offlineDraftId) return
+    let cancelled = false
+    async function restore() {
+      try {
+        const file = await loadOffline(offlineDraftId!, owner)
+        if (cancelled || loadedOfflineDraft.current === offlineDraftId) return
+        if (file.meta.kind !== 'draft') throw new Error('This saved file is not a document draft.')
+        const data = JSON.parse(await file.blob.text()) as DocumentCreate
+        if (data.type !== docType) throw new Error('Open this draft from Offline files to keep its document type.')
+        loadedOfflineDraft.current = offlineDraftId
+        setRestoredDraftId(offlineDraftId)
+        setContactId(data.contact ? String(data.contact) : '')
+        setConsigneeId(data.consignee ? String(data.consignee) : '')
+        setReferenceId(data.reference ? String(data.reference) : '')
+        if (data.reference) copiedReference.current = data.reference
+        setDate(data.date || businessDate()); setDueDate(data.due_date ?? '')
+        setPaymentTerms(data.payment_terms ?? ''); setPlaceOfSupply(data.place_of_supply ?? '')
+        setReverseCharge(data.reverse_charge ?? null); setTaxMode(data.tax_mode ?? 'document')
+        setSupplyCategory(data.supply_category ?? ''); setSupplierNumber(data.supplier_invoice_number ?? '')
+        setNotes(data.notes ?? ''); setDiscount(String(data.discount ?? ''))
+        setCharges(data.charges ?? []); setTaxes(data.taxes ?? []); setAttachmentUrls(data.attachment_urls ?? [])
+        setPaymentAccountId(data.payment_account ? String(data.payment_account) : '')
+        setBillMode(data.line_items?.length ? 'detailed' : 'fast'); setFastAmount(String(data.total_amount ?? ''))
+        setLineItems((data.line_items?.length ? data.line_items : [{ name: '', quantity: 1, rate: 0, amount: 0 }]).map(item => ({ ...item, key: crypto.randomUUID() })))
+        setShowCharges(!!(data.charges?.length || data.taxes?.length || data.discount))
+        setOfflineDraftError('')
+      } catch (error) { if (!cancelled) setOfflineDraftError(error instanceof Error ? error.message : 'Could not open this draft.') }
+    }
+    void restore()
+    const stop = observeVault(() => { if (!cancelled && loadedOfflineDraft.current !== offlineDraftId) void restore() })
+    return () => { cancelled = true; stop() }
+  }, [offlineDraftId, docType, owner])
 
   // ── Totals ──────────────────────────────────────────────────────────────────
   const lineTotal    = lineItems.reduce((s, l) => s + Number(l.amount), 0)
@@ -501,11 +552,20 @@ export function DocumentNewPage() {
   const chargeTotal  = charges.reduce((s, c) => s + Number(c.amount), 0)
   const discountAmt  = Number(discount) || 0
   const taxBase      = lineTotal + chargeTotal - discountAmt
-  const taxTotal     = taxes.reduce((s, t) => s + (taxBase * Number(t.percentage) / 100), 0)
-  const grandTotal   = lineTotal + chargeTotal - discountAmt + taxTotal
+  const sharedTaxTotal = taxes.reduce((s, t) => s + (taxBase * Number(t.percentage) / 100), 0)
+  const taxPreview = useDocumentTotals({ type: docType as DocumentType, date, tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountAmt, supply_category: supplyCategory || null }, !isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && lineItems.some(item => item.name.trim()))
+  const taxTotal = taxPreview.ready ? Number(taxPreview.data!.tax_total) : taxMode === 'item' ? 0 : sharedTaxTotal
+  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : taxBase + taxTotal
+  function changeTaxMode(value: TaxMode) {
+    if (value === 'item') { setLineItems(rows => rows.map(row => ({ ...row, taxes: row.taxes ?? taxes }))); setTaxes([]) }
+    else setTaxes(lineItems.find(item => item.name.trim())?.taxes ?? [])
+    setTaxMode(value)
+  }
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (offlineDraftId && loadedOfflineDraft.current !== offlineDraftId) { toast.error('Load and review the local draft before creating it.'); return }
+    if (taxMode === 'item' && !isFastMode && docType !== 'challan' && !taxPreview.ready) { toast.error('Wait for a valid per-item tax calculation before saving.'); return }
     if (CONTACT_REQUIRED.includes(docType) && !contactId) {
       toast.error('Select a contact'); return
     }
@@ -538,6 +598,9 @@ export function DocumentNewPage() {
       payment_terms:   paymentTerms || undefined,
       place_of_supply: placeOfSupply || undefined,
       reverse_charge: reverseCharge,
+      tax_mode: isFastMode || docType === 'challan' ? 'document' : taxMode,
+      supply_category: supplyCategory || null,
+      supplier_invoice_number: supplierNumber || null,
       notes:           notes        || undefined,
       reference:       referenceId  ? Number(referenceId) : undefined,
       consignee:       consigneeId  ? Number(consigneeId) : undefined,
@@ -566,13 +629,14 @@ export function DocumentNewPage() {
         payload.total_amount = fastAmount
         payload.line_items   = []
       } else {
+        if (lineItems.some(item => !item.name.trim() && (Number(item.amount) > 0 || Number(item.rate) > 0 || item.product_id))) { toast.error('Add a description for every item with a value or linked product.'); return }
         const validItems = lineItems.filter(l => l.name.trim())
         if (validItems.length === 0) { toast.error('Add at least one line item'); return }
         payload.line_items   = validItems.map(({ key, rate, amount, ...rest }) =>
           docType === 'challan' ? rest : { ...rest, rate, amount }
         )
         payload.charges      = charges.filter(c => c.name)
-        payload.taxes        = taxes.filter(t => t.name)
+        payload.taxes        = taxMode === 'item' ? [] : taxes.filter(t => t.name)
         payload.total_amount = grandTotal.toFixed(2)
       }
       if (showPaymentAccount && paymentAccountId) {
@@ -582,10 +646,11 @@ export function DocumentNewPage() {
 
     try {
       const doc = await createDocument.mutateAsync(payload)
+      if (offlineDraftId && loadedOfflineDraft.current === offlineDraftId) { try { await deleteOffline(offlineDraftId) } catch { toast.info('Document created. Remove the completed local draft from Offline files.') } }
       toast.success(`${getDocLabel(docType)} created`)
       router.replace(`/documents/${doc.id}`)
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? 'Failed to create document')
+      toast.error(apiError(e, 'Failed to create document'))
     }
   }
 
@@ -969,7 +1034,7 @@ export function DocumentNewPage() {
 
       {/* FAST / DETAILED toggle */}
       {!isExpenseType && isFastBillType && (
-        <Tabs value={billMode} onValueChange={v => setBillMode(v as 'fast' | 'detailed')} className="w-full">
+        <Tabs value={billMode} onValueChange={v => { setBillMode(v as 'fast' | 'detailed'); if (v === 'fast' && taxMode === 'item') changeTaxMode('document') }} className="w-full">
           <TabsList className="w-full h-11 bg-muted/60 p-1 rounded-xl">
             <TabsTrigger value="fast"
               className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
@@ -1167,6 +1232,7 @@ export function DocumentNewPage() {
                       className="h-9 rounded-lg text-xs text-muted-foreground"
                     />
                   )}
+                  {taxMode === 'item' && docType !== 'challan' && <ItemTaxes label={`item ${idx + 1}`} taxes={item.taxes ?? []} category={item.supply_category} onCategory={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, supply_category: value } : row))} onChange={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, taxes: value } : row))} />}
                 </CardContent>
               </Card>
             ))}
@@ -1254,7 +1320,7 @@ export function DocumentNewPage() {
                     <Plus className="h-3 w-3" /> Add
                   </Button>
                 </div>
-                {taxes.map((t, i) => (
+                {taxMode === 'document' && taxes.map((t, i) => (
                   <div key={i} className="flex gap-2 items-center">
                     <Input placeholder="e.g. GST 18%, IGST..."
                       value={t.name} onChange={e => updateTax(i, 'name', e.target.value)}
@@ -1394,7 +1460,10 @@ export function DocumentNewPage() {
       )}
 
       {/* ── SUBMIT BUTTON ─────────────────────────────────────────────────────── */}
-      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} />}
+      {['bill', 'invoice', 'quotation', 'po', 'pi'].includes(docType) && <div className="rounded-xl border p-4 space-y-2"><p className="text-xs text-muted-foreground">Save an unposted draft on this device and continue later.</p><SaveOfflineButton kind="draft" label="Save local draft" existingId={restoredDraftId ?? undefined} load={async () => new Blob([JSON.stringify({ type: docType, contact: contactId ? Number(contactId) : undefined, consignee: consigneeId ? Number(consigneeId) : undefined, reference: referenceId ? Number(referenceId) : undefined, date, due_date: dueDate || undefined, payment_terms: paymentTerms || undefined, place_of_supply: placeOfSupply || undefined, reverse_charge: reverseCharge, tax_mode: isFastMode ? 'document' : taxMode, supply_category: supplyCategory || null, supplier_invoice_number: supplierNumber || null, notes, line_items: isFastMode ? [] : lineItems.map(item => ({ ...item, key: undefined })), taxes: taxMode === 'item' ? [] : taxes, charges, discount: discountAmt, total_amount: isFastMode ? fastAmount : undefined, payment_account: paymentAccountId ? Number(paymentAccountId) : undefined, attachment_urls: attachmentUrls })], { type: 'application/json' })} title={`${getDocLabel(docType)} draft · ${date}`} filename={`${docType}-draft.json`} /></div>}
+      {offlineDraftId && <div role={offlineDraftError ? 'alert' : 'status'} className="rounded-xl border p-4 text-sm">{offlineDraftError || 'Local draft loaded. Review the contact, items and accounting controls before creating it.'}{offlineDraftError && <a href="/offline" className="text-primary block mt-2">Unlock or review offline files</a>}</div>}
+      {taxMode === 'item' && <p role={taxPreview.isError ? 'alert' : 'status'} className="text-xs text-muted-foreground">{taxPreview.isError ? 'Check item taxes, charges and discount to calculate the total.' : taxPreview.ready ? 'Per-item total calculated from saved accounting rules.' : 'Calculating per-item taxes…'}</p>}
+      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={!isFastMode && docType !== 'challan'} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
       <Button
         className="w-full h-14 rounded-2xl text-base font-bold shadow-lg shadow-primary/20 gap-2"
         disabled={isSubmitting}

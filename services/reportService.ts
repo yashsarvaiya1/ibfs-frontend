@@ -9,10 +9,22 @@ export interface GSTAmounts { taxable_amount: string; cgst: string; sgst: string
 export interface GSTRow { id: number; doc_id: string; type: DocumentType; date: string; contact: string; gstin: string | null; bucket: GSTBucket; total_amount: string | null; taxable_amount: string | null; amounts: GSTAmounts; issues: string[] }
 export interface GSTReport { count: number; review_count: number; basis: string; page_size: number; totals: Record<GSTBucket, GSTAmounts>; difference: GSTAmounts; months: { month: string; totals: Record<GSTBucket, GSTAmounts> }[]; results: GSTRow[] }
 
+export interface HSNRow extends GSTAmounts { bucket: GSTBucket; hsn: string; unit: string; rate: string; supply_category: string | null; quantity: string | null; document_count: number; issues: string[] }
+export interface HSNReport { basis: string; results: HSNRow[]; excluded: { id: number; doc_id: string; issues: string[] }[] }
+export interface AllocationReview { count: number; page_size: number; results: { id: number; date: string; contact: string; account: string; amount: string; unallocated: string; document_id: number | null; doc_id: string | null; issue: string }[] }
+
+export interface ComparisonResult { basis: string; results: { row: number; date: string; number: string; status: string; detail: string; amount: string; matches: { id: number; kind: 'document' | 'transaction'; label: string }[] }[]; unmatched_books: { id: number; kind: 'document' | 'transaction'; label: string; date: string; amount: string }[] }
+
 export const reportService = {
   caDocuments: (params: ReportPeriod & { types?: string; as_of?: string; page?: number }) =>
     api.get<CADocumentPage>('/reports/ca_documents/', { params }).then(r => r.data),
   caExport: (data: ReportPeriod & { types?: DocumentType[]; as_of: string; expected_count: number; ids?: number[]; excluded_ids?: number[] }) =>
     api.post<Blob>('/reports/ca_export/', data, { responseType: 'blob' }).then(r => r.data),
+  comparisonTemplate: (kind: 'bank' | 'purchase') => api.get<Blob>('/reports/comparison_template/', { params: { kind }, responseType: 'blob' }).then(r => r.data),
+  compareCSV: (data: FormData) => api.post<ComparisonResult>('/reports/compare_csv/', data, { headers: { 'Content-Type': undefined } }).then(r => r.data),
+  gstExport: (params: ReportPeriod & { export_format: 'pdf' | 'csv'; review_only?: boolean }) => api.get<Blob>('/reports/gst_export/', { params, responseType: 'blob' }).then(r => r.data),
+  hsn: (params: ReportPeriod) => api.get<HSNReport>('/reports/hsn/', { params }).then(r => r.data),
+  hsnExport: (params: ReportPeriod & { export_format: 'pdf' | 'csv' }) => api.get<Blob>('/reports/hsn_export/', { params, responseType: 'blob' }).then(r => r.data),
+  allocationReview: (params: ReportPeriod & { page?: number }) => api.get<AllocationReview>('/reports/allocation_review/', { params }).then(r => r.data),
   gst: (params: ReportPeriod & { page?: number; review_only?: boolean }) => api.get<GSTReport>('/reports/gst/', { params }).then(r => r.data),
 }

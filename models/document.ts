@@ -15,7 +15,12 @@ export type DocumentType =
   | 'cash_payment_voucher' | 'cash_receipt_voucher'
   | 'interest' | 'expense'
 
+export type TaxMode = 'document' | 'item'
+export type SupplyCategory = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst' | 'export' | 'import'
+
 export interface LineItem {
+  taxes?: Tax[]
+  supply_category?: SupplyCategory | null
   unit?:       string
   type?:       'charge' | 'discount'
   name:        string
@@ -76,6 +81,10 @@ export interface Document {
   discount:             string
   charges:              Charge[]
   taxes:                Tax[]
+  tax_mode: TaxMode
+  supply_category: SupplyCategory | null
+  supplier_invoice_number: string | null
+  calculated_totals?: { taxes: { name: string; percentage: string | number; amount: string | number }[] } | null
   date:                 string
   due_date:             string | null
   payment_terms:        string | null
@@ -120,6 +129,9 @@ export interface DocumentCreate {
   discount?:        number
   charges?:         Charge[]
   taxes?:           Tax[]
+  tax_mode?: TaxMode
+  supply_category?: SupplyCategory | null
+  supplier_invoice_number?: string | null
   date:             string
   due_date?:        string
   payment_terms?:   string
@@ -146,6 +158,9 @@ export interface DocumentUpdate {
   attachment_urls?: string[]
   charges?:         Charge[]
   taxes?:           Tax[]
+  tax_mode?: TaxMode
+  supply_category?: SupplyCategory | null
+  supplier_invoice_number?: string | null
   discount?:        number
   total_amount?:    string | number
   consignee?:       number | null
@@ -199,6 +214,9 @@ export interface ReferenceData {
   line_items:    LineItem[]
   charges:       Charge[]
   taxes:         Tax[]
+  tax_mode: TaxMode
+  supply_category: SupplyCategory | null
+  supplier_invoice_number: string | null
   consignee:     number | null
   discount:      string
   payment_terms: string | null

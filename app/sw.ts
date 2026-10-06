@@ -18,6 +18,7 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
+  fallbacks: { entries: [{ url: '/offline', matcher: ({request}) => request.destination === 'document' && !new URL(request.url).pathname.startsWith('/api/') && !new URL(request.url).pathname.startsWith('/media/') }] },
   runtimeCaching: [{ matcher: ({url,request}) => url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/') || request.headers.has('authorization'), handler: new NetworkOnly() }, ...defaultCache],
 })
 

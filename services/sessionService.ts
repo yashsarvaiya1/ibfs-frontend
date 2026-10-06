@@ -1,4 +1,5 @@
 import api from '@/lib/axios'
+import { clearOffline } from '@/lib/offline/vault'
 import { useAuthStore } from '@/stores/authStore'
 interface Session { authenticated:boolean; username:string | null; csrf_token:string }
 export const sessionService = {
@@ -13,5 +14,5 @@ export const sessionService = {
     useAuthStore.getState().login(data.username!,data.csrf_token)
     return data
   },
-  logout:async()=>{await api.post('/session/logout/');useAuthStore.getState().logout()},
+  logout:async()=>{await api.post('/session/logout/');useAuthStore.getState().logout();await clearOffline()},
 }

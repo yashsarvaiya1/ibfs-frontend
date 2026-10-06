@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   },
   // Add this section:
   icons: {
-    apple: '/logo.svg', // Or a 180x180 PNG for best results
+    apple: '/icons/apple-touch-icon.png',
   }
 }
 

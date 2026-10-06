@@ -1,5 +1,6 @@
 // lib/axios.ts
 import axios from 'axios'
+import { clearOffline } from '@/lib/offline/vault'
 import { useAuthStore } from '@/stores/authStore'
 
 export function getApiBase(): string {
@@ -30,7 +31,7 @@ api.interceptors.response.use(
       if (isAuthenticated) {
         logout()
         if (typeof window !== 'undefined') {
-          window.location.href = '/login'
+          void clearOffline().catch(() => { /* Key is locked even when storage access is unavailable. */ }).finally(() => { window.location.href = '/login' })
         }
       }
     }

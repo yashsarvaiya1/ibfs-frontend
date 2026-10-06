@@ -1,5 +1,6 @@
 'use client'
 
+import { DocumentHistory } from './DocumentHistory'
 import { businessDate } from '@/lib/businessDate'
 
 import { useEffect, useState } from 'react'
@@ -479,6 +480,7 @@ export function DocumentDetailPage({ id }: Props) {
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm leading-tight text-foreground/90">{item.name}</p>
+                      {doc.tax_mode === 'item' && item.taxes?.map((tax, index) => <p key={index} className="text-xs text-muted-foreground mt-1">{tax.name} {tax.percentage}%</p>)}
                       {item.hsn && (
                         <p className="text-[10px] uppercase font-bold text-muted-foreground/70 tracking-wider mt-1">
                           HSN: {item.hsn}
@@ -511,7 +513,8 @@ export function DocumentDetailPage({ id }: Props) {
                   <span>−{fmtAmount(doc.discount)}</span>
                 </div>
               )}
-              {taxes.map((t, i) => (
+              {doc.calculated_totals?.taxes.map((tax, index) => <div key={index} className="flex justify-between text-sm font-medium"><span className="text-muted-foreground">{tax.name} ({tax.percentage}%)</span><span>+{fmtAmount(tax.amount)}</span></div>)}
+              {!doc.calculated_totals && doc.tax_mode !== 'item' && taxes.map((t, i) => (
                 <div key={i} className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">{t.name} ({t.percentage}%)</span>
                   <span>+{fmtAmount((taxBase * t.percentage) / 100)}</span>
@@ -767,6 +770,8 @@ export function DocumentDetailPage({ id }: Props) {
         open={moveStockSheet}
         onClose={() => setMoveStockSheet(false)}
       />
+
+      <DocumentHistory id={id} />
 
       {/* ── Delete Sheet ──────────────────────────────────────────────────────── */}
       <Sheet open={deleteSheet} onOpenChange={setDeleteSheet}>

@@ -15,7 +15,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString()
 
 interface PdfViewerProps {
-  url:        string
+  url?:       string
+  blob?:      Blob
   className?: string
 }
 
@@ -23,7 +24,7 @@ const MIN_SCALE = 1.0
 const MAX_SCALE = 3.0
 const SCALE_STEP = 0.3
 
-export function PdfViewer({ url, className }: PdfViewerProps) {
+export function PdfViewer({ url, blob: savedBlob, className }: PdfViewerProps) {
   const [numPages,   setNumPages]   = useState(0)
   const [pageNumber, setPageNumber] = useState(1)
   const [loading,    setLoading]    = useState(true)
@@ -62,8 +63,8 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
       setBlobUrl(null)
       setScale(1.0)
       try {
-        const response = await api.get<Blob>(url, { responseType: 'blob' })
-        const blob = new Blob([response.data], { type: 'application/pdf' })
+        if (!savedBlob && !url) throw new Error('No PDF selected.')
+        const blob = savedBlob ?? new Blob([(await api.get<Blob>(url!, { responseType: 'blob' })).data], { type: 'application/pdf' })
         activeBlobUrl = URL.createObjectURL(blob)
         setBlobUrl(activeBlobUrl)
       } catch (err: unknown) {
@@ -80,7 +81,7 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
     }
     loadPdf()
     return () => { if (activeBlobUrl) URL.revokeObjectURL(activeBlobUrl) }
-  }, [url, retryCount])
+  }, [url, savedBlob, retryCount])
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setNumPages(numPages)

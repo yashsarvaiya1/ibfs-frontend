@@ -21,6 +21,7 @@ import { PdfViewer } from '@/components/shared/PdfViewer'
 import { toast } from 'sonner'
 import { downloadBlob } from '@/lib/download'
 import { documentPdfName } from '@/lib/documentShare'
+import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
 import { DocumentShareSheet } from './DocumentShareSheet'
 import {
   ArrowLeft, Download, MessageCircle,
@@ -69,13 +70,13 @@ export function DocumentPrintPage({ id }: Props) {
   const pdfUrl      = documentService.getPdfUrl(id)
   const contact     = doc.contact_display
   const consignee   = doc.consignee_display
-  const payStatus   = WITH_PAYMENT.has(doc.type) ? doc.payment_status : null
+  const payStatus   = doc.is_active && WITH_PAYMENT.has(doc.type) ? doc.payment_status : null
   const txnPaid     = payStatus?.is_paid ?? false
   const manualPaid  = doc.is_paid
   const isFullyPaid = txnPaid || manualPaid
   const remaining   = payStatus ? Number(payStatus.remaining) : 0
   const isPartial   = !txnPaid && remaining < Number(payStatus?.record ?? 0) && remaining > 0
-  const canMarkPaid = MARK_PAID_TYPES.includes(doc.type)
+  const canMarkPaid = doc.is_active && MARK_PAID_TYPES.includes(doc.type)
   const accounts    = accountsData?.results ?? []
 
   const accountOptions: SearchableSelectOption[] = accounts.map(a => ({
@@ -355,7 +356,7 @@ export function DocumentPrintPage({ id }: Props) {
       </div>
 
       {/* ══ BOTTOM ACTION BAR ════════════════════════════════════════════════ */}
-      <div className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex items-center gap-3 z-20">
+      <div className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-wrap items-center gap-3 z-20">
             <Button
               className="flex-1 h-12 rounded-2xl bg-green-600 hover:bg-green-700 gap-2 font-bold text-white"
               disabled={isDownloading} 
@@ -385,6 +386,7 @@ export function DocumentPrintPage({ id }: Props) {
               {isDownloading ? 'Downloading…' : 'Download'}
             </Button>
 
+            <SaveOfflineButton load={() => documentService.print(id)} title={`${getDocLabel(doc.type)} ${doc.doc_id}`} filename={documentPdfName(doc)} sourceUpdatedAt={doc.updated_at} />
       </div>
 
       <DocumentShareSheet key={`${doc.id}-${doc.updated_at}`} doc={doc} open={waOpen} onOpenChange={setWaOpen} />

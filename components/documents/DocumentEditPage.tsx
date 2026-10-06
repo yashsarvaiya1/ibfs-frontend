@@ -1,5 +1,9 @@
 'use client'
+import { businessDate } from '@/lib/businessDate'
 import { DocumentTaxDetails } from './DocumentTaxDetails'
+import { ItemTaxes } from './ItemTaxes'
+import { useDocumentTotals } from '@/hooks/useDocumentTotals'
+import type { TaxMode, SupplyCategory } from '@/models/document'
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -133,7 +137,7 @@ export function DocumentEditPage({ id }: { id: number }) {
   const router       = useRouter()
   const setPageTitle = useUIStore(s => s.setPageTitle)
 
-  const { data: doc,          isLoading: docLoading } = useDocument(id)
+  const { data: doc,          isLoading: docLoading, isError: docIsError, error: docError, refetch: docRefetch } = useDocument(id)
   const updateDocument = useUpdateDocument(id)
   const { data: contactsData } = useContacts({ is_active: true })
   const { data: productsData } = useProducts({ is_active: true })
@@ -150,6 +154,9 @@ export function DocumentEditPage({ id }: { id: number }) {
   const [paymentTerms,       setPaymentTerms]       = useState('')
   const [placeOfSupply, setPlaceOfSupply] = useState('')
   const [reverseCharge, setReverseCharge] = useState<boolean | null>(null)
+  const [taxMode, setTaxMode] = useState<TaxMode>('document')
+  const [supplyCategory, setSupplyCategory] = useState<SupplyCategory | ''>('')
+  const [supplierNumber, setSupplierNumber] = useState('')
   const [notes,              setNotes]              = useState('')
   const [discount,           setDiscount]           = useState('')
   const [attachmentUrls,     setAttachmentUrls]     = useState<string[]>([])
@@ -186,6 +193,9 @@ export function DocumentEditPage({ id }: { id: number }) {
     setPaymentTerms(doc.payment_terms ?? '')
     setPlaceOfSupply(doc.place_of_supply ?? '')
     setReverseCharge(doc.reverse_charge ?? null)
+    setTaxMode(doc.tax_mode ?? 'document')
+    setSupplyCategory(doc.supply_category ?? '')
+    setSupplierNumber(doc.supplier_invoice_number ?? '')
     setNotes(doc.notes ?? '')
     setDiscount(doc.discount ? String(doc.discount) : '')
     setAttachmentUrls(doc.attachment_urls ?? [])
@@ -224,6 +234,9 @@ export function DocumentEditPage({ id }: { id: number }) {
     }
   }, [doc?.id])
 
+  const taxPreview = useDocumentTotals({ type: doc?.type ?? 'invoice', date: date || businessDate(), tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: Number(discount) || 0, supply_category: supplyCategory || null }, !!doc?.is_active && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(doc.type) && lineItems.some(item => item.name.trim()))
+  if (docIsError) return <div role="alert" className="p-5 space-y-3"><p>{apiError(docError, 'Could not load this document.')}</p><Button onClick={() => docRefetch()}>Retry</Button></div>
+
   // Loading state
   if (docLoading || !doc) {
     return (
@@ -235,6 +248,8 @@ export function DocumentEditPage({ id }: { id: number }) {
       </div>
     )
   }
+
+  if (!doc.is_active) return <div className="p-5 space-y-3"><p className="text-sm">This document is archived. Its details and saved versions are available for review.</p><Button variant="outline" onClick={() => router.push(`/documents/${id}`)}>View archived document</Button></div>
 
   const docType        = doc.type
   const contacts       = contactsData?.results ?? []
@@ -350,8 +365,15 @@ export function DocumentEditPage({ id }: { id: number }) {
   const chargeTotal  = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0)
   const discountAmt  = Number(discount) || 0
   const taxBase      = lineTotal + chargeTotal - discountAmt
-  const taxTotal     = taxes.reduce((s, t) => s + (taxBase * (Number(t.percentage) || 0)) / 100, 0)
-  const grandTotal   = lineTotal + chargeTotal - discountAmt + taxTotal
+  const sharedTaxTotal = taxes.reduce((s, t) => s + (taxBase * (Number(t.percentage) || 0)) / 100, 0)
+
+  const taxTotal = taxPreview.ready ? Number(taxPreview.data!.tax_total) : taxMode === 'item' ? 0 : sharedTaxTotal
+  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : taxBase + taxTotal
+  function changeTaxMode(value: TaxMode) {
+    if (value === 'item') { setLineItems(rows => rows.map(row => ({ ...row, taxes: row.taxes ?? taxes }))); setTaxes([]) }
+    else setTaxes(lineItems.find(item => item.name.trim())?.taxes ?? [])
+    setTaxMode(value)
+  }
 
   // ── Charge / Tax handlers ────────────────────────────────────────────────────
   const addCharge    = () => setCharges(p => [...p, { name: '', amount: 0 }])
@@ -359,13 +381,14 @@ export function DocumentEditPage({ id }: { id: number }) {
   const updateCharge = (i: number, f: keyof Charge, v: string) =>
     setCharges(p => p.map((c, idx) => idx !== i ? c : { ...c, [f]: f === 'amount' ? Number(v) : v }))
 
-  const addTax    = () => setTaxes(p => [...p, { name: '', percentage: 0 }])
+  const addTax    = () => { if (taxMode === 'item') { toast.info('Add taxes on each item in per-item mode'); return } setTaxes(p => [...p, { name: '', percentage: 0 }]) }
   const removeTax = (i: number) => setTaxes(p => p.filter((_, idx) => idx !== i))
   const updateTax = (i: number, f: keyof Tax, v: string) =>
     setTaxes(p => p.map((t, idx) => idx !== i ? t : { ...t, [f]: f === 'percentage' ? Number(v) : v }))
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (taxMode === 'item' && !taxPreview.ready) { toast.error('Wait for a valid per-item tax calculation before saving.'); return }
     if (CONTACT_REQUIRED.includes(docType as DocumentType) && !contactId) {
       toast.error('Select a contact'); return
     }
@@ -380,6 +403,9 @@ export function DocumentEditPage({ id }: { id: number }) {
       payment_terms:   paymentTerms  || null,
       place_of_supply: placeOfSupply || null,
       reverse_charge: reverseCharge,
+      tax_mode: docType === 'challan' ? 'document' : taxMode,
+      supply_category: supplyCategory || null,
+      supplier_invoice_number: supplierNumber || null,
       notes:           notes         || null,
       discount:        discountAmt,
       attachment_urls: attachmentUrls,
@@ -395,15 +421,16 @@ export function DocumentEditPage({ id }: { id: number }) {
       if (!voucherAmount || Number(voucherAmount) <= 0) { toast.error('Enter amount'); return }
       payload.total_amount = voucherAmount
     } else if (hasLineItems) {
+      if (lineItems.some(item => !item.name.trim() && (Number(item.amount) > 0 || Number(item.rate) > 0 || item.product_id))) { toast.error('Add a description for every item with a value or linked product.'); return }
       const validItems = lineItems.filter(l => l.name.trim())
       if (validItems.length > 0) {
         payload.line_items = validItems.map(({ key, ...rest }) =>
           docType === 'challan'
             ? { name: rest.name, hsn: rest.hsn, quantity: rest.quantity, product_id: rest.product_id }
-            : { name: rest.name, hsn: rest.hsn, quantity: rest.quantity, rate: rest.rate, amount: rest.amount, product_id: rest.product_id }
+            : { ...rest, taxes: taxMode === 'item' ? rest.taxes ?? [] : undefined }
         )
         payload.charges      = charges.filter(c => c.name)
-        payload.taxes        = taxes.filter(t => t.name)
+        payload.taxes        = taxMode === 'item' ? [] : taxes.filter(t => t.name)
         payload.total_amount = grandTotal.toFixed(2)
       } else if (fastAmountOverride && Number(fastAmountOverride) > 0) {
         payload.line_items   = []
@@ -748,6 +775,8 @@ export function DocumentEditPage({ id }: { id: number }) {
                       value={item.hsn ?? ''} onChange={e => updateLineItem(item.key, 'hsn', e.target.value || null)}
                       className="h-9 bg-muted/20 text-sm font-mono tracking-wider" />
 
+                    {taxMode === 'item' && docType !== 'challan' && <ItemTaxes label={`item ${idx + 1}`} taxes={item.taxes ?? []} category={item.supply_category} onCategory={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, supply_category: value } : row))} onChange={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, taxes: value } : row))} />}
+
                     {/* Qty / Rate / Amount */}
                     {docType !== 'challan' && (
                       <div className="grid grid-cols-3 gap-3">
@@ -845,7 +874,7 @@ export function DocumentEditPage({ id }: { id: number }) {
                         <Plus className="h-3 w-3" /> Add
                       </Button>
                     </div>
-                    {taxes.map((t, i) => (
+                    {taxMode === 'document' && taxes.map((t, i) => (
                       <div key={i} className="flex gap-2 items-center">
                         <Input placeholder="Tax name (e.g. GST)" value={t.name}
                           onChange={e => updateTax(i, 'name', e.target.value)}
@@ -896,7 +925,8 @@ export function DocumentEditPage({ id }: { id: number }) {
       )}
 
       {/* Submit */}
-      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} />}
+      {taxMode === 'item' && <p role={taxPreview.isError ? 'alert' : 'status'} className="text-xs text-muted-foreground">{taxPreview.isError ? 'Check item taxes, charges and discount to calculate the total.' : taxPreview.ready ? 'Per-item total calculated from saved accounting rules.' : 'Calculating per-item taxes…'}</p>}
+      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={docType !== 'challan' && lineItems.some(item => item.name.trim())} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
       <div className="pt-4 pb-8 flex gap-3">
         <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>
           Cancel
