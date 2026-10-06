@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IBFS frontend
 
-## Getting Started
+IBFS is a billing, inventory and simplified accounting workspace for desktop browsers and mobile. This repository is the Next.js frontend; keep the Django repository beside it as `../backend`.
 
-First, run the development server:
+The daily flow stays quotation → PO → bill or quotation → PI → invoice. Bills/invoices establish obligations; payments settle them. When challans are enabled, they own stock movement. Automation is optional. Reports and offline drafts do not post accounting entries.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Local development
+
+Use Node **24**, npm and the committed lockfile. The application currently pins Next.js 16.3.8 and React 19.3.0.
+
+```sh
+npm ci
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Create private `.env.local` with `DJANGO_ORIGIN=http://127.0.0.1:8000`, start the backend using its README, then run:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```sh
+npm run dev -- --port 4000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open `http://localhost:4000`. Set the backend trusted CSRF origin to that exact browser origin. Browser requests use authenticated `/api` and `/media` proxies; do not add a public backend URL or expose credentials to client code.
 
-## Learn More
+```sh
+npm run typecheck
+npm run check:lint-dependencies
+npm run build
+npm audit
+```
 
-To learn more about Next.js, take a look at the following resources:
+`npm run lint -- <paths>` runs focused lint checks. Older modules retain lint debt; a successful production build does not imply the entire repository passes lint. The private `tools/next-glob` adapter removes an unpatched dependency chain and supports only the pinned Next ESLint plugin's directory lookup; verify that contract when upgrading Next.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Hosting on your VM
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Keep the existing Docker Compose and private `.env` method. Copy `.env.example` only for a new installation; merge any new settings into an existing VM environment. Preserve the Compose project name and existing PostgreSQL 15/media volumes. Build contexts expect these sibling repositories.
 
-## Deploy on Vercel
+```sh
+docker compose config --quiet
+docker compose build
+docker compose up -d
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Before updating a live installation, follow the backend [release, backup and restore instructions](../backend/docs/DEPLOYMENT.md). Containers validate settings, migrate the database, create the shared cache table and expose health checks. This development work does not deploy to your VM or rotate its credentials.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Workspace features
+
+- Classic and Modern backend PDF layouts; repeated page sections and blank totals/words spaces until each document's final page.
+- WhatsApp text preparation with manual attachment of the downloaded PDF.
+- Monthly/custom-range CA packs with document exclusions, combined into one PDF.
+- FY/month/custom GST book reports, optional per-item rates/classifications, HSN summaries, CSV/PDF exports and manual CSV comparisons.
+- Optional document version history and allocation review; the existing accounting flow remains intact.
+- Installable desktop/mobile PWA with explicitly saved, encrypted PDFs and local drafts at `/offline`.
+
+Offline access needs a separate vault password. Save files while online, then unlock locally when offline. The password/key is not stored; there is no password recovery. Logout clears local copies. Drafts return to the normal online form for validation and posting; offline edits never change balances, payments or stock. Browser storage can be evicted, so retain important downloads separately.
+
+See [reports and comparisons](../backend/docs/REPORTS.md), [PDF layout](../backend/docs/PDF_LAYOUT.md), [offline behavior](../backend/docs/OFFLINE.md) and the [implementation checklist](../backend/docs/IMPROVEMENT_CHECKLIST.md). GST exports support CA review; they do not file returns, generate IRNs or determine eligible ITC. Full double-entry accounting and multi-company support are deferred.
