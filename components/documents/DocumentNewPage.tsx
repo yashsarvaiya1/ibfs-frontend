@@ -918,7 +918,7 @@ export function DocumentNewPage() {
             <span className="mt-0.5">💡</span>
             <span>
               <strong>Charge</strong> = extra amount to be applied (late fee, penalty) ·{' '}
-              <strong>Discount</strong> = amount waived (early payment, goodwill)
+              <strong>Waiver</strong> = amount waived (early payment, goodwill)
             </span>
           </div>
 
@@ -965,7 +965,7 @@ export function DocumentNewPage() {
                       ${row.type === 'discount'
                         ? 'bg-green-50 border-green-300 text-green-600'
                         : 'bg-muted border-border text-muted-foreground'}`}>
-                    <TrendingDown className="h-3 w-3" /> Discount
+                    <TrendingDown className="h-3 w-3" /> Waiver
                   </button>
                 </div>
               </div>
@@ -975,7 +975,7 @@ export function DocumentNewPage() {
           {interestRows.some(r => Number(r.amount) > 0) && (
             <div className="rounded-xl border p-4 bg-muted/20 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                CF Impact Preview
+                Balance adjustment
               </p>
               {interestRows.filter(r => r.name && Number(r.amount) > 0).map((r, i) => {
                 const amt    = Number(r.amount)
@@ -990,7 +990,7 @@ export function DocumentNewPage() {
                   <div key={i} className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       {r.name || 'Entry'}
-                      <Badge variant="outline" className="text-[10px] h-4">{r.type}</Badge>
+                      <Badge variant="outline" className="text-[10px] h-4">{r.type === 'charge' ? 'Charge' : 'Waiver'}</Badge>
                     </span>
                     <span className={isPos ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
                       {isPos ? '+' : '−'}{fmtAmount(Math.abs(impact))}
@@ -1000,7 +1000,7 @@ export function DocumentNewPage() {
               })}
               <Separator />
               <div className="flex justify-between items-center font-semibold text-sm">
-                <span>Net CF Change</span>
+                <span>Net adjustment</span>
                 <span className={interestCFImpact > 0 ? 'text-red-500' : 'text-green-600'}>
                   {interestCFImpact > 0 ? '+' : '−'}{fmtAmount(Math.abs(interestCFImpact))}
                 </span>
@@ -1419,7 +1419,6 @@ export function DocumentNewPage() {
       {/* ── SUBMIT BUTTON ─────────────────────────────────────────────────────── */}
       {['bill', 'invoice', 'quotation', 'po', 'pi'].includes(docType) && <div className="rounded-xl border p-4 space-y-2"><p className="text-xs text-muted-foreground">Save an unposted draft on this device and continue later.</p><SaveOfflineButton kind="draft" label="Save local draft" existingId={restoredDraftId ?? undefined} load={async () => new Blob([JSON.stringify({ type: docType, contact: contactId ? Number(contactId) : undefined, consignee: consigneeId ? Number(consigneeId) : undefined, reference: referenceId ? Number(referenceId) : undefined, date, due_date: dueDate || undefined, payment_terms: paymentTerms || undefined, place_of_supply: placeOfSupply || undefined, reverse_charge: reverseCharge, tax_mode: isFastMode ? 'document' : taxMode, supply_category: supplyCategory || null, supplier_invoice_number: supplierNumber || null, notes, line_items: isFastMode ? [] : lineItems.map(item => ({ ...item, key: undefined })), taxes: taxMode === 'item' ? [] : taxes, charges, discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, total_amount: isFastMode ? fastAmount : undefined, payment_account: paymentAccountId ? Number(paymentAccountId) : undefined, attachment_urls: attachmentUrls })], { type: 'application/json' })} title={`${getDocLabel(docType)} draft · ${date}`} filename={`${docType}-draft.json`} /></div>}
       {offlineDraftId && <div role={offlineDraftError ? 'alert' : 'status'} className="rounded-xl border p-4 text-sm">{offlineDraftError || 'Local draft loaded. Review the contact, items and accounting controls before creating it.'}{offlineDraftError && <a href="/offline" className="text-primary block mt-2">Unlock or review offline files</a>}</div>}
-      {taxMode === 'item' && taxPreview.ready && <p className="text-xs text-muted-foreground">Per-item total calculated from saved accounting rules.</p>}
       {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={!isFastMode && docType !== 'challan'} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
       <Button
         className="w-full h-14 rounded-2xl text-base font-bold shadow-lg shadow-primary/20 gap-2"

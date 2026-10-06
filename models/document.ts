@@ -87,7 +87,7 @@ export interface Document {
   tax_mode: TaxMode
   supply_category: SupplyCategory | null
   supplier_invoice_number: string | null
-  calculated_totals?: { subtotal?: string | number; line_details?: { net_amount: string | number; discount: string | number }[]; taxes: { name: string; percentage: string | number; amount: string | number }[] } | null
+  calculated_totals?: { gross_subtotal?: string | number; item_discount_total?: string | number; subtotal?: string | number; line_details?: { net_amount: string | number; discount: string | number }[]; taxes: { name: string; percentage: string | number; amount: string | number }[] } | null
   date:                 string
   due_date:             string | null
   payment_terms:        string | null

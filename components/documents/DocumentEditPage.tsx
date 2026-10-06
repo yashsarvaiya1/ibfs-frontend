@@ -587,7 +587,7 @@ export function DocumentEditPage({ id }: { id: number }) {
                   value={row.amount} onChange={e => updateSimpleRow(row.key, 'amount', e.target.value)}
                   className="w-32 h-11 rounded-xl font-semibold" />
                 <Button type="button" variant="outline" size="sm" onClick={() => updateSimpleRow(row.key, 'type', row.type === 'discount' ? 'charge' : 'discount')} className={row.type === 'discount' ? 'text-emerald-700' : ''}>
-                    {row.type === 'discount' ? 'Discount' : 'Charge'}
+                    {row.type === 'discount' ? 'Waiver' : 'Charge'}
                 </Button>
                 {simpleRows.length > 1 && (
                   <button onClick={() => removeSimpleRow(row.key)}
@@ -897,7 +897,6 @@ export function DocumentEditPage({ id }: { id: number }) {
       )}
 
       {/* Submit */}
-      {taxMode === 'item' && taxPreview.ready && <p className="text-xs text-muted-foreground">Per-item total calculated from saved accounting rules.</p>}
       {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={docType !== 'challan' && lineItems.some(item => item.name.trim())} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
       <div className="pt-4 pb-8 flex gap-3">
         <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>

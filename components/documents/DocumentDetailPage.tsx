@@ -137,6 +137,8 @@ export function DocumentDetailPage({ id }: Props) {
 
   const lineSubtotal = Number(doc.calculated_totals?.subtotal ?? lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0))
   const chargeTotal  = charges.reduce((s, c)   => s + (Number(c.amount) || 0), 0)
+  const displayedSubtotal = Number(doc.calculated_totals?.gross_subtotal ?? lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))
+  const displayedDiscount = Number(doc.calculated_totals?.item_discount_total ?? 0) + Number(doc.discount ?? 0)
   const taxBase      = lineSubtotal + chargeTotal - Number(doc.discount ?? 0)
 
   // ✅ Move Stock: only when there are items with remaining > 0
@@ -502,16 +504,17 @@ export function DocumentDetailPage({ id }: Props) {
             ))}
 
             <div className="pt-2 px-1 space-y-2">
+              {['invoice', 'bill', 'cn', 'dn', 'quotation', 'po', 'pi'].includes(doc.type) && <div className="flex justify-between text-sm font-medium"><span className="text-muted-foreground">Subtotal</span><span>{fmtAmount(displayedSubtotal)}</span></div>}
               {charges.map((c, i) => (
                 <div key={i} className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">{c.name}</span>
                   <span>+{fmtAmount(c.amount)}</span>
                 </div>
               ))}
-              {Number(doc.discount) > 0 && (
+              {displayedDiscount > 0 && (
                 <div className="flex justify-between text-sm font-medium text-emerald-600">
-                  <span>Overall discount{doc.discount_percentage != null ? ` (${Number(doc.discount_percentage)}%)` : ''}</span>
-                  <span>−{fmtAmount(doc.discount)}</span>
+                  <span>Discount</span>
+                  <span>−{fmtAmount(displayedDiscount)}</span>
                 </div>
               )}
               {doc.calculated_totals?.taxes.map((tax, index) => <div key={index} className="flex justify-between text-sm font-medium"><span className="text-muted-foreground">{tax.name} ({tax.percentage}%)</span><span>+{fmtAmount(tax.amount)}</span></div>)}
@@ -666,12 +669,12 @@ export function DocumentDetailPage({ id }: Props) {
                 addInterest ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-muted/30 hover:bg-muted/50'
               )}
             >
-              <Checkbox checked={addInterest} onCheckedChange={v => setAddInterest(!!v)}
+              <Checkbox aria-label="Charges & waivers" checked={addInterest} onCheckedChange={v => setAddInterest(!!v)}
                 onClick={e => e.stopPropagation()} />
               <div>
-                <p className="text-sm font-semibold text-foreground/90">Add Interest / Adjustment</p>
+                <p className="text-sm font-semibold text-foreground/90">Charges & waivers</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-                  Creates a separate record — does not change payment amount above
+                  Adjusts the balance due without changing the payment amount
                 </p>
               </div>
             </div>
@@ -682,7 +685,7 @@ export function DocumentDetailPage({ id }: Props) {
                   <span className="mt-0.5">💡</span>
                   <span className="leading-tight">
                     <strong>Charge</strong> = extra owed (late fee, penalty)<br />
-                    <strong>Discount</strong> = amount waived (early payment)
+                    <strong>Waiver</strong> = amount waived (early payment)
                   </span>
                 </div>
                 {interestLines.map((line, i) => (
@@ -712,7 +715,7 @@ export function DocumentDetailPage({ id }: Props) {
                           )}>
                           {type === 'charge'
                             ? <><TrendingUp className="h-3.5 w-3.5" /> Charge</>
-                            : <><TrendingDown className="h-3.5 w-3.5" /> Discount</>}
+                            : <><TrendingDown className="h-3.5 w-3.5" /> Waiver</>}
                         </button>
                       ))}
                     </div>
@@ -738,7 +741,7 @@ export function DocumentDetailPage({ id }: Props) {
                           {l.name}
                           <Badge variant="outline" className={cn('text-[10px] h-4',
                             l.type === 'charge' ? 'text-red-600 border-red-200' : 'text-green-600 border-green-200')}>
-                            {l.type}
+                            {l.type === 'charge' ? 'Charge' : 'Waiver'}
                           </Badge>
                         </span>
                         <span className={l.type === 'charge' ? 'text-red-500' : 'text-green-600'}>
@@ -748,7 +751,7 @@ export function DocumentDetailPage({ id }: Props) {
                     ))}
                     <Separator />
                     <div className="flex justify-between font-semibold">
-                      <span>Original Debt Settled</span>
+                      <span>Balance settled</span>
                       <span className="text-primary">{fmtAmount(Math.max(0, originalDebtSettled))}</span>
                     </div>
                   </div>
