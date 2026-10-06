@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useState, useEffect, useMemo } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useAccounts } from '@/hooks/useAccount'
@@ -302,7 +304,7 @@ export function TransactionSheet() {
     setAddInterest(false)
     setInterestLines([])
     setExpenseLines([{ name: '', amount: '' }])
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(businessDate())
 
     if (transactionSheetContactId && allContacts) {
       const c = allContacts.results.find(c => c.id === transactionSheetContactId)

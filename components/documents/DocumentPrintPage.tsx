@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDocument, useRecordPayment, useMarkPaid } from '@/hooks/useDocument'
@@ -49,7 +51,7 @@ export function DocumentPrintPage({ id }: Props) {
   const [payOpen,       setPayOpen]       = useState(false)
   const [paidAmount,    setPaidAmount]    = useState('')
   const [paidAccount,   setPaidAccount]   = useState('')
-  const [paidDate,      setPaidDate]      = useState(() => new Date().toISOString().split('T')[0])
+  const [paidDate,      setPaidDate]      = useState(() => businessDate())
   const [paidNotes,     setPaidNotes]     = useState('')
   const [infoOpen,      setInfoOpen]      = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)

@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useState, useMemo } from 'react'
 import { useSend, useReceive } from '@/hooks/useContact'
 import { useAccounts } from '@/hooks/useAccount'
@@ -39,7 +41,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
 
   const [amount,    setAmount]    = useState('')
   const [accountId, setAccountId] = useState('')
-  const [date,      setDate]      = useState(new Date().toISOString().split('T')[0])
+  const [date,      setDate]      = useState(businessDate())
   const [notes,     setNotes]     = useState('')
   const [linkedDoc, setLinkedDoc] = useState('')
 
@@ -66,7 +68,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     if (!open) return
     setAmount(''); setAccountId(''); setNotes(''); setLinkedDoc('')
     setIsExpense(false); setAddInterest(false)
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(businessDate())
     setInterestLines([{ name: '', amount: '', type: 'charge' }])
     setVoucherLines([{ name: '', amount: '' }])
   }, [open, mode])

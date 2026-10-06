@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -665,7 +667,7 @@ export function ContactDetailPage({ id }: Props) {
                     label: 'This Month',
                     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
                       .toISOString().split('T')[0],
-                    to: new Date().toISOString().split('T')[0],
+                    to: businessDate(),
                   },
                   {
                     label: 'Last Month',
@@ -677,7 +679,7 @@ export function ContactDetailPage({ id }: Props) {
                   {
                     label: 'This Year',
                     from: `${new Date().getFullYear()}-01-01`,
-                    to: new Date().toISOString().split('T')[0],
+                    to: businessDate(),
                   },
                   {
                     label: 'Last Year',

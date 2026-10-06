@@ -1,6 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { businessDate } from '@/lib/businessDate'
+
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useCreateDocument, useDocuments, useDocument, useStandaloneInterest } from '@/hooks/useDocument'
@@ -206,7 +208,7 @@ export function DocumentNewPage() {
   const refDocTypeOptions = REF_DOC_TYPE_OPTIONS[docType] ?? []
   const hasMultipleRefTypes = refDocTypeOptions.length > 1
   const [selectedRefDocType, setSelectedRefDocType] = useState<DocumentType | ''>(
-    refDocTypeOptions[0] ?? ''
+    (searchParams.get('reference_type') as DocumentType) || refDocTypeOptions[0] || ''
   )
 
   const shouldFetchRefDocs = WITH_REFERENCE.includes(docType) && !!selectedRefDocType
@@ -225,8 +227,8 @@ export function DocumentNewPage() {
   // ── Form state ──────────────────────────────────────────────────────────────
   const [contactId,        setContactId]       = useState(preContactId)
   const [consigneeId,      setConsigneeId]      = useState('')
-  const [referenceId,      setReferenceId]      = useState('')
-  const [date,             setDate]             = useState(new Date().toISOString().split('T')[0])
+  const [referenceId,      setReferenceId]      = useState(searchParams.get('reference') ?? '')
+  const [date,             setDate]             = useState(businessDate())
   const [dueDate,          setDueDate]          = useState('')
   const [paymentTerms,     setPaymentTerms]     = useState('')
   const [notes,            setNotes]            = useState('')
@@ -337,7 +339,12 @@ export function DocumentNewPage() {
   // ── Side effects ────────────────────────────────────────────────────────────
 
   // ✅ Reset referenceId when user switches ref doc type tab
-  useEffect(() => { setReferenceId('') }, [selectedRefDocType])
+  const priorReferenceType = useRef(selectedRefDocType)
+  const copiedReference = useRef<number | null>(null)
+  useEffect(() => {
+    if (priorReferenceType.current !== selectedRefDocType) { setReferenceId(''); copiedReference.current = null }
+    priorReferenceType.current = selectedRefDocType
+  }, [selectedRefDocType])
 
   // ✅ MAIN COPY EFFECT — fires when a ref doc is selected
   // Rules:
@@ -352,7 +359,8 @@ export function DocumentNewPage() {
   //  - dueDate      → only if dueDate is empty
   //  - notes        → only if notes is empty
   useEffect(() => {
-    if (!refDoc) return
+    if (!refDoc || copiedReference.current === refDoc.id) return
+    copiedReference.current = refDoc.id
 
     // Contact — never override if already set
     if (!contactId && refDoc.contact) {

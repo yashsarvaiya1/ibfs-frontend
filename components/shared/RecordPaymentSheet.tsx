@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useRecordPayment, useDocument } from '@/hooks/useDocument'
@@ -45,7 +47,7 @@ export function RecordPaymentSheet() {
   // Reset on open
   useEffect(() => {
     if (!recordPaymentSheetOpen) return
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(businessDate())
     setAmount('')
     setAccountId('')
     setNotes('')

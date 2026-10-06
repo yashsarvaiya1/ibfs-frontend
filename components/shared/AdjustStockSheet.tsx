@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import {
@@ -65,7 +67,7 @@ export function AdjustStockSheet({ editTxn, onEditClose }: AdjustStockSheetProps
       setQty('')
       setRate('')
       setNotes('')
-      setDate(new Date().toISOString().split('T')[0])
+      setDate(businessDate())
     }
   }, [isEditMode, editTxn, adjustStockSheetOpen])
 

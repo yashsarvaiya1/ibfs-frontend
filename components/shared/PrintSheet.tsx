@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -134,7 +136,7 @@ export function PrintSheet({
     if (!blobUrl) return
     const a    = document.createElement('a')
     a.href     = blobUrl
-    const date = new Date().toISOString().split('T')[0]
+    const date = businessDate()
     a.download = filename
       ? `${filename}_${date}.pdf`
       : view === 'ledger'

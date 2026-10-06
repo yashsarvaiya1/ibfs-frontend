@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -37,6 +39,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
+import { DocumentFlow } from './DocumentFlow'
 import { MoveStockSheet }   from './MoveStockSheet'
 import { TransactionCard }  from '@/components/shared/TransactionCard'
 import { FilePreviewSheet } from '@/components/shared/FilePreviewSheet'
@@ -81,7 +84,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   const [payAmount,     setPayAmount]     = useState('')
   const [payAccount,    setPayAccount]    = useState('')
-  const [payDate,       setPayDate]       = useState(new Date().toISOString().split('T')[0])
+  const [payDate,       setPayDate]       = useState(businessDate())
   const [payNotes,      setPayNotes]      = useState('')
   const [addInterest,   setAddInterest]   = useState(false)
   const [interestLines, setInterestLines] = useState<InterestLine[]>([
@@ -145,7 +148,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   const handleOpenPaymentSheet = () => {
     setPayAmount(balance > 0 ? balance.toFixed(2) : '')
-    setPayDate(new Date().toISOString().split('T')[0])
+    setPayDate(businessDate())
     setPayNotes(''); setPayAccount('')
     setAddInterest(false)
     setInterestLines([{ name: '', amount: '', type: 'charge' }])
@@ -232,6 +235,7 @@ export function DocumentDetailPage({ id }: Props) {
   return (
     <div className="pb-10">
 
+      <DocumentFlow document={doc} />
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between">

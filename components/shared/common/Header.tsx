@@ -35,6 +35,7 @@ export function Header() {
               variant="ghost"
               size="icon"
               className="h-8 w-8 -ml-1"
+              aria-label="Go back"
               onClick={() => router.back()}
             >
               <ArrowLeft className="h-4 w-4" />
@@ -65,7 +66,7 @@ export function Header() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full shrink-0">
+            <Button variant="ghost" size="icon" aria-label="Account menu" className="rounded-full shrink-0">
               <User className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>

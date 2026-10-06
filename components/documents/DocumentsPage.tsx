@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -39,7 +41,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 20
 
 const BASE_TYPE_OPTIONS: { label: string; value: string }[] = [
   { label: 'Bills',    value: 'bill' },
@@ -200,7 +202,7 @@ function DocPrintSheet({
     if (!blobUrl) return
     const a    = document.createElement('a')
     a.href     = blobUrl
-    a.download = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`
+    a.download = `${title.replace(/\s+/g, '_')}_${businessDate()}.pdf`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -802,8 +804,24 @@ export function DocumentsPage() {
         </div>
       )}
 
+      {!isLoading && docs.length > 0 && <div className="hidden lg:block px-4">
+        <div className="overflow-x-auto rounded-xl border bg-card"><table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground"><tr>{isSelectMode && <th className="p-3">Select</th>}<th className="p-3 text-left">Document</th><th className="p-3 text-left">Contact</th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Amount</th><th className="p-3 text-right">Remaining</th><th className="p-3 text-right">Actions</th></tr></thead>
+          <tbody className="divide-y">{docs.map(doc => {
+            const paid = doc.is_paid || doc.payment_status?.is_paid
+            return <tr key={doc.id} className="hover:bg-muted/20">
+              {isSelectMode && <td className="p-3"><button aria-label={`Select ${doc.doc_id}`} aria-pressed={isAllPagesSelected || selectedDocIds.includes(doc.id)} onClick={event=>toggleDocSelect(doc.id,event)}>{isAllPagesSelected || selectedDocIds.includes(doc.id) ? '✓' : '○'}</button></td>}
+              <td className="p-3"><button className="font-semibold text-primary hover:underline" onClick={()=>router.push(`/documents/${doc.id}`)}>{doc.doc_id}</button><p className="text-xs text-muted-foreground">{DOC_TYPE_LABELS[doc.type]}</p></td>
+              <td className="p-3">{doc.contact_name || '—'}</td><td className="p-3 whitespace-nowrap">{fmtDate(doc.date)}</td>
+              <td className="p-3"><Badge variant="outline">{!doc.is_active ? 'Archived' : !doc.payment_status ? 'Open' : paid ? 'Paid' : doc.due_date && doc.due_date < businessDate() ? 'Overdue' : Number(doc.payment_status.remaining) < Number(doc.total_amount) ? 'Partial' : 'Unpaid'}</Badge></td>
+              <td className="p-3 text-right tabular-nums">{fmtAmount(doc.total_amount)}</td><td className="p-3 text-right tabular-nums">{doc.payment_status ? fmtAmount(doc.payment_status.remaining) : '—'}</td>
+              <td className="p-3 text-right"><Button variant="ghost" size="sm" onClick={()=>router.push(`/documents/${doc.id}/print`)}>Print</Button>{doc.is_active && <Button variant="ghost" size="sm" onClick={()=>router.push(`/documents/${doc.id}/edit`)}>Edit</Button>}</td>
+            </tr>
+          })}</tbody>
+        </table></div>
+      </div>}
       {/* ── Document list ────────────────────────────────────────────────────── */}
-      <div className="px-4 space-y-2.5">
+      <div className="px-4 space-y-2.5 lg:hidden">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-24 rounded-xl" />
@@ -888,7 +906,7 @@ export function DocumentsPage() {
                           <AlertCircle className="h-2.5 w-2.5" /> Unpaid
                         </span>
                       )}
-                      {hasBalance && !isPaid && doc.due_date && new Date(doc.due_date) < new Date() && (
+                      {hasBalance && !isPaid && doc.due_date && doc.due_date < businessDate() && (
                         <span className="flex items-center gap-0.5 text-[10px] font-semibold text-red-700 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded-md shrink-0">
                           <AlertCircle className="h-2.5 w-2.5" /> Due
                         </span>
