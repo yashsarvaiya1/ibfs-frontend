@@ -1,5 +1,6 @@
 'use client'
 
+import { FinancialYearReport } from './FinancialYearReport'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
@@ -22,7 +23,7 @@ import { Download, FileText, Calculator, Loader2, RefreshCw, ExternalLink } from
 import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
 import { toast } from 'sonner'
 
-type Mode = 'ca' | 'gst' | 'hsn' | 'review' | 'compare'
+type Mode = 'ca' | 'fy' | 'gst' | 'hsn' | 'review' | 'compare'
 const selectClass = 'h-10 w-full rounded-md border bg-background px-3 text-sm'
 const bucketLabels: Record<GSTBucket, string> = { output: 'Sales GST', purchase: 'Purchase GST', rcm_output: 'Reverse-charge sales', rcm_purchase: 'Reverse-charge purchases', review: 'Excluded pending review' }
 
@@ -32,17 +33,17 @@ export function ReportsPage() {
   useEffect(() => { setTitle('Reports & CA exports') }, [setTitle])
   return <div className="p-4 lg:p-6 space-y-5 max-w-6xl mx-auto">
     <div><h1 className="text-2xl font-bold">Reports & CA exports</h1><p className="text-sm text-muted-foreground mt-1">Prepare your documents for the CA and review GST recorded in your books.</p></div>
-    <div className="flex gap-2 flex-wrap" aria-label="Report type"><Button aria-pressed={mode === 'ca'} variant={mode === 'ca' ? 'default' : 'outline'} onClick={() => setMode('ca')}><FileText className="mr-2 h-4 w-4" />CA document PDF</Button><Button aria-pressed={mode === 'gst'} variant={mode === 'gst' ? 'default' : 'outline'} onClick={() => setMode('gst')}><Calculator className="mr-2 h-4 w-4" />FY & GST</Button><Button aria-pressed={mode === 'hsn'} variant={mode === 'hsn' ? 'default' : 'outline'} onClick={() => setMode('hsn')}>HSN/SAC</Button><Button aria-pressed={mode === 'review'} variant={mode === 'review' ? 'default' : 'outline'} onClick={() => setMode('review')}>Payment review</Button><Button aria-pressed={mode === 'compare'} variant={mode === 'compare' ? 'default' : 'outline'} onClick={() => setMode('compare')}>Compare CSV</Button></div>
-    <ReportContent key={mode} mode={mode} />
+    <div className="flex gap-2 flex-wrap" aria-label="Report type"><Button aria-pressed={mode === 'ca'} variant={mode === 'ca' ? 'default' : 'outline'} onClick={() => setMode('ca')}><FileText className="mr-2 h-4 w-4" />CA document PDF</Button><Button aria-pressed={mode === 'fy'} variant={mode === 'fy' ? 'default' : 'outline'} onClick={() => setMode('fy')}>FY business report</Button><Button aria-pressed={mode === 'gst'} variant={mode === 'gst' ? 'default' : 'outline'} onClick={() => setMode('gst')}><Calculator className="mr-2 h-4 w-4" />GST report</Button><Button aria-pressed={mode === 'hsn'} variant={mode === 'hsn' ? 'default' : 'outline'} onClick={() => setMode('hsn')}>HSN/SAC</Button><Button aria-pressed={mode === 'review'} variant={mode === 'review' ? 'default' : 'outline'} onClick={() => setMode('review')}>Payment review</Button><Button aria-pressed={mode === 'compare'} variant={mode === 'compare' ? 'default' : 'outline'} onClick={() => setMode('compare')}>Compare CSV</Button></div>
+    {mode === 'fy' ? <FinancialYearReport /> : <ReportContent key={mode} mode={mode} />}
   </div>
 }
 
 function ReportContent({ mode }: { mode: Mode }) {
   const fy = currentFinancialYear()
-  const [preset, setPreset] = useState(mode === 'ca' ? 'month' : 'fy')
+  const [preset, setPreset] = useState(mode === 'ca' || mode === 'gst' ? 'month' : 'fy')
   const [month, setMonth] = useState(businessDate().slice(0, 7))
   const [year, setYear] = useState(fy)
-  const [draft, setDraft] = useState<ReportPeriod>(() => mode === 'ca' ? monthPeriod(businessDate().slice(0, 7)) : financialYearPeriod(fy))
+  const [draft, setDraft] = useState<ReportPeriod>(() => mode === 'ca' || mode === 'gst' ? monthPeriod(businessDate().slice(0, 7)) : financialYearPeriod(fy))
   const [period, setPeriod] = useState(draft)
   const [draftType, setDraftType] = useState('')
   const [type, setType] = useState('')
