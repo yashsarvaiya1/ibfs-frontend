@@ -1,4 +1,5 @@
 'use client'
+import { DocumentTaxDetails } from './DocumentTaxDetails'
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -147,6 +148,8 @@ export function DocumentEditPage({ id }: { id: number }) {
   const [date,               setDate]               = useState('')
   const [dueDate,            setDueDate]            = useState('')
   const [paymentTerms,       setPaymentTerms]       = useState('')
+  const [placeOfSupply, setPlaceOfSupply] = useState('')
+  const [reverseCharge, setReverseCharge] = useState<boolean | null>(null)
   const [notes,              setNotes]              = useState('')
   const [discount,           setDiscount]           = useState('')
   const [attachmentUrls,     setAttachmentUrls]     = useState<string[]>([])
@@ -181,6 +184,8 @@ export function DocumentEditPage({ id }: { id: number }) {
     setDate(doc.date)
     setDueDate(doc.due_date ?? '')
     setPaymentTerms(doc.payment_terms ?? '')
+    setPlaceOfSupply(doc.place_of_supply ?? '')
+    setReverseCharge(doc.reverse_charge ?? null)
     setNotes(doc.notes ?? '')
     setDiscount(doc.discount ? String(doc.discount) : '')
     setAttachmentUrls(doc.attachment_urls ?? [])
@@ -373,6 +378,8 @@ export function DocumentEditPage({ id }: { id: number }) {
       expected_updated_at: loadedRevision.current?.updatedAt,
       due_date:        dueDate       || null,
       payment_terms:   paymentTerms  || null,
+      place_of_supply: placeOfSupply || null,
+      reverse_charge: reverseCharge,
       notes:           notes         || null,
       discount:        discountAmt,
       attachment_urls: attachmentUrls,
@@ -889,6 +896,7 @@ export function DocumentEditPage({ id }: { id: number }) {
       )}
 
       {/* Submit */}
+      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} />}
       <div className="pt-4 pb-8 flex gap-3">
         <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>
           Cancel

@@ -79,6 +79,8 @@ export interface Document {
   date:                 string
   due_date:             string | null
   payment_terms:        string | null
+  place_of_supply:      string | null
+  reverse_charge:       boolean | null
   attachment_urls:      string[]
   attachment_urls_full: string[]
   notes:                string | null
@@ -121,6 +123,8 @@ export interface DocumentCreate {
   date:             string
   due_date?:        string
   payment_terms?:   string
+  place_of_supply?: string
+  reverse_charge?: boolean | null
   attachment_urls?: string[]
   notes?:           string
   payment_account?: number
@@ -137,6 +141,8 @@ export interface DocumentUpdate {
   date?:            string
   due_date?:        string | null
   payment_terms?:   string | null
+  place_of_supply?: string | null
+  reverse_charge?: boolean | null
   attachment_urls?: string[]
   charges?:         Charge[]
   taxes?:           Tax[]

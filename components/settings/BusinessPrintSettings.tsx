@@ -31,7 +31,7 @@ export function BusinessPrintSettings() {
   useEffect(() => {
     if (!settings || dirty) return
     setDraft(Object.fromEntries([...fields.map(([key]) => [key, settings[key]]),
-      ['letterhead_mode', settings.letterhead_mode], ['letterhead_height_mm', settings.letterhead_height_mm],
+      ['print_template', settings.print_template], ['letterhead_mode', settings.letterhead_mode], ['letterhead_height_mm', settings.letterhead_height_mm],
       ['letterhead_footer_mm', settings.letterhead_footer_mm]]))
   }, [settings, dirty])
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
@@ -61,6 +61,16 @@ export function BusinessPrintSettings() {
     <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Business &amp; document layout</h2>
     <Card><CardContent className="p-4 sm:p-6 space-y-5">
       <div><p className="font-semibold">Make every document yours</p><p className="text-sm text-muted-foreground mt-1">These details appear on your PDFs. All fields are optional; add what your business needs.</p></div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Document template</legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(['classic', 'modern'] as const).map(template => <label key={template} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${draft.print_template === template ? 'border-primary bg-primary/5' : ''}`}>
+            <input type="radio" name="print-template" value={template} checked={(draft.print_template ?? 'modern') === template} onChange={() => { setDraft(d => ({ ...d, print_template: template })); setDirty(true) }} className="mt-1 accent-primary" />
+            <span><span className="block text-sm font-semibold capitalize">{template}</span><span className="block text-xs text-muted-foreground mt-1">{template === 'classic' ? 'Traditional black and white, crisp rules and a serif title.' : 'Clean navy headings, soft shading and generous spacing.'}</span></span>
+          </label>)}
+        </div>
+        <p className="text-xs text-muted-foreground">Both layouts repeat the header, signature, amount-in-words box and totals section on every page. Amounts and words stay blank until the final page, where the items finish.</p>
+      </fieldset>
       <div className="grid gap-4 sm:grid-cols-2">
         {fields.map(([key, label]) => <div key={key} className="space-y-1.5">
           <Label htmlFor={`print-${key}`}>{label}</Label>
@@ -88,11 +98,12 @@ export function BusinessPrintSettings() {
         <Button variant="outline" disabled={busy || update.isPending} onClick={() => showPreview('bill')}>Preview bill</Button>
         {busy && <Loader2 aria-label="Generating preview" className="h-5 w-5 animate-spin self-center" />}
       </div>
+      <p className="text-xs text-muted-foreground">Preview uses your latest saved invoice or bill. If none exists, it shows your business layout without sample customer, item or amount data.</p>
     </CardContent></Card>
     <Dialog open={!!preview} onOpenChange={open => { if (!open) setPreview(null) }}>
       <DialogContent className="sm:max-w-4xl h-[90dvh] flex flex-col">
         <DialogHeader><DialogTitle>Document preview</DialogTitle></DialogHeader>
-        {preview && <><iframe title="Sample document PDF" src={preview} className="w-full flex-1 rounded-lg border bg-white" /><a href={preview} download="document-preview.pdf" className="text-sm text-primary underline">Download preview</a></>}
+        {preview && <><iframe title="Document PDF preview" src={preview} className="w-full flex-1 rounded-lg border bg-white" /><a href={preview} download="document-preview.pdf" className="text-sm text-primary underline">Download preview</a></>}
       </DialogContent>
     </Dialog>
   </section>

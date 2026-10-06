@@ -7,6 +7,7 @@ export interface Settings {
   payment_details: string
   print_terms: string
   signatory_name: string
+  print_template: 'classic' | 'modern'
   letterhead_mode: 'banner' | 'page'
   letterhead_height_mm: number
   letterhead_footer_mm: number
@@ -36,6 +37,7 @@ export interface SettingsUpdate {
   payment_details?: string
   print_terms?: string
   signatory_name?: string
+  print_template?: 'classic' | 'modern'
   letterhead_mode?: 'banner' | 'page'
   letterhead_height_mm?: number
   letterhead_footer_mm?: number

@@ -1,4 +1,5 @@
 'use client'
+import { DocumentTaxDetails } from './DocumentTaxDetails'
 
 import { businessDate } from '@/lib/businessDate'
 
@@ -232,6 +233,8 @@ export function DocumentNewPage() {
   const [date,             setDate]             = useState(businessDate())
   const [dueDate,          setDueDate]          = useState('')
   const [paymentTerms,     setPaymentTerms]     = useState('')
+  const [placeOfSupply, setPlaceOfSupply] = useState('')
+  const [reverseCharge, setReverseCharge] = useState<boolean | null>(null)
   const [notes,            setNotes]            = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
   const [discount,         setDiscount]         = useState('')
@@ -407,6 +410,8 @@ export function DocumentNewPage() {
     if (!paymentTerms && refDoc.payment_terms) {
       setPaymentTerms(refDoc.payment_terms)
     }
+    if (!placeOfSupply && refDoc.place_of_supply) setPlaceOfSupply(refDoc.place_of_supply)
+    if (reverseCharge === null && refDoc.reverse_charge !== null) setReverseCharge(refDoc.reverse_charge)
 
     // Due date — only if not set yet
     if (!dueDate && refDoc.due_date) {
@@ -531,6 +536,8 @@ export function DocumentNewPage() {
       date,
       due_date:        dueDate      || undefined,
       payment_terms:   paymentTerms || undefined,
+      place_of_supply: placeOfSupply || undefined,
+      reverse_charge: reverseCharge,
       notes:           notes        || undefined,
       reference:       referenceId  ? Number(referenceId) : undefined,
       consignee:       consigneeId  ? Number(consigneeId) : undefined,
@@ -1387,6 +1394,7 @@ export function DocumentNewPage() {
       )}
 
       {/* ── SUBMIT BUTTON ─────────────────────────────────────────────────────── */}
+      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} />}
       <Button
         className="w-full h-14 rounded-2xl text-base font-bold shadow-lg shadow-primary/20 gap-2"
         disabled={isSubmitting}
