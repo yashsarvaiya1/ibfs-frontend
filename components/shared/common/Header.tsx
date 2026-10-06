@@ -11,7 +11,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuSeparator,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut, User, ArrowLeft, Settings, ArrowLeftRight } from 'lucide-react'
+import { LogOut, User, ArrowLeft, Settings, ArrowLeftRight, ChartNoAxesCombined } from 'lucide-react'
 import Image from 'next/image'
 
 export function Header() {
@@ -85,6 +85,9 @@ export function Header() {
             <DropdownMenuItem onClick={() => router.push('/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/reports')}>
+              <ChartNoAxesCombined className="mr-2 h-4 w-4" /> Reports & CA exports
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

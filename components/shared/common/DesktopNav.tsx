@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettings } from '@/hooks/useSettings'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, FileText, Package, Landmark, ArrowLeftRight, Settings, Plus, Boxes } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Package, Landmark, ArrowLeftRight, Settings, Plus, Boxes, ChartNoAxesCombined } from 'lucide-react'
 
 const links = [
   { href:'/', label:'Overview', icon:LayoutDashboard },
@@ -15,6 +15,7 @@ const links = [
   { href:'/transactions', label:'Transactions', icon:ArrowLeftRight },
   { href:'/inventory', label:'Inventory', icon:Package },
   { href:'/stock-transactions', label:'Stock history', icon:Boxes },
+  { href:'/reports', label:'Reports & CA exports', icon:ChartNoAxesCombined },
   { href:'/settings', label:'Settings', icon:Settings },
 ]
 
