@@ -7,6 +7,9 @@ import type { DocumentType } from '@/models/document'
 export type QuickActionType = 'expense' | 'interest' | 'transfer'
 
 interface UIStore {
+  paymentAllocationId: number | null
+  openPaymentAllocation: (id: number) => void
+  closePaymentAllocation: () => void
   // ── Page title ───────────────────────────────────────────────────────────────
   pageTitle: string
   setPageTitle: (title: string) => void
@@ -88,6 +91,9 @@ interface UIStore {
 export const useUIStore = create<UIStore>()(
   persist(
     (set) => ({
+      paymentAllocationId: null,
+      openPaymentAllocation: id => set({ paymentAllocationId: id }),
+      closePaymentAllocation: () => set({ paymentAllocationId: null }),
       // ── Page title ──────────────────────────────────────────────────────────
       pageTitle:    'Home',
       setPageTitle: (title) => set({ pageTitle: title }),

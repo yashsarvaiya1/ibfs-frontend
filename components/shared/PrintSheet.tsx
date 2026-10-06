@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -7,7 +9,7 @@ import 'react-pdf/dist/Page/TextLayer.css'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Printer, X, Loader2, Download, FileWarning, RefreshCw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react'
-import { env } from 'next-runtime-env'
+import api, { getApiBase } from '@/lib/axios'
 import { toast } from 'sonner'
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -28,10 +30,6 @@ interface PrintSheetProps {
   loadingText?: string
 }
 
-function getApiBase(): string {
-  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
-  return raw.replace(/\/$/, '')
-}
 
 export function PrintSheet({
   open,
@@ -106,9 +104,7 @@ export function PrintSheet({
         if (v !== undefined && v !== null && v !== '') q.append(k, String(v))
       })
       const url = `${getApiBase()}/${endpoint}?${q.toString()}`
-      const res = await fetch(url, { credentials: 'include' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
+      const { data: blob } = await api.get<Blob>(url, { responseType: 'blob' })
       setBlobUrl(URL.createObjectURL(blob))
     } catch (err) {
       console.error('PDF error:', err)
@@ -140,7 +136,7 @@ export function PrintSheet({
     if (!blobUrl) return
     const a    = document.createElement('a')
     a.href     = blobUrl
-    const date = new Date().toISOString().split('T')[0]
+    const date = businessDate()
     a.download = filename
       ? `${filename}_${date}.pdf`
       : view === 'ledger'
@@ -245,7 +241,7 @@ export function PrintSheet({
                   <Page
                     pageNumber={pageNumber}
                     width={pageWidth} // Locked! Never multiply this by scale
-                    renderTextLayer={false}
+                    renderTextLayer={true}
                     renderAnnotationLayer={false}
                     onLoadSuccess={(page: any) => {
                        // Capture the actual PDF aspect ratio to calculate scroll bounds

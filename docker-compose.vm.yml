@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ibfs_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME}
+      POSTGRES_USER: ${DB_USER:?Set DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - ibfs_postgres_data:/var/lib/postgresql/data/
+    networks: [ibfs_network]
+
+  volume-init:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
+    user: "0:0"
+    restart: "no"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 1000:1000 /app/media /app/staticfiles"]
+    volumes:
+      - ibfs_media_volume:/app/media
+      - ibfs_static_volume:/app/staticfiles
+
+  backend:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
+    container_name: ibfs_backend
+    restart: always
+    env_file: [.env]
+    environment:
+      DB_HOST: db
+      DEBUG: "False"
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - ibfs_media_volume:/app/media
+      - ibfs_static_volume:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_started
+      volume-init:
+        condition: service_completed_successfully
+    networks: [ibfs_network]
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE}
+    container_name: ibfs_frontend
+    restart: always
+    environment:
+      DJANGO_ORIGIN: http://backend:8000
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    networks: [ibfs_network]
+
+networks:
+  ibfs_network:
+    driver: bridge
+
+volumes:
+  ibfs_postgres_data:
+  ibfs_media_volume:
+  ibfs_static_volume:

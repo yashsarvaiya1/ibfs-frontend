@@ -248,7 +248,7 @@ export function ProductDetailPage({ id }: Props) {
                   <DropdownMenuItem onClick={() => setEditSheet(true)}>
                     Edit Details & Stock
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/transactions?product=${id}`)}>
+                  <DropdownMenuItem onClick={() => router.push(`/stock-transactions?product=${id}`)}>
                     View All Transactions
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -329,7 +329,7 @@ export function ProductDetailPage({ id }: Props) {
                             {move.contact ?? 'No contact'} · {fmtDate(move.date)}
                           </p>
                           <p className="text-xs font-bold text-orange-600 mt-1">
-                            {move.remaining_qty} {product.unit} remaining
+                            {move.remaining_qty} {product.unit} to {move.direction === 'out' ? 'dispatch' : 'receive'}
                           </p>
                         </button>
                         <Button
@@ -484,7 +484,7 @@ export function ProductDetailPage({ id }: Props) {
       </Sheet>
 
       {/* Stock txn edit */}
-      <AdjustStockSheet editTxn={editStockTxn} onEditClose={() => setEditStockTxn(null)} />
+      {editStockTxn && <AdjustStockSheet editTxn={editStockTxn} onEditClose={() => setEditStockTxn(null)} />}
 
       {/* Stock txn delete confirmation */}
       <AlertDialog open={confirmDelOpen} onOpenChange={setConfirmDelOpen}>

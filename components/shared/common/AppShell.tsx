@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { useVerifyAuth } from '@/hooks/useVerifyAuth'
+import { DesktopNav } from '@/components/shared/common/DesktopNav'
 import { Header } from '@/components/shared/common/Header'
 import { BottomNav } from '@/components/shared/common/BottomNav'
 import { QuickActionSheet } from '@/components/shared/common/QuickActionSheet'
@@ -13,6 +14,8 @@ import { TransactionSheet } from '@/components/shared/TransactionSheet'
 import { DeleteDocSheet } from '@/components/shared/DeleteDocSheet'
 import { RecordPaymentSheet } from '@/components/shared/RecordPaymentSheet'
 import { AddDetailsSheet } from '@/components/shared/AddDetailsSheet'
+import { GlobalMoveStockSheet } from '@/components/documents/GlobalMoveStockSheet'
+import { PaymentAllocationSheet } from '@/components/shared/PaymentAllocationSheet'
 import { AdjustStockSheet } from '@/components/shared/AdjustStockSheet'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -36,12 +39,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!hasHydrated || !isAuthenticated) return null
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex h-dvh bg-background overflow-hidden">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:bg-background focus:p-3">Skip to content</a>
+      <DesktopNav />
+      <div className="flex flex-col flex-1 min-w-0">
       <Header />
-      <main className="flex-1 overflow-y-auto pb-16">
-        {children}
+      <main id="main-content" className="flex-1 overflow-y-auto pb-20 lg:pb-6">
+        <div className="w-full max-w-[1440px] mx-auto lg:px-5 lg:py-4">{children}</div>
       </main>
       <BottomNav />
+      </div>
 
       <QuickActionSheet />
       <DocCreateSheet />
@@ -50,6 +57,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <RecordPaymentSheet />
       <AddDetailsSheet />
       <AdjustStockSheet />
+      <GlobalMoveStockSheet />
+      <PaymentAllocationSheet />
     </div>
   )
 }

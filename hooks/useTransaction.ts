@@ -47,6 +47,8 @@ export function useUpdateTransaction(contactId?: number) {
       qc.invalidateQueries({ queryKey: transactionKey(vars.id) })
       qc.invalidateQueries({ queryKey: TRANSACTIONS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.invalidateQueries({ queryKey: ['documents'] })
       if (contactId) {
         // Partial key invalidates all ledger filter combos for this contact
         qc.invalidateQueries({ queryKey: ['contacts', contactId, 'ledger'] })
@@ -64,6 +66,8 @@ export function useDeleteTransaction(contactId?: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: TRANSACTIONS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.invalidateQueries({ queryKey: ['documents'] })
       if (contactId) {
         qc.invalidateQueries({ queryKey: ['contacts', contactId, 'ledger'] })
         qc.invalidateQueries({ queryKey: ['contacts', contactId] })

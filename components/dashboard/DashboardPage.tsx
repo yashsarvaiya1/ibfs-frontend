@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useUIStore } from '@/stores/uiStore'
-import { useAccounts } from '@/hooks/useAccount'
+import { useAccounts, useAccountSummary } from '@/hooks/useAccount'
 import { useProducts } from '@/hooks/useProduct'
 import { useTransactions } from '@/hooks/useTransaction'
 import { fmtAmount } from '@/lib/utils'
@@ -25,15 +25,16 @@ export function DashboardPage() {
   const accounts       = accountsData?.results ?? []
   const lowStockCount  = productsData?.count   ?? 0
   const recentActivity = recentTxns?.results   ?? []
-  const totalBalance   = accounts.reduce((s, a) => s + Number(a.current_balance), 0)
+  const { data: summary } = useAccountSummary()
+  const totalBalance = Number(summary?.total_balance ?? 0)
 
-  // Fix: negative = Cr = incoming, positive = Dr = outgoing
+  // Actual payments are positive receipts and negative payments.
   const recentInflow  = recentActivity
-    .filter(t => Number(t.amount) < 0)
+    .filter(t => Number(t.amount) >= 0)
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
   const recentOutflow = recentActivity
-    .filter(t => Number(t.amount) > 0)
-    .reduce((s, t) => s + Number(t.amount), 0)
+    .filter(t => Number(t.amount) < 0)
+    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
 
   return (
     <div className="px-4 py-4 space-y-6 pb-10">

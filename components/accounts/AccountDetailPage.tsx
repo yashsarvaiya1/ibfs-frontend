@@ -4,11 +4,11 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import {
-  useAccount, useAccounts,
+  useAccount, useAccounts, useAccountTransactions,
   useUpdateAccount, useDeleteAccount,
   useTransfer, useAdjustBalance, useSetBalance,
 } from '@/hooks/useAccount'
-import { useTransactions, useUpdateTransaction, useDeleteTransaction } from '@/hooks/useTransaction'
+import { useUpdateTransaction, useDeleteTransaction } from '@/hooks/useTransaction'
 import { fmtAmount, fmtDate, cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,7 @@ import { DOC_TYPE_LABELS } from '@/models/document'
 import { TransactionCard } from '@/components/shared/TransactionCard'
 import { SearchableSelect, SearchableSelectOption } from '@/components/shared/common/SearchableSelect'
 import { PrintSheet } from '@/components/shared/PrintSheet'
+import { AccountLedger } from './AccountLedger'
 
 
 const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
@@ -69,12 +70,12 @@ export function AccountDetailPage({ id }: Props) {
   const [dateTo,    setDateTo]    = useState('')
   const [printOpen, setPrintOpen] = useState(false)
 
+  const [printView, setPrintView] = useState<'list' | 'ledger'>('list')
   const { data: account,      isLoading } = useAccount(id)
-  const { data: txnsData }                = useTransactions({
-    account:   id,
+  const { data: txnsData, isLoading: loadingTransactions, isError: transactionsError, refetch: refetchTransactions } = useAccountTransactions(id, {
+    view: printView,
     page,
     page_size: PAGE_SIZE,
-    ordering:  '-date,-id',
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo   && { date_to:   dateTo   }),
   })
@@ -89,7 +90,7 @@ export function AccountDetailPage({ id }: Props) {
   const otherAccounts = (allAccountsData?.results ?? []).filter(a => a.id !== id)
   const allAccounts   = allAccountsData?.results ?? []
 
-  const [printView, setPrintView] = useState<'list' | 'ledger'>('list')
+
 
   // ── Sheet / dialog states ──────────────────────────────────────────────────
   const [transferOpen,    setTransferOpen]    = useState(false)
@@ -405,7 +406,7 @@ export function AccountDetailPage({ id }: Props) {
             {/* View toggle */}
             <div className="flex items-center rounded-lg border border-border overflow-hidden h-8">
               <button
-                onClick={() => setPrintView('list')}
+                onClick={() => {setPrintView('list');setPage(1)}}
                 className={cn(
                   'px-2.5 text-xs font-semibold h-full transition-colors',
                   printView === 'list'
@@ -416,7 +417,7 @@ export function AccountDetailPage({ id }: Props) {
                 List
               </button>
               <button
-                onClick={() => setPrintView('ledger')}
+                onClick={() => {setPrintView('ledger');setPage(1)}}
                 className={cn(
                   'px-2.5 text-xs font-semibold h-full transition-colors border-l border-border',
                   printView === 'ledger'
@@ -431,7 +432,7 @@ export function AccountDetailPage({ id }: Props) {
               variant="outline" size="sm"
               className="h-8 gap-1.5 rounded-xl text-xs"
               onClick={() => setPrintOpen(true)}
-              disabled={totalCount === 0}
+              disabled={dateRangeInvalid}
             >
               <Printer className="h-3.5 w-3.5" /> Print
             </Button>
@@ -442,14 +443,14 @@ export function AccountDetailPage({ id }: Props) {
         {/* Date range filter */}
         <div className="flex items-center gap-2">
           <input
-            type="date"
+            type="date" aria-label="Account from date"
             value={dateFrom}
             onChange={e => setDateFrom(e.target.value)}
             className="flex-1 h-8 rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           <span className="text-xs text-muted-foreground shrink-0">—</span>
           <input
-            type="date"
+            type="date" aria-label="Account to date"
             value={dateTo}
             onChange={e => setDateTo(e.target.value)}
             className="flex-1 h-8 rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -473,7 +474,7 @@ export function AccountDetailPage({ id }: Props) {
 
       {/* ── Transaction list ──────────────────────────────────────────────── */}
       <div className="px-4 space-y-2 pb-4">
-        {txns.length === 0 ? (
+        {transactionsError ? <div className="py-6 text-center space-y-2"><p>Could not load account entries.</p><Button variant="outline" onClick={() => refetchTransactions()}>Retry</Button></div> : loadingTransactions ? <p className="py-8 text-center text-muted-foreground">Loading entries…</p> : printView === 'ledger' ? <AccountLedger transactions={txns} openingBalance={txnsData?.balance_before_period} page={page} onEdit={handleEditTxn} /> : txns.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm py-8">
             {dateFrom || dateTo ? 'No transactions in this date range' : 'No transactions yet'}
           </p>
@@ -569,7 +570,7 @@ export function AccountDetailPage({ id }: Props) {
                 </div>
                 <p className={cn(
                   'text-lg font-black shrink-0',
-                  Number(editTxn.amount) >= 0 ? 'text-red-600' : 'text-emerald-600',
+                  Number(editTxn.amount) < 0 ? 'text-red-600' : 'text-emerald-600',
                 )}>
                   {Number(editTxn.amount) >= 0 ? '+' : ''}{fmtAmount(editTxn.amount)}
                 </p>
@@ -590,7 +591,7 @@ export function AccountDetailPage({ id }: Props) {
                   <Label>
                     Amount
                     <span className="text-[10px] text-muted-foreground ml-2 font-normal uppercase tracking-wider">
-                      ({Number(editTxn.amount) >= 0 ? 'outgoing / Dr' : 'incoming / Cr'} — sign preserved)
+                      ({Number(editTxn.amount) < 0 ? 'Outgoing' : 'Incoming'} — sign preserved)
                     </span>
                   </Label>
                   <Input
@@ -612,7 +613,7 @@ export function AccountDetailPage({ id }: Props) {
                 <div className="space-y-1.5">
                   <Label>Payment Account</Label>
                   <SearchableSelect
-                    options={accountOptions}
+                    resource="accounts" options={accountOptions}
                     value={txnAccountId}
                     onChange={setTxnAccountId}
                     placeholder="Select account"

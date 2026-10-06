@@ -13,7 +13,7 @@ export const accountKey   = (id: number) => ['accounts', id] as const
 // Partial key — invalidates ALL transaction queries
 const TRANSACTIONS_BASE_KEY = ['transactions'] as const
 
-export function useAccounts(params?: { is_active?: boolean }) {
+export function useAccounts(params?: { is_active?: boolean; page?: number; search?: string }) {
   return useQuery({
     queryKey: [...ACCOUNTS_KEY, params],
     queryFn:  () => accountService.list(params),
@@ -41,6 +41,7 @@ export function useUpdateAccount(id: number) {
   return useMutation({
     mutationFn: (data: AccountUpdate) => accountService.update(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: accountKey(id) })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
     },
@@ -60,6 +61,7 @@ export function useSetBalance(id: number) {
   return useMutation({
     mutationFn: (data: SetBalancePayload) => accountService.setBalance(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: accountKey(id) })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
     },
@@ -71,6 +73,7 @@ export function useTransfer() {
   return useMutation({
     mutationFn: (data: TransferPayload) => accountService.transfer(data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
       qc.invalidateQueries({ queryKey: TRANSACTIONS_BASE_KEY })
     },
@@ -82,6 +85,7 @@ export function useAdjustBalance(id: number) {
   return useMutation({
     mutationFn: (data: AdjustBalancePayload) => accountService.adjust(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: accountKey(id) })
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY })
       qc.invalidateQueries({ queryKey: TRANSACTIONS_BASE_KEY })
@@ -106,4 +110,8 @@ export function useAccountTransactions(
     queryFn:  () => accountService.transactions(id, params),
     enabled:  !!id,
   })
+}
+
+export function useAccountSummary() {
+  return useQuery({ queryKey: [...ACCOUNTS_KEY, 'summary'], queryFn: accountService.summary })
 }

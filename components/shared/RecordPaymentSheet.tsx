@@ -1,5 +1,9 @@
 'use client'
 
+import { PaymentAdjustmentType } from './PaymentAdjustmentType'
+
+import { businessDate } from '@/lib/businessDate'
+
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useRecordPayment, useDocument } from '@/hooks/useDocument'
@@ -45,7 +49,7 @@ export function RecordPaymentSheet() {
   // Reset on open
   useEffect(() => {
     if (!recordPaymentSheetOpen) return
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(businessDate())
     setAmount('')
     setAccountId('')
     setNotes('')
@@ -148,7 +152,7 @@ export function RecordPaymentSheet() {
           <div className="space-y-1.5">
             <Label>Account <span className="text-destructive">*</span></Label>
             <SearchableSelect
-              options={accountOptions}
+              resource="accounts" options={accountOptions}
               value={accountId}
               onChange={setAccountId}
               placeholder="Select account"
@@ -173,16 +177,17 @@ export function RecordPaymentSheet() {
           {/* Interest toggle */}
           <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40">
             <div>
-              <p className="text-sm font-medium">Add Interest / Adjustment</p>
+              <p className="text-sm font-medium">Charges & waivers</p>
               {addInterest && interestNet !== 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Net: <span className={interestNet > 0 ? 'text-red-500' : 'text-emerald-600'}>
-                    {interestNet > 0 ? '+' : ''}{fmtAmount(interestNet)}
+                  {interestNet > 0 ? 'Net charge: ' : 'Net waiver: '}<span className={interestNet > 0 ? 'text-red-500' : 'text-emerald-600'}>
+                    {fmtAmount(Math.abs(interestNet))}
                   </span>
                 </p>
               )}
             </div>
             <Switch
+                    aria-label="Charges & waivers"
               checked={addInterest}
               onCheckedChange={(v) => {
                 setAddInterest(v)
@@ -196,11 +201,12 @@ export function RecordPaymentSheet() {
           {/* Interest lines */}
           {addInterest && (
             <div className="space-y-2 pl-1">
+              <p className="text-xs text-muted-foreground">Charges increase the amount due; waivers reduce it. They do not change the payment amount.</p>
               {interestLines.map((line, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <Input
                     className="flex-1"
-                    placeholder="Name (e.g. Interest)"
+                    placeholder="Reason (e.g. Late fee)"
                     value={line.name}
                     onChange={e =>
                       setInterestLines(prev => prev.map((l, idx) =>
@@ -219,21 +225,7 @@ export function RecordPaymentSheet() {
                       ))
                     }
                   />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setInterestLines(prev => prev.map((l, idx) =>
-                        idx === i ? { ...l, type: l.type === 'charge' ? 'discount' : 'charge' } : l
-                      ))
-                    }
-                    className={`text-[11px] font-semibold px-2 py-1 rounded-lg border shrink-0 ${
-                      line.type === 'charge'
-                        ? 'bg-red-50 border-red-200 text-red-600'
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-600'
-                    }`}
-                  >
-                    {line.type === 'charge' ? 'Charge' : 'Discount'}
-                  </button>
+                  <PaymentAdjustmentType label={`Adjustment type ${i + 1}`} value={line.type} onChange={type => setInterestLines(prev => prev.map((row, index) => index === i ? { ...row, type } : row))} />
                   <button type="button" onClick={() =>
                     setInterestLines(prev => prev.filter((_, idx) => idx !== i))
                   }>

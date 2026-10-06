@@ -3,13 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
-import { settingsService } from '@/services/settingsService'
+import { sessionService } from '@/services/sessionService'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { toast } from 'sonner'
-import api from '@/lib/axios'
 import Image from 'next/image'
 
 export function LoginPage() {
@@ -25,12 +24,12 @@ export function LoginPage() {
   const [logoUrl, setLogoUrl]   = useState<string | null>(null)
 
   useEffect(() => {
-    if (isAuthenticated) { router.replace('/'); return }
-    // Attempt unauthenticated settings fetch for white-label logo — silent on failure
-    settingsService.get()
-      .then((s) => setLogoUrl(s.header_image_url ?? null))
-      .catch(() => {/* server may require auth — silently ignore */})
-  }, [isAuthenticated, router])
+    sessionService.status().then(session=>{
+      if(session.authenticated){login(session.username!,session.csrf_token);router.replace('/')}
+      else useAuthStore.getState().logout()
+    }).catch(()=>{})
+  },[login,router])
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,12 +39,8 @@ export function LoginPage() {
     }
     setLoading(true)
     try {
-      const encoded = btoa(`${username}:${password}`)
-      await api.get('/contacts/', {
-        headers: { Authorization: `Basic ${encoded}` },
-        params:  { page: 1, page_size: 1 },
-      })
-      login(username, password)
+      await sessionService.login(username.trim(), password)
+      setPassword('')
       router.replace('/')
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status

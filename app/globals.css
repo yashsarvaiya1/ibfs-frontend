@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./shadcn-utilities.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -136,4 +136,17 @@
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Bottom sheets become bounded dialogs on desktop, preserving mobile gestures. */
+@media (min-width: 1024px) {
+  [data-slot="sheet-content"][data-side="bottom"] {
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: min(720px, calc(100vw - 64px));
+    max-height: 88dvh;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    animation: none;
+  }
 }

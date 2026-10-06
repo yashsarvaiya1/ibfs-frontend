@@ -1,7 +1,21 @@
 'use client'
+import { DocumentTaxDetails } from './DocumentTaxDetails'
+import { apiError } from '@/lib/apiError'
+import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
+import { deleteOffline, loadOffline, observeVault } from '@/lib/offline/vault'
+import { useAuthStore } from '@/stores/authStore'
+import { ItemTaxes } from './ItemTaxes'
+import { ItemDiscount, taxPreviewSubtotal } from './ItemDiscount'
+import { DiscountInput } from './DiscountInput'
+import { DocumentTotalsSummary } from './DocumentTotalsSummary'
+import { useDocumentTotals } from '@/hooks/useDocumentTotals'
+import type { TaxMode, SupplyCategory } from '@/models/document'
 
-import { useEffect, useState, useMemo } from 'react'
+import { businessDate } from '@/lib/businessDate'
+
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { productService } from '@/services/productService'
 import { useUIStore } from '@/stores/uiStore'
 import { useCreateDocument, useDocuments, useDocument, useStandaloneInterest } from '@/hooks/useDocument'
 import { useSettings } from '@/hooks/useSettings'
@@ -193,6 +207,11 @@ export function DocumentNewPage() {
   const setPageTitle = useUIStore(s => s.setPageTitle)
 
   const docType      = (searchParams.get('type') ?? 'bill') as DocumentType
+  const offlineDraftId = searchParams.get('offline_draft')
+  const owner = useAuthStore(s => s.username)
+  const [offlineDraftError, setOfflineDraftError] = useState('')
+  const loadedOfflineDraft = useRef<string | null>(null)
+  const [restoredDraftId, setRestoredDraftId] = useState<string | null>(null)
   const preContactId = searchParams.get('contact') ?? ''
 
   useEffect(() => { setPageTitle(`New ${getDocLabel(docType)}`) }, [docType, setPageTitle])
@@ -206,7 +225,7 @@ export function DocumentNewPage() {
   const refDocTypeOptions = REF_DOC_TYPE_OPTIONS[docType] ?? []
   const hasMultipleRefTypes = refDocTypeOptions.length > 1
   const [selectedRefDocType, setSelectedRefDocType] = useState<DocumentType | ''>(
-    refDocTypeOptions[0] ?? ''
+    (searchParams.get('reference_type') as DocumentType) || refDocTypeOptions[0] || ''
   )
 
   const shouldFetchRefDocs = WITH_REFERENCE.includes(docType) && !!selectedRefDocType
@@ -225,12 +244,18 @@ export function DocumentNewPage() {
   // ── Form state ──────────────────────────────────────────────────────────────
   const [contactId,        setContactId]       = useState(preContactId)
   const [consigneeId,      setConsigneeId]      = useState('')
-  const [referenceId,      setReferenceId]      = useState('')
-  const [date,             setDate]             = useState(new Date().toISOString().split('T')[0])
+  const [referenceId,      setReferenceId]      = useState(searchParams.get('reference') ?? '')
+  const [date,             setDate]             = useState(businessDate())
   const [dueDate,          setDueDate]          = useState('')
   const [paymentTerms,     setPaymentTerms]     = useState('')
+  const [placeOfSupply, setPlaceOfSupply] = useState('')
+  const [reverseCharge, setReverseCharge] = useState<boolean | null>(null)
+  const [taxMode, setTaxMode] = useState<TaxMode>('document')
+  const [supplyCategory, setSupplyCategory] = useState<SupplyCategory | ''>('')
+  const [supplierNumber, setSupplierNumber] = useState('')
   const [notes,            setNotes]            = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percentage'>('amount')
   const [discount,         setDiscount]         = useState('')
   const [fastAmount,       setFastAmount]       = useState('')
   const [voucherAmount,    setVoucherAmount]    = useState('')
@@ -337,7 +362,12 @@ export function DocumentNewPage() {
   // ── Side effects ────────────────────────────────────────────────────────────
 
   // ✅ Reset referenceId when user switches ref doc type tab
-  useEffect(() => { setReferenceId('') }, [selectedRefDocType])
+  const priorReferenceType = useRef(selectedRefDocType)
+  const copiedReference = useRef<number | null>(null)
+  useEffect(() => {
+    if (priorReferenceType.current !== selectedRefDocType) { setReferenceId(''); copiedReference.current = null }
+    priorReferenceType.current = selectedRefDocType
+  }, [selectedRefDocType])
 
   // ✅ MAIN COPY EFFECT — fires when a ref doc is selected
   // Rules:
@@ -352,7 +382,8 @@ export function DocumentNewPage() {
   //  - dueDate      → only if dueDate is empty
   //  - notes        → only if notes is empty
   useEffect(() => {
-    if (!refDoc) return
+    if (!refDoc || copiedReference.current === refDoc.id) return
+    copiedReference.current = refDoc.id
 
     // Contact — never override if already set
     if (!contactId && refDoc.contact) {
@@ -390,7 +421,7 @@ export function DocumentNewPage() {
 
     // Discount — only if not set yet
     if (!discount && refDoc.discount && Number(refDoc.discount) > 0) {
-      setDiscount(String(refDoc.discount))
+      setDiscountMode(refDoc.discount_percentage != null ? 'percentage' : 'amount'); setDiscount(String(refDoc.discount_percentage ?? refDoc.discount))
       if (!showCharges) setShowCharges(true)
     }
 
@@ -398,6 +429,10 @@ export function DocumentNewPage() {
     if (!paymentTerms && refDoc.payment_terms) {
       setPaymentTerms(refDoc.payment_terms)
     }
+    setTaxMode(docType === 'challan' ? 'document' : refDoc.tax_mode ?? 'document')
+    setSupplyCategory(refDoc.supply_category ?? '')
+    if (!placeOfSupply && refDoc.place_of_supply) setPlaceOfSupply(refDoc.place_of_supply)
+    if (reverseCharge === null && refDoc.reverse_charge !== null) setReverseCharge(refDoc.reverse_charge)
 
     // Due date — only if not set yet
     if (!dueDate && refDoc.due_date) {
@@ -447,14 +482,15 @@ export function DocumentNewPage() {
       if (field === 'quantity' || field === 'rate') updated.amount = Number(updated.quantity ?? 0) * Number(updated.rate ?? 0)
       return updated
     }))
-  const onProductSelect = (key: string, productId: string) => {
+  const onProductSelect = async (key: string, productId: string) => {
     if (!productId) { updateLineItem(key, 'product_id', null); return }
-    const product = products.find(p => String(p.id) === productId)
-    if (!product) return
+    let product
+    try { product = products.find(p => String(p.id) === productId) ?? await productService.get(Number(productId)) }
+    catch { toast.error('Could not load product. Select it again.'); return }
     setLineItems(p => p.map(l => {
       if (l.key !== key) return l
       const qty = Number(l.quantity) || 1
-      return { ...l, product_id: product.id, name: product.name, rate: Number(product.rate), amount: qty * Number(product.rate), hsn: product.hsn_code ?? undefined }
+      return { ...l, product_id: product.id, name: product.name, rate: Number(product.rate), amount: qty * Number(product.rate), hsn: product.hsn_code ?? undefined, unit: product.unit }
     }))
   }
 
@@ -475,22 +511,61 @@ export function DocumentNewPage() {
   const removeCharge = (i: number) => setCharges(p => p.filter((_, idx) => idx !== i))
   const updateCharge = (i: number, f: keyof Charge, v: string) =>
     setCharges(p => p.map((c, idx) => idx === i ? { ...c, [f]: f === 'amount' ? Number(v) : v } : c))
-  const addTax    = () => setTaxes(p => [...p, { name: '', percentage: 0 }])
+  const addTax    = () => { if (taxMode === 'item') { toast.info('Add taxes on each item in per-item mode'); return } setTaxes(p => [...p, { name: '', percentage: 0 }]) }
   const removeTax = (i: number) => setTaxes(p => p.filter((_, idx) => idx !== i))
   const updateTax = (i: number, f: keyof Tax, v: string) =>
     setTaxes(p => p.map((t, idx) => idx === i ? { ...t, [f]: f === 'percentage' ? Number(v) : v } : t))
 
+  useEffect(() => {
+    if (!offlineDraftId || loadedOfflineDraft.current === offlineDraftId) return
+    let cancelled = false
+    async function restore() {
+      try {
+        const file = await loadOffline(offlineDraftId!, owner)
+        if (cancelled || loadedOfflineDraft.current === offlineDraftId) return
+        if (file.meta.kind !== 'draft') throw new Error('This saved file is not a document draft.')
+        const data = JSON.parse(await file.blob.text()) as DocumentCreate
+        if (data.type !== docType) throw new Error('Open this draft from Offline files to keep its document type.')
+        loadedOfflineDraft.current = offlineDraftId
+        setRestoredDraftId(offlineDraftId)
+        setContactId(data.contact ? String(data.contact) : '')
+        setConsigneeId(data.consignee ? String(data.consignee) : '')
+        setReferenceId(data.reference ? String(data.reference) : '')
+        if (data.reference) copiedReference.current = data.reference
+        setDate(data.date || businessDate()); setDueDate(data.due_date ?? '')
+        setPaymentTerms(data.payment_terms ?? ''); setPlaceOfSupply(data.place_of_supply ?? '')
+        setReverseCharge(data.reverse_charge ?? null); setTaxMode(data.tax_mode ?? 'document')
+        setSupplyCategory(data.supply_category ?? ''); setSupplierNumber(data.supplier_invoice_number ?? '')
+        setNotes(data.notes ?? ''); setDiscountMode(data.discount_percentage != null ? 'percentage' : 'amount'); setDiscount(String(data.discount_percentage ?? data.discount ?? ''))
+        setCharges(data.charges ?? []); setTaxes(data.taxes ?? []); setAttachmentUrls(data.attachment_urls ?? [])
+        setPaymentAccountId(data.payment_account ? String(data.payment_account) : '')
+        setBillMode(data.line_items?.length ? 'detailed' : 'fast'); setFastAmount(String(data.total_amount ?? ''))
+        setLineItems((data.line_items?.length ? data.line_items : [{ name: '', quantity: 1, rate: 0, amount: 0 }]).map(item => ({ ...item, key: crypto.randomUUID() })))
+        setShowCharges(!!(data.charges?.length || data.taxes?.length || data.discount))
+        setOfflineDraftError('')
+      } catch (error) { if (!cancelled) setOfflineDraftError(error instanceof Error ? error.message : 'Could not open this draft.') }
+    }
+    void restore()
+    const stop = observeVault(() => { if (!cancelled && loadedOfflineDraft.current !== offlineDraftId) void restore() })
+    return () => { cancelled = true; stop() }
+  }, [offlineDraftId, docType, owner])
+
   // ── Totals ──────────────────────────────────────────────────────────────────
-  const lineTotal    = lineItems.reduce((s, l) => s + Number(l.amount), 0)
+  const lineTotal    = taxPreviewSubtotal(lineItems)
   const expenseTotal = expenseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-  const chargeTotal  = charges.reduce((s, c) => s + Number(c.amount), 0)
-  const discountAmt  = Number(discount) || 0
-  const taxBase      = lineTotal + chargeTotal - discountAmt
-  const taxTotal     = taxes.reduce((s, t) => s + (taxBase * Number(t.percentage) / 100), 0)
-  const grandTotal   = lineTotal + chargeTotal - discountAmt + taxTotal
+  const discountAmt  = discountMode === 'percentage' ? Math.round(lineTotal * (Number(discount) || 0)) / 100 : Number(discount) || 0
+  const taxPreview = useDocumentTotals({ type: docType as DocumentType, date, tax_mode: taxMode, line_items: lineItems, charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, supply_category: supplyCategory || null }, !isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType))
+  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : 0
+  function changeTaxMode(value: TaxMode) {
+    if (value === 'item') { setLineItems(rows => rows.map(row => ({ ...row, taxes: row.taxes ?? taxes }))); setTaxes([]) }
+    else setTaxes(lineItems.find(item => item.name.trim())?.taxes ?? [])
+    setTaxMode(value)
+  }
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (offlineDraftId && loadedOfflineDraft.current !== offlineDraftId) { toast.error('Load and review the local draft before creating it.'); return }
+    if (!isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && !taxPreview.ready) { toast.error('Wait for a valid total calculation before saving.'); return }
     if (CONTACT_REQUIRED.includes(docType) && !contactId) {
       toast.error('Select a contact'); return
     }
@@ -521,10 +596,16 @@ export function DocumentNewPage() {
       date,
       due_date:        dueDate      || undefined,
       payment_terms:   paymentTerms || undefined,
+      place_of_supply: placeOfSupply || undefined,
+      reverse_charge: reverseCharge,
+      tax_mode: isFastMode || docType === 'challan' ? 'document' : taxMode,
+      supply_category: supplyCategory || null,
+      supplier_invoice_number: supplierNumber || null,
       notes:           notes        || undefined,
       reference:       referenceId  ? Number(referenceId) : undefined,
       consignee:       consigneeId  ? Number(consigneeId) : undefined,
-      discount:        discountAmt,
+      discount:        discountMode === 'amount' ? Number(discount) || 0 : 0,
+      discount_percentage: !isFastMode && docType !== 'challan' && discountMode === 'percentage' ? Number(discount) || 0 : null,
       attachment_urls: attachmentUrls,
     }
 
@@ -549,13 +630,14 @@ export function DocumentNewPage() {
         payload.total_amount = fastAmount
         payload.line_items   = []
       } else {
+        if (lineItems.some(item => !item.name.trim() && (Number(item.amount) > 0 || Number(item.rate) > 0 || item.product_id))) { toast.error('Add a description for every item with a value or linked product.'); return }
         const validItems = lineItems.filter(l => l.name.trim())
         if (validItems.length === 0) { toast.error('Add at least one line item'); return }
         payload.line_items   = validItems.map(({ key, rate, amount, ...rest }) =>
           docType === 'challan' ? rest : { ...rest, rate, amount }
         )
         payload.charges      = charges.filter(c => c.name)
-        payload.taxes        = taxes.filter(t => t.name)
+        payload.taxes        = taxMode === 'item' ? [] : taxes.filter(t => t.name)
         payload.total_amount = grandTotal.toFixed(2)
       }
       if (showPaymentAccount && paymentAccountId) {
@@ -565,10 +647,11 @@ export function DocumentNewPage() {
 
     try {
       const doc = await createDocument.mutateAsync(payload)
+      if (offlineDraftId && loadedOfflineDraft.current === offlineDraftId) { try { await deleteOffline(offlineDraftId) } catch { toast.info('Document created. Remove the completed local draft from Offline files.') } }
       toast.success(`${getDocLabel(docType)} created`)
       router.replace(`/documents/${doc.id}`)
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? 'Failed to create document')
+      toast.error(apiError(e, 'Failed to create document'))
     }
   }
 
@@ -631,7 +714,7 @@ export function DocumentNewPage() {
         )}
 
         <SearchableSelect
-          options={refDocOptions}
+          resource="documents" resourceParams={{ type:selectedRefDocType, contact:contactId || undefined }} options={refDocOptions}
           value={referenceId}
           onChange={setReferenceId}
           placeholder={selectedRefDocType ? `Select ${getDocLabel(selectedRefDocType)}` : 'Select reference doc'}
@@ -707,7 +790,7 @@ export function DocumentNewPage() {
             : <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>}
         </Label>
         <SearchableSelect
-          options={contactOptions}
+          resource="contacts" options={contactOptions}
           value={contactId}
           onChange={setContactId}
           placeholder="Select contact"
@@ -767,7 +850,7 @@ export function DocumentNewPage() {
               <span className="text-xs text-muted-foreground ml-1 font-normal">optional — auto-fills contact</span>
             </Label>
             <SearchableSelect
-              options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
+              resource="documents" resourceParams={{contact:contactId || undefined}} options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
               placeholder="Link to an existing document" title="Select Document"
               searchPlaceholder="Search by doc ID, date..." clearable emptyText="No documents found"
             />
@@ -779,7 +862,7 @@ export function DocumentNewPage() {
               <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited</span>
             </Label>
             <SearchableSelect
-              options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+              resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
               placeholder="Select account" title="Select Payment Account"
               searchPlaceholder="Search accounts..." clearable
             />
@@ -835,7 +918,7 @@ export function DocumentNewPage() {
             <span className="mt-0.5">💡</span>
             <span>
               <strong>Charge</strong> = extra amount to be applied (late fee, penalty) ·{' '}
-              <strong>Discount</strong> = amount waived (early payment, goodwill)
+              <strong>Waiver</strong> = amount waived (early payment, goodwill)
             </span>
           </div>
 
@@ -882,7 +965,7 @@ export function DocumentNewPage() {
                       ${row.type === 'discount'
                         ? 'bg-green-50 border-green-300 text-green-600'
                         : 'bg-muted border-border text-muted-foreground'}`}>
-                    <TrendingDown className="h-3 w-3" /> Discount
+                    <TrendingDown className="h-3 w-3" /> Waiver
                   </button>
                 </div>
               </div>
@@ -892,7 +975,7 @@ export function DocumentNewPage() {
           {interestRows.some(r => Number(r.amount) > 0) && (
             <div className="rounded-xl border p-4 bg-muted/20 space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                CF Impact Preview
+                Balance adjustment
               </p>
               {interestRows.filter(r => r.name && Number(r.amount) > 0).map((r, i) => {
                 const amt    = Number(r.amount)
@@ -907,7 +990,7 @@ export function DocumentNewPage() {
                   <div key={i} className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       {r.name || 'Entry'}
-                      <Badge variant="outline" className="text-[10px] h-4">{r.type}</Badge>
+                      <Badge variant="outline" className="text-[10px] h-4">{r.type === 'charge' ? 'Charge' : 'Waiver'}</Badge>
                     </span>
                     <span className={isPos ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>
                       {isPos ? '+' : '−'}{fmtAmount(Math.abs(impact))}
@@ -917,7 +1000,7 @@ export function DocumentNewPage() {
               })}
               <Separator />
               <div className="flex justify-between items-center font-semibold text-sm">
-                <span>Net CF Change</span>
+                <span>Net adjustment</span>
                 <span className={interestCFImpact > 0 ? 'text-red-500' : 'text-green-600'}>
                   {interestCFImpact > 0 ? '+' : '−'}{fmtAmount(Math.abs(interestCFImpact))}
                 </span>
@@ -934,7 +1017,7 @@ export function DocumentNewPage() {
               <span className="text-xs text-muted-foreground ml-1 font-normal">optional — inherits contact if selected</span>
             </Label>
             <SearchableSelect
-              options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
+              resource="documents" resourceParams={{contact:contactId || undefined}} options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
               placeholder="Link to an existing document" title="Select Document"
               searchPlaceholder="Search by doc ID, date..." clearable emptyText="No documents found"
             />
@@ -952,7 +1035,7 @@ export function DocumentNewPage() {
 
       {/* FAST / DETAILED toggle */}
       {!isExpenseType && isFastBillType && (
-        <Tabs value={billMode} onValueChange={v => setBillMode(v as 'fast' | 'detailed')} className="w-full">
+        <Tabs value={billMode} onValueChange={v => { setBillMode(v as 'fast' | 'detailed'); if (v === 'fast' && taxMode === 'item') changeTaxMode('document') }} className="w-full">
           <TabsList className="w-full h-11 bg-muted/60 p-1 rounded-xl">
             <TabsTrigger value="fast"
               className="flex-1 h-full text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
@@ -989,7 +1072,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Consignee <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                resource="contacts" options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
                 placeholder="Select consignee" title="Select Consignee"
                 searchPlaceholder="Search contacts..." clearable
               />
@@ -1001,7 +1084,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
                 placeholder="Select account" title="Select Payment Account"
                 searchPlaceholder="Search accounts..." clearable
               />
@@ -1043,7 +1126,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Consignee <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                resource="contacts" options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
                 placeholder="Select consignee" title="Select Consignee"
                 searchPlaceholder="Search contacts..." clearable
               />
@@ -1080,7 +1163,7 @@ export function DocumentNewPage() {
                     </span>
                     {docType !== 'challan' && (
                       <SearchableSelect
-                        options={productOptions}
+                        resource="products" options={productOptions}
                         value={item.product_id ? String(item.product_id) : ''}
                         onChange={v => onProductSelect(item.key, v)}
                         placeholder="Product (optional)"
@@ -1150,6 +1233,8 @@ export function DocumentNewPage() {
                       className="h-9 rounded-lg text-xs text-muted-foreground"
                     />
                   )}
+                  {docType !== 'challan' && <ItemDiscount item={item} label={`item ${idx + 1}`} onChange={patch => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, ...patch } : row))} />}
+                  {taxMode === 'item' && docType !== 'challan' && <ItemTaxes label={`item ${idx + 1}`} taxes={item.taxes ?? []} category={item.supply_category} onCategory={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, supply_category: value } : row))} onChange={value => setLineItems(rows => rows.map(row => row.key === item.key ? { ...row, taxes: value } : row))} />}
                 </CardContent>
               </Card>
             ))}
@@ -1212,21 +1297,9 @@ export function DocumentNewPage() {
 
               <Separator />
 
-              {/* Discount */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Discount (flat ₹)
-                </Label>
-                <Input
-                  type="number" placeholder="0.00"
-                  value={discount} onChange={e => setDiscount(e.target.value)}
-                  className="h-10 rounded-lg text-sm font-semibold"
-                />
-              </div>
+              <DiscountInput mode={discountMode} value={discount} subtotal={lineTotal} onMode={setDiscountMode} onValue={setDiscount} />
 
-              <Separator />
-
-              {/* Taxes */}
+                  {/* Taxes */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1237,7 +1310,7 @@ export function DocumentNewPage() {
                     <Plus className="h-3 w-3" /> Add
                   </Button>
                 </div>
-                {taxes.map((t, i) => (
+                {taxMode === 'document' && taxes.map((t, i) => (
                   <div key={i} className="flex gap-2 items-center">
                     <Input placeholder="e.g. GST 18%, IGST..."
                       value={t.name} onChange={e => updateTax(i, 'name', e.target.value)}
@@ -1258,47 +1331,14 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Grand Total card */}
-          {docType !== 'challan' && (
-            <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
-              {lineTotal > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Items subtotal</span>
-                  <span className="font-medium">{fmtAmount(lineTotal)}</span>
-                </div>
-              )}
-              {chargeTotal > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Charges</span>
-                  <span className="font-medium">+ {fmtAmount(chargeTotal)}</span>
-                </div>
-              )}
-              {discountAmt > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Discount</span>
-                  <span className="font-medium text-green-600">− {fmtAmount(discountAmt)}</span>
-                </div>
-              )}
-              {taxTotal > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Tax</span>
-                  <span className="font-medium">+ {fmtAmount(taxTotal)}</span>
-                </div>
-              )}
-              {(chargeTotal > 0 || discountAmt > 0 || taxTotal > 0) && <Separator />}
-              <div className="flex justify-between items-center">
-                <span className="text-base font-bold">Grand Total</span>
-                <span className="text-xl font-black text-primary">{fmtAmount(grandTotal)}</span>
-              </div>
-            </div>
-          )}
+          {docType !== 'challan' && <DocumentTotalsSummary preview={taxPreview} />}
 
           {/* Payment account */}
           {showPaymentAccount && (
             <div className="space-y-1.5">
               <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
                 placeholder="Select account" title="Select Payment Account"
                 searchPlaceholder="Search accounts..." clearable
               />
@@ -1360,7 +1400,7 @@ export function DocumentNewPage() {
           <div className="space-y-1.5">
             <Label>Payment Account <span className="text-destructive">*</span></Label>
             <SearchableSelect
-              options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+              resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
               placeholder="Select account" title="Select Payment Account"
               searchPlaceholder="Search accounts..." clearable
             />
@@ -1377,6 +1417,9 @@ export function DocumentNewPage() {
       )}
 
       {/* ── SUBMIT BUTTON ─────────────────────────────────────────────────────── */}
+      {['bill', 'invoice', 'quotation', 'po', 'pi'].includes(docType) && <div className="rounded-xl border p-4 space-y-2"><p className="text-xs text-muted-foreground">Save an unposted draft on this device and continue later.</p><SaveOfflineButton kind="draft" label="Save local draft" existingId={restoredDraftId ?? undefined} load={async () => new Blob([JSON.stringify({ type: docType, contact: contactId ? Number(contactId) : undefined, consignee: consigneeId ? Number(consigneeId) : undefined, reference: referenceId ? Number(referenceId) : undefined, date, due_date: dueDate || undefined, payment_terms: paymentTerms || undefined, place_of_supply: placeOfSupply || undefined, reverse_charge: reverseCharge, tax_mode: isFastMode ? 'document' : taxMode, supply_category: supplyCategory || null, supplier_invoice_number: supplierNumber || null, notes, line_items: isFastMode ? [] : lineItems.map(item => ({ ...item, key: undefined })), taxes: taxMode === 'item' ? [] : taxes, charges, discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, total_amount: isFastMode ? fastAmount : undefined, payment_account: paymentAccountId ? Number(paymentAccountId) : undefined, attachment_urls: attachmentUrls })], { type: 'application/json' })} title={`${getDocLabel(docType)} draft · ${date}`} filename={`${docType}-draft.json`} /></div>}
+      {offlineDraftId && <div role={offlineDraftError ? 'alert' : 'status'} className="rounded-xl border p-4 text-sm">{offlineDraftError || 'Local draft loaded. Review the contact, items and accounting controls before creating it.'}{offlineDraftError && <a href="/offline" className="text-primary block mt-2">Unlock or review offline files</a>}</div>}
+      {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={!isFastMode && docType !== 'challan'} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
       <Button
         className="w-full h-14 rounded-2xl text-base font-bold shadow-lg shadow-primary/20 gap-2"
         disabled={isSubmitting}

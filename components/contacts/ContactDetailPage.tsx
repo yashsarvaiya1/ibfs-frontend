@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate, businessMonthRange } from '@/lib/businessDate'
+
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -37,7 +39,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ContactEditSheet }   from './ContactEditSheet'
 import { SendReceiveSheet }   from './SendReceiveSheet'
-import { computeOpeningBalanceAt, ContactLedger }      from './ContactLedger'
+import { ContactLedger }      from './ContactLedger'
 import { TransactionCard }    from '@/components/shared/TransactionCard'
 import { PrintSheet }         from '@/components/shared/PrintSheet'
 import { DOC_TYPE_LABELS }    from '@/models/document'
@@ -71,7 +73,8 @@ export function ContactDetailPage({ id }: Props) {
   const openDocSheet = useUIStore(s => s.openDocCreateSheet)
 
   const { data: contact, isLoading }                = useContact(id)
-  const { data: ledger, isLoading: loadingLedger } = useContactLedger(id, { page_size: 1000 })
+  const [listPage, setListPage] = useState(1)
+  const { data: ledger, isLoading: loadingLedger } = useContactLedger(id, { page_size: 25, page: listPage })
   const txns: FinancialTransaction[] = useMemo(() => {
     if (!ledger) return []
     return Array.isArray(ledger.results) ? ledger.results : []
@@ -85,6 +88,7 @@ export function ContactDetailPage({ id }: Props) {
   const [editOpen,   setEditOpen]   = useState(false)
   const [activeTab,  setActiveTab]  = useState<'ledger' | 'docs'>('ledger')
   const [ledgerView, setLedgerView] = useState<'ledger' | 'list'>('ledger')
+  const [ledgerDateRange, setLedgerDateRange] = useState({ from: '', to: '' })
 
   const [srSheet, setSrSheet] = useState<{ open: boolean; mode: 'send' | 'receive' }>({
     open: false, mode: 'send',
@@ -106,6 +110,10 @@ export function ContactDetailPage({ id }: Props) {
 
   const handleOpenPrintOptions = (view: 'ledger' | 'list') => {
     setPrintView(view)
+    if (view === 'ledger') {
+      setPrintDateFrom(ledgerDateRange.from)
+      setPrintDateTo(ledgerDateRange.to)
+    }
     setPrintOptionsOpen(true)
   }
 
@@ -151,22 +159,8 @@ export function ContactDetailPage({ id }: Props) {
     [accounts],
   )
 
-  const runningCF = useMemo(() => {
-    if (!contact) return 0
-    return computeRunningCF(Number(contact.opening_balance ?? 0), txns)
-  }, [contact, txns])
-
-  const txnsWithRunningCF = useMemo(() => {
-    const sorted = [...txns].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    )
-    let running = Number(contact?.opening_balance ?? 0)
-    return sorted.map(txn => {
-      const affectsCF = txn.document_type !== 'expense' && txn.type !== 'contra'
-      if (affectsCF) running += Number(txn.amount)
-      return { ...txn, runningCf: running }
-    })
-  }, [txns, contact])
+  const runningCF = Number(contact?.current_cf ?? 0)
+  const txnsWithRunningCF = txns.map(txn => ({ ...txn, runningCf: Number(txn.running_cf ?? 0) }))
 
   // ── Print query params — built from selections in print options sheet ───────
   const printQueryParams = useMemo(() => {
@@ -181,17 +175,6 @@ export function ContactDetailPage({ id }: Props) {
     //   the single source of truth and handles both intra/cross-month correctly
     return p
   }, [id, printDateFrom, printDateTo])
-
-  // Label for how many txns match date range (client-side estimate)
-  const filteredTxnCount = useMemo(() => {
-    if (!printDateFrom && !printDateTo) return txns.length
-    return txns.filter(t => {
-      const d = new Date(t.date)
-      if (printDateFrom && d < new Date(printDateFrom)) return false
-      if (printDateTo   && d > new Date(printDateTo))   return false
-      return true
-    }).length
-  }, [txns, printDateFrom, printDateTo])
 
   const accountOptions: SearchableSelectOption[] = [
     { value: '', label: 'None', sublabel: 'No account' },
@@ -281,9 +264,9 @@ export function ContactDetailPage({ id }: Props) {
             )}
           </div>
 
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 bg-muted/50 -mr-2 shrink-0">
+              <Button aria-label="Contact actions" variant="ghost" size="icon" className="h-9 w-9 bg-muted/50 -mr-2 shrink-0">
                 <MoreVertical className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
@@ -433,9 +416,10 @@ export function ContactDetailPage({ id }: Props) {
                       variant="outline"
                       size="icon"
                       className="h-8 w-8 rounded-lg"
-                      disabled={txns.length === 0}
+                      disabled={loadingLedger}
                       onClick={() => handleOpenPrintOptions(ledgerView)}
                       title={ledgerView === 'ledger' ? 'Print Ledger' : 'Print PDF'}
+                      aria-label={ledgerView === 'ledger' ? 'Print Ledger' : 'Print PDF'}
                     >
                       <Printer className="h-3.5 w-3.5" />
                     </Button>
@@ -471,12 +455,14 @@ export function ContactDetailPage({ id }: Props) {
                 {/* Ledger View */}
                 {ledgerView === 'ledger' && (
                   <ContactLedger
-                    transactions={txns}
+                  onRangeChange={setLedgerDateRange}
+                    contactId={id}
                     openingBalance={Number(contact.opening_balance ?? 0)}
                     onEditTxn={handleEditTxn}
                   />
                 )}
 
+                {ledgerView === 'list' && ledger && ledger.total_pages > 1 && <div className="flex justify-between items-center"><Button variant="outline" disabled={!ledger.previous} onClick={() => setListPage(p => p-1)}>Previous</Button><span className="text-sm">Page {listPage} of {ledger.total_pages}</span><Button variant="outline" disabled={!ledger.next} onClick={() => setListPage(p => p+1)}>Next</Button></div>}
                 {/* List View */}
                 {ledgerView === 'list' && (
                   <div className="space-y-2">
@@ -563,7 +549,7 @@ export function ContactDetailPage({ id }: Props) {
                 className="w-full h-11 rounded-xl font-bold mt-2"
                 onClick={() => router.push(`/documents?contact=${id}`)}
               >
-                View All {docs.length} Documents
+                View All {docsData?.count ?? docs.length} Documents
               </Button>
             )}
           </TabsContent>
@@ -633,7 +619,7 @@ export function ContactDetailPage({ id }: Props) {
                   <label className="text-xs font-semibold text-muted-foreground">From</label>
                   <input
                     type="date"
-                    value={printDateFrom}
+                    aria-label="Print from date" value={printDateFrom}
                     onChange={e => setPrintDateFrom(e.target.value)}
                     className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
@@ -642,7 +628,7 @@ export function ContactDetailPage({ id }: Props) {
                   <label className="text-xs font-semibold text-muted-foreground">To</label>
                   <input
                     type="date"
-                    value={printDateTo}
+                    aria-label="Print to date" value={printDateTo}
                     onChange={e => setPrintDateTo(e.target.value)}
                     className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
@@ -658,10 +644,7 @@ export function ContactDetailPage({ id }: Props) {
               {/* Transaction count estimate */}
               {!printDateRangeInvalid && (
                 <p className="text-[11px] text-muted-foreground mt-2 ml-1">
-                  {printDateFrom || printDateTo
-                    ? `~${filteredTxnCount} transaction${filteredTxnCount !== 1 ? 's' : ''} in range`
-                    : `All ${txns.length} transactions will be included`
-                  }
+                  All entries in the selected date range will be included, across every page.
                 </p>
               )}
             </div>
@@ -675,21 +658,18 @@ export function ContactDetailPage({ id }: Props) {
                 {[
                   {
                     label: 'This Month',
-                    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-                      .toISOString().split('T')[0],
-                    to: new Date().toISOString().split('T')[0],
+                    from: businessMonthRange().from,
+                    to: businessDate(),
                   },
                   {
                     label: 'Last Month',
-                    from: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
-                      .toISOString().split('T')[0],
-                    to: new Date(new Date().getFullYear(), new Date().getMonth(), 0)
-                      .toISOString().split('T')[0],
+                    from: businessMonthRange(-1).from,
+                    to: businessMonthRange(-1).to,
                   },
                   {
                     label: 'This Year',
                     from: `${new Date().getFullYear()}-01-01`,
-                    to: new Date().toISOString().split('T')[0],
+                    to: businessDate(),
                   },
                   {
                     label: 'Last Year',
@@ -739,15 +719,11 @@ export function ContactDetailPage({ id }: Props) {
             <Button
               className="flex-1 h-12 rounded-2xl font-bold shadow-md shadow-primary/20 gap-2"
               onClick={handleGeneratePrint}
-              disabled={printDateRangeInvalid || filteredTxnCount === 0}
+              disabled={printDateRangeInvalid}
             >
               <Printer className="h-4 w-4" />
               Generate PDF
-              {filteredTxnCount > 0 && (
-                <span className="ml-1 bg-primary-foreground/20 text-primary-foreground text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                  {filteredTxnCount}
-                </span>
-              )}
+
             </Button>
           </div>
         </SheetContent>
@@ -830,7 +806,7 @@ export function ContactDetailPage({ id }: Props) {
                 </div>
                 <p className={cn(
                   'text-lg font-black shrink-0',
-                  Number(editTxn.amount) >= 0 ? 'text-red-600' : 'text-emerald-600',
+                  Number(editTxn.amount) < 0 ? 'text-red-600' : 'text-emerald-600',
                 )}>
                   {Number(editTxn.amount) >= 0 ? '+' : ''}
                   {fmtAmount(editTxn.amount)}
@@ -852,7 +828,7 @@ export function ContactDetailPage({ id }: Props) {
                   <Label>
                     Amount
                     <span className="text-[10px] text-muted-foreground ml-2 font-normal uppercase tracking-wider">
-                      ({Number(editTxn.amount) >= 0 ? 'outgoing / Dr' : 'incoming / Cr'} — sign preserved)
+                      ({Number(editTxn.amount) < 0 ? 'Outgoing' : 'Incoming'} — sign preserved)
                     </span>
                   </Label>
                   <Input
@@ -875,7 +851,7 @@ export function ContactDetailPage({ id }: Props) {
                 <div className="space-y-1.5">
                   <Label>Payment Account</Label>
                   <SearchableSelect
-                    options={accountOptions}
+                    resource="accounts" options={accountOptions}
                     value={txnAccountId}
                     onChange={setTxnAccountId}
                     placeholder="Select account"

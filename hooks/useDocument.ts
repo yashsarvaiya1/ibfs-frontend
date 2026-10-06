@@ -53,6 +53,7 @@ export function useCreateDocument() {
   return useMutation({
     mutationFn: (data: DocumentCreate) => documentService.create(data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
       qc.invalidateQueries({ queryKey: ['contacts'] })
@@ -66,10 +67,15 @@ export function useUpdateDocument(id: number) {
   return useMutation({
     mutationFn: (data: DocumentUpdate) => documentService.update(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(id) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: stockPreviewKey(id) })
       qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
     },
   })
 }
@@ -80,6 +86,7 @@ export function useMarkPaid(docId: number) {
   return useMutation({
     mutationFn: (data: MarkPaidPayload) => documentService.markPaid(docId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
     },
@@ -91,6 +98,7 @@ export function useRecordPayment(docId: number) {
   return useMutation({
     mutationFn: (data: RecordPaymentPayload) => documentService.recordPayment(docId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
@@ -105,6 +113,7 @@ export function useMoveStock(docId: number) {
   return useMutation({
     mutationFn: (data: MoveStockPayload) => documentService.moveStock(docId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: stockPreviewKey(docId) })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
@@ -120,6 +129,7 @@ export function useAddDetails(docId: number) {
     mutationFn: (line_items: DocumentCreate['line_items']) =>
       documentService.addDetails(docId, { line_items: line_items ?? [] }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: stockPreviewKey(docId) })
       qc.invalidateQueries({ queryKey: ['products'] })
@@ -132,6 +142,7 @@ export function useDeleteDocument(docId: number) {
   return useMutation({
     mutationFn: (data: DeleteDocumentPayload) => documentService.deleteDocument(docId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })

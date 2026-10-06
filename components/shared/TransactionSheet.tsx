@@ -1,8 +1,12 @@
 'use client'
 
+import { PaymentAdjustmentType } from './PaymentAdjustmentType'
+
+import { businessDate } from '@/lib/businessDate'
+
 import { useState, useEffect, useMemo } from 'react'
 import { useUIStore } from '@/stores/uiStore'
-import { useAccounts } from '@/hooks/useAccount'
+import { useAccounts, useAccount } from '@/hooks/useAccount'
 import { useContacts, useSend, useReceive } from '@/hooks/useContact'
 import { useDocuments } from '@/hooks/useDocument'
 import { useSettings } from '@/hooks/useSettings'
@@ -59,13 +63,11 @@ function InterestLinesModal({
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[80vh] overflow-y-auto">
         <SheetHeader className="mb-4">
-          <SheetTitle className="text-left">Interest / Adjustment</SheetTitle>
+          <SheetTitle className="text-left">Charges & waivers</SheetTitle>
         </SheetHeader>
 
         <p className="text-xs text-muted-foreground mb-3">
-          {mainMode === 'receive'
-            ? 'Actual is positive — Interest record will be negative (reduces balance).'
-            : 'Actual is negative — Interest record will be positive (increases balance).'}
+          Charges increase the amount due; waivers reduce it. The money {mainMode === 'receive' ? 'received' : 'paid'} stays the amount you enter.
         </p>
 
         <div className="space-y-2 mb-4">
@@ -73,7 +75,7 @@ function InterestLinesModal({
             <div key={i} className="flex items-center gap-2">
               <Input
                 className="flex-1"
-                placeholder="Name (e.g. Interest)"
+                placeholder="Reason (e.g. Late fee)"
                 value={line.name}
                 onChange={e => updateLine(i, { name: e.target.value })}
               />
@@ -85,19 +87,7 @@ function InterestLinesModal({
                 value={line.amount}
                 onChange={e => updateLine(i, { amount: e.target.value })}
               />
-              <button
-                type="button"
-                onClick={() =>
-                  updateLine(i, { type: line.type === 'charge' ? 'discount' : 'charge' })
-                }
-                className={`text-[11px] font-semibold px-2 py-1 rounded-lg border shrink-0 transition-colors ${
-                  line.type === 'charge'
-                    ? 'bg-red-50 border-red-200 text-red-600'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-600'
-                }`}
-              >
-                {line.type === 'charge' ? 'Charge' : 'Discount'}
-              </button>
+              <PaymentAdjustmentType label={`Adjustment type ${i + 1}`} value={line.type} onChange={type => updateLine(i, { type })} />
               <button type="button" onClick={() => removeLine(i)}>
                 <Trash2 className="h-4 w-4 text-muted-foreground" />
               </button>
@@ -111,9 +101,9 @@ function InterestLinesModal({
 
         {lines.length > 0 && (
           <div className="flex justify-between text-sm font-semibold border-t pt-3 mb-4">
-            <span>Net Interest Record</span>
+            <span>{net >= 0 ? 'Net charge' : 'Net waiver'}</span>
             <span className={net >= 0 ? 'text-red-500' : 'text-emerald-600'}>
-              {net >= 0 ? '+' : ''}{fmtAmount(net)}
+              {fmtAmount(Math.abs(net))}
             </span>
           </div>
         )}
@@ -245,7 +235,7 @@ export function TransactionSheet() {
   const autoTransaction = settings?.auto_transaction ?? true   // used for display info if needed
   const enableVouchers  = settings?.enable_vouchers  ?? false
 
-  const selectedAccount = accounts?.results.find(a => a.id.toString() === accountId)
+  const { data: selectedAccount } = useAccount(Number(accountId))
   const isCashAccount   = selectedAccount?.type === 'cash'
   const voucherMode     = enableVouchers && isCashAccount && !isExpense
 
@@ -302,7 +292,7 @@ export function TransactionSheet() {
     setAddInterest(false)
     setInterestLines([])
     setExpenseLines([{ name: '', amount: '' }])
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(businessDate())
 
     if (transactionSheetContactId && allContacts) {
       const c = allContacts.results.find(c => c.id === transactionSheetContactId)
@@ -519,7 +509,7 @@ export function TransactionSheet() {
             <div className="space-y-1.5">
               <Label>Account <span className="text-destructive">*</span></Label>
               <SearchableSelect
-                options={accountOptions}
+                resource="accounts" options={accountOptions}
                 value={accountId}
                 onChange={setAccountId}
                 placeholder="Select account"
@@ -548,16 +538,16 @@ export function TransactionSheet() {
               )
             }
 
-            {/* ── Interest / Adjustment toggle ─────────────────────────────── */}
+            {/* ── Charges & waivers toggle ─────────────────────────────── */}
             {!isExpense && (
               <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40">
                 <div>
-                  <p className="text-sm font-medium">Add Interest / Adjustment</p>
+                  <p className="text-sm font-medium">Charges & waivers</p>
                   {addInterest && interestNet !== 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Net:{' '}
+                      {interestNet > 0 ? 'Net charge: ' : 'Net waiver: '}
                       <span className={interestNet > 0 ? 'text-red-500' : 'text-emerald-600'}>
-                        {interestNet > 0 ? '+' : ''}{fmtAmount(interestNet)}
+                        {fmtAmount(Math.abs(interestNet))}
                       </span>
                     </p>
                   )}
@@ -573,6 +563,7 @@ export function TransactionSheet() {
                     </button>
                   )}
                   <Switch
+                    aria-label="Charges & waivers"
                     checked={addInterest}
                     onCheckedChange={(v) => {
                       setAddInterest(v)
@@ -593,23 +584,7 @@ export function TransactionSheet() {
                   Link Document
                   <span className="text-xs text-muted-foreground ml-1">(optional)</span>
                 </Label>
-                {docGroups.length > 0 ? (
-                  <SearchableSelect
-                    options={[]}
-                    groups={docGroups}
-                    value={selectedDocId}
-                    onChange={setSelectedDocId}
-                    placeholder="Link a document..."
-                    title="Select Document"
-                    searchPlaceholder="Search by type or ID..."
-                    clearable
-                  />
-                ) : (
-                  <div className="flex items-center gap-2 p-3 rounded-xl border border-dashed text-muted-foreground text-sm">
-                    <FileText className="h-4 w-4 shrink-0" />
-                    No documents for this contact
-                  </div>
-                )}
+                <SearchableSelect resource="documents" resourceParams={{contact:contactId, type:'bill,invoice,cn,dn'}} options={[]} value={selectedDocId} onChange={setSelectedDocId} placeholder="Link a document…" title="Select document" clearable />
               </div>
             )}
 

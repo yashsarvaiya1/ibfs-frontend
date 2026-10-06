@@ -1,4 +1,16 @@
 export interface Settings {
+  company_name: string
+  company_address: string
+  company_phone: string
+  company_email: string
+  company_gstin: string
+  payment_details: string
+  print_terms: string
+  signatory_name: string
+  print_template: 'classic' | 'modern'
+  letterhead_mode: 'banner' | 'page'
+  letterhead_height_mm: number
+  letterhead_footer_mm: number
   id:                 number
   header_image:       string | null
   sign_image:         string | null
@@ -17,6 +29,18 @@ export interface Settings {
 }
 
 export interface SettingsUpdate {
+  company_name?: string
+  company_address?: string
+  company_phone?: string
+  company_email?: string
+  company_gstin?: string
+  payment_details?: string
+  print_terms?: string
+  signatory_name?: string
+  print_template?: 'classic' | 'modern'
+  letterhead_mode?: 'banner' | 'page'
+  letterhead_height_mm?: number
+  letterhead_footer_mm?: number
   header_image?:      string | null 
   sign_image?:        string | null
   auto_stock?:        boolean

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import {
   useTransactions,
+  useTransaction,
   useDeleteTransaction,
 } from '@/hooks/useTransaction'
 import { useContact, useContacts } from '@/hooks/useContact'
@@ -142,6 +143,9 @@ export function TransactionsPage() {
   }, [setPageTitle])
 
   const searchParams = useSearchParams()
+  const reviewId = Number(searchParams.get('review_payment')) || 0
+  const reviewPayment = useTransaction(reviewId)
+  const [dismissedReview, setDismissedReview] = useState(0)
   const urlContactId = searchParams.get('contact')
   const urlAccountId = searchParams.get('account')
 
@@ -705,11 +709,11 @@ export function TransactionsPage() {
 
       {/* edit sheet */}
       <EditTransactionSheet
-        txn={editTxn}
-        open={!!editTxn && !confirmDel}
-        onClose={() => setEditTxn(null)}
+        txn={editTxn ?? (dismissedReview !== reviewId && reviewPayment.data?.type === 'actual' ? reviewPayment.data : null)}
+        open={!!(editTxn ?? (dismissedReview !== reviewId && reviewPayment.data?.type === 'actual' ? reviewPayment.data : null)) && !confirmDel}
+        onClose={() => { setEditTxn(null); setDismissedReview(reviewId) }}
         contactId={urlContactId ? Number(urlContactId) : undefined} 
-        onDelete={() => setConfirmDel(true)}
+        onDelete={() => { if (!editTxn && reviewPayment.data) setEditTxn(reviewPayment.data); setConfirmDel(true) }}
       />
 
       {/* delete confirm */}
@@ -913,7 +917,7 @@ export function TransactionsPage() {
                 Contact
               </p>
               <SearchableSelect
-                options={contactOptions}
+                resource="contacts" options={contactOptions}
                 value={stagedContact}
                 onChange={setStagedContact}
                 placeholder="All contacts"
@@ -936,7 +940,7 @@ export function TransactionsPage() {
                 Payment Account
               </p>
               <SearchableSelect
-                options={accountOptions}
+                resource="accounts" options={accountOptions}
                 value={stagedAccount}
                 onChange={setStagedAccount}
                 placeholder="All accounts"

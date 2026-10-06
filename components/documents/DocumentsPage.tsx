@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -27,7 +29,7 @@ import {
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { env } from 'next-runtime-env'
+import api, { getApiBase } from '@/lib/axios'
 import { toast } from 'sonner'
 import type { Settings } from '@/models/settings'
  
@@ -39,7 +41,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 20
 
 const BASE_TYPE_OPTIONS: { label: string; value: string }[] = [
   { label: 'Bills',    value: 'bill' },
@@ -86,10 +88,6 @@ const PAYMENT_FILTERS = [
   { label: 'Due',     value: 'due' },
 ] as const
 
-function getApiBase(): string {
-  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
-  return raw.replace(/\/$/, '')
-}
 
 function countActiveFilters(opts: {
   selectedTypes:  string[]
@@ -174,15 +172,7 @@ function DocPrintSheet({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(url, {
-        method,
-        credentials: 'include',
-        ...(method === 'POST' && fetchBody
-          ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fetchBody) }
-          : {}),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
+      const { data: blob } = await api.request<Blob>({ url, method, data: fetchBody, responseType: 'blob' })
       setBlobUrl(URL.createObjectURL(blob))
     } catch (err) {
       console.error('Doc PDF error:', err)
@@ -212,7 +202,7 @@ function DocPrintSheet({
     if (!blobUrl) return
     const a    = document.createElement('a')
     a.href     = blobUrl
-    a.download = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`
+    a.download = `${title.replace(/\s+/g, '_')}_${businessDate()}.pdf`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -280,7 +270,7 @@ function DocPrintSheet({
                 <Page
                   pageNumber={pageNumber}
                   width={baseWidth}
-                  renderTextLayer={false}
+                  renderTextLayer={true}
                   renderAnnotationLayer={false}
                   onRenderSuccess={onPageRenderSuccess}
                   onRenderError={err => setError(`Page error: ${err.message}`)}
@@ -359,6 +349,7 @@ export function DocumentsPage() {
   // ── URL params ─────────────────────────────────────────────────────────────
   const urlContact = searchParams.get('contact')
   const urlType    = searchParams.get('type')
+  const urlReference = searchParams.get('reference')
 
   // ── Applied filters ────────────────────────────────────────────────────────
   const [page,          setPage]          = useState(1)
@@ -485,6 +476,7 @@ export function DocumentsPage() {
       ordering:  '-date,-created_at',
       page,
       page_size: PAGE_SIZE,
+      reference: urlReference ? Number(urlReference) : undefined,
     }
 
     // ── Multi-type: comma-separated → backend uses type__in ──────────────────
@@ -494,7 +486,7 @@ export function DocumentsPage() {
     if (dateFrom) p.date_from = dateFrom
     if (dateTo)   p.date_to   = dateTo
 
-    // Partial is handled client-side; paid/unpaid go to backend
+    if (paymentFilter) p.payment_status = paymentFilter
     if (paymentFilter === 'paid')   p.is_paid = 'true'
     if (paymentFilter === 'unpaid') p.is_paid = 'false'
     // Bug #4: due filter — backend handles via is_due=true
@@ -503,7 +495,7 @@ export function DocumentsPage() {
     return p
   }, [
     search, filterContact, showDeleted, selectedTypes,
-    dateFrom, dateTo, paymentFilter, page,
+    dateFrom, dateTo, paymentFilter, page, urlReference,
   ])
 
   const { data, isLoading } = useDocuments(queryParams)
@@ -513,20 +505,7 @@ export function DocumentsPage() {
   const hasPrev    = page > 1
   const hasNext    = page < totalPages
 
-  // Client-side partial filter (only applied on current page results)
-  const docs = useMemo(() => {
-    if (paymentFilter !== 'partial') return allDocs
-    return allDocs.filter(doc => {
-      if (!HAS_BALANCE.has(doc.type)) return false
-      const ps = doc.payment_status
-      if (!ps)  return false
-      const isPaid = doc.is_paid || ps.is_paid
-      if (isPaid)  return false
-      const rem   = Number(ps.remaining)
-      const total = Number(doc.total_amount)
-      return rem > 0 && rem < total
-    })
-  }, [allDocs, paymentFilter])
+  const docs = allDocs
 
   // ── Counts ─────────────────────────────────────────────────────────────────
   const activeFilterCount = countActiveFilters({
@@ -554,6 +533,7 @@ export function DocumentsPage() {
     // so backend's filter_queryset() picks them up exactly like the list view
     const params = new URLSearchParams()
 
+    if (urlReference) params.set('reference', urlReference)
     if (search)        params.set('search', search)
     if (filterContact) params.set('contact', filterContact)
 
@@ -566,6 +546,7 @@ export function DocumentsPage() {
     if (dateFrom) params.set('date_from', dateFrom)
     if (dateTo)   params.set('date_to', dateTo)
 
+    if (paymentFilter) params.set('payment_status', paymentFilter)
     if (paymentFilter === 'paid')   params.set('is_paid', 'true')
     if (paymentFilter === 'unpaid') params.set('is_paid', 'false')
     if (paymentFilter === 'due')    params.set('is_due',  'true')
@@ -574,7 +555,7 @@ export function DocumentsPage() {
     return qs ? `${base}?${qs}` : base
   }, [
     selectedDocIds, search, filterContact, showDeleted,
-    selectedTypes, dateFrom, dateTo, paymentFilter,
+    selectedTypes, dateFrom, dateTo, paymentFilter, urlReference,
   ])
   const bulkPrintBody = isAllPagesSelected || selectedDocIds.length === 0
   ? {}
@@ -826,8 +807,24 @@ export function DocumentsPage() {
         </div>
       )}
 
+      {!isLoading && docs.length > 0 && <div className="hidden lg:block px-4">
+        <div className="overflow-x-auto rounded-xl border bg-card"><table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground"><tr>{isSelectMode && <th className="p-3">Select</th>}<th className="p-3 text-left">Document</th><th className="p-3 text-left">Contact</th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Status</th><th className="p-3 text-right">Amount</th><th className="p-3 text-right">Remaining</th><th className="p-3 text-right">Actions</th></tr></thead>
+          <tbody className="divide-y">{docs.map(doc => {
+            const paid = doc.is_paid || doc.payment_status?.is_paid
+            return <tr key={doc.id} className="hover:bg-muted/20">
+              {isSelectMode && <td className="p-3"><button aria-label={`Select ${doc.doc_id}`} aria-pressed={isAllPagesSelected || selectedDocIds.includes(doc.id)} onClick={event=>toggleDocSelect(doc.id,event)}>{isAllPagesSelected || selectedDocIds.includes(doc.id) ? '✓' : '○'}</button></td>}
+              <td className="p-3"><button className="font-semibold text-primary hover:underline" onClick={()=>router.push(`/documents/${doc.id}`)}>{doc.doc_id}</button><p className="text-xs text-muted-foreground">{DOC_TYPE_LABELS[doc.type]}</p></td>
+              <td className="p-3">{doc.contact_name || '—'}</td><td className="p-3 whitespace-nowrap">{fmtDate(doc.date)}</td>
+              <td className="p-3"><Badge variant="outline">{!doc.is_active ? 'Archived' : !doc.payment_status ? 'Open' : paid ? 'Paid' : doc.due_date && doc.due_date < businessDate() ? 'Overdue' : Number(doc.payment_status.remaining) < Number(doc.total_amount) ? 'Partial' : 'Unpaid'}</Badge></td>
+              <td className="p-3 text-right tabular-nums">{fmtAmount(doc.total_amount)}</td><td className="p-3 text-right tabular-nums">{doc.payment_status ? fmtAmount(doc.payment_status.remaining) : '—'}</td>
+              <td className="p-3 text-right"><Button variant="ghost" size="sm" onClick={()=>router.push(`/documents/${doc.id}/print`)}>Print</Button>{doc.is_active && <Button variant="ghost" size="sm" onClick={()=>router.push(`/documents/${doc.id}/edit`)}>Edit</Button>}</td>
+            </tr>
+          })}</tbody>
+        </table></div>
+      </div>}
       {/* ── Document list ────────────────────────────────────────────────────── */}
-      <div className="px-4 space-y-2.5">
+      <div className="px-4 space-y-2.5 lg:hidden">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-24 rounded-xl" />
@@ -861,7 +858,7 @@ export function DocumentsPage() {
               <Card
                 key={doc.id}
                 className={cn(
-                  'cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
+                  'py-0 cursor-pointer active:scale-[0.99] transition-all rounded-xl shadow-sm',
                   !doc.is_active
                     ? 'opacity-70 bg-muted/40 border-dashed'
                     : isSelected
@@ -912,7 +909,7 @@ export function DocumentsPage() {
                           <AlertCircle className="h-2.5 w-2.5" /> Unpaid
                         </span>
                       )}
-                      {hasBalance && !isPaid && doc.due_date && new Date(doc.due_date) < new Date() && (
+                      {hasBalance && !isPaid && doc.due_date && doc.due_date < businessDate() && (
                         <span className="flex items-center gap-0.5 text-[10px] font-semibold text-red-700 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded-md shrink-0">
                           <AlertCircle className="h-2.5 w-2.5" /> Due
                         </span>
@@ -1094,7 +1091,7 @@ export function DocumentsPage() {
                 Contact
               </p>
               <SearchableSelect
-                options={contactOptions}
+                resource="contacts" options={contactOptions}
                 value={stagedContact}
                 onChange={setStagedContact}
                 placeholder="All contacts"

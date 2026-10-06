@@ -1,18 +1,39 @@
 {
-  "name": "IBFS — Integrated Business Finance System",
+  "name": "IBFS \u2014 Integrated Business Finance System",
   "short_name": "IBFS",
   "description": "Accounting and inventory management",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0a0a0a",
-  "orientation": "portrait",
   "icons": [
-  {
-    "src": "/logo.svg",
-    "sizes": "192x192 512x512", 
-    "type": "image/svg+xml", 
-    "purpose": "any maskable" 
-  }
-]
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "scope": "/",
+  "id": "/",
+  "shortcuts": [
+    {
+      "name": "Offline files & drafts",
+      "url": "/offline"
+    },
+    {
+      "name": "Documents",
+      "url": "/documents"
+    },
+    {
+      "name": "Reports & CA exports",
+      "url": "/reports"
+    }
+  ]
 }

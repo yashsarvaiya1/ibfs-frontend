@@ -15,6 +15,7 @@ interface UploadInputProps {
   maxFiles?:  number
   disabled?:  boolean
   onPreview?: (index: number) => void
+  accept?: string
 }
 
 export function UploadInput({
@@ -24,6 +25,7 @@ export function UploadInput({
   maxFiles = 10,
   disabled = false,
   onPreview,
+  accept = 'image/jpeg,image/png,image/webp,application/pdf',
 }: UploadInputProps) {
   const fileInputRef   = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -145,7 +147,7 @@ export function UploadInput({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,application/pdf"
+            accept={accept}
             multiple
             className="hidden"
             onChange={e => handleFiles(e.target.files)}

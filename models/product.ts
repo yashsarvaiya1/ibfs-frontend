@@ -45,6 +45,7 @@ export interface SetStockPayload {
 
 // Response from GET /products/{id}/pending_moves/
 export interface PendingMove {
+  direction?: 'in' | 'out'
   document_id: number
   doc_id: string
   doc_type: string

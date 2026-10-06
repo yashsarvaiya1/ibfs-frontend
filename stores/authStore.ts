@@ -1,67 +1,31 @@
-// stores/authStore.ts
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 interface AuthState {
-  isAuthenticated: boolean
-  username: string | null
-  credentials: string | null  // btoa(user:pass) only — raw password never stored
-  _hasHydrated: boolean
-  login: (username: string, password: string) => void
-  logout: () => void
-  setHasHydrated: (value: boolean) => void
+  isAuthenticated:boolean
+  username:string | null
+  csrfToken:string | null
+  _hasHydrated:boolean
+  login:(username:string, csrfToken?:string)=>void
+  logout:()=>void
+  setCsrfToken:(token:string)=>void
+  setHasHydrated:(value:boolean)=>void
 }
-
-// SSR-safe wrapper — sessionStorage doesn't exist during Next.js server render
 const safeSessionStorage = {
-  getItem: (name: string): string | null => {
-    if (typeof window === 'undefined') return null
-    return sessionStorage.getItem(name)
-  },
-  setItem: (name: string, value: string): void => {
-    if (typeof window === 'undefined') return
-    sessionStorage.setItem(name, value)
-  },
-  removeItem: (name: string): void => {
-    if (typeof window === 'undefined') return
-    sessionStorage.removeItem(name)
-  },
+  getItem:(name:string)=>typeof window==='undefined' ? null : sessionStorage.getItem(name),
+  setItem:(name:string,value:string)=>{if(typeof window!=='undefined')sessionStorage.setItem(name,value)},
+  removeItem:(name:string)=>{if(typeof window!=='undefined')sessionStorage.removeItem(name)},
 }
-
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      isAuthenticated: false,
-      username: null,
-      credentials: null,
-      _hasHydrated: false,
-
-      login: (username, password) => {
-        const credentials = btoa(`${username}:${password}`)
-        set({ isAuthenticated: true, username, credentials })
-      },
-
-      logout: () => {
-        set({ isAuthenticated: false, username: null, credentials: null })
-      },
-
-      setHasHydrated: (value) => set({ _hasHydrated: value }),
-    }),
-    {
-      name: 'ibfs-auth',
-      storage: createJSONStorage(() => safeSessionStorage),
-      // _hasHydrated is a runtime flag — never write it to sessionStorage
-      partialize: (state) => ({
-        isAuthenticated: state.isAuthenticated,
-        username: state.username,
-        credentials: state.credentials,
-      }),
-      onRehydrateStorage: () => (state) => {
-        // Fires after sessionStorage is read and state is merged
-        state?.setHasHydrated(true)
-      },
-    }
-  )
-)
-
-export const selectCredentials = (state: AuthState) => state.credentials
+export const useAuthStore = create<AuthState>()(persist(set=>({
+  isAuthenticated:false,username:null,csrfToken:null,_hasHydrated:false,
+  login:(username,csrfToken)=>set({isAuthenticated:true,username,...(csrfToken ? {csrfToken} : {})}),
+  logout:()=>set({isAuthenticated:false,username:null,csrfToken:null}),
+  setCsrfToken:csrfToken=>set({csrfToken}),
+  setHasHydrated:_hasHydrated=>set({_hasHydrated}),
+}),{
+  name:'ibfs-auth',version:2,storage:createJSONStorage(()=>safeSessionStorage),
+  partialize:state=>({isAuthenticated:state.isAuthenticated,username:state.username}),
+  // Discard legacy Base64 passwords when upgrading the web app.
+  migrate:()=>({isAuthenticated:false,username:null}),
+  onRehydrateStorage:()=>state=>state?.setHasHydrated(true),
+}))

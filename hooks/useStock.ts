@@ -29,6 +29,7 @@ export function useUpdateStockTransaction(id: number) {
   return useMutation({
     mutationFn: (data: StockTransactionUpdatePayload) => stockService.update(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: stockTxnKey(id) })
       qc.invalidateQueries({ queryKey: STOCK_KEY })
       qc.invalidateQueries({ queryKey: ['products'] })
@@ -41,6 +42,7 @@ export function useDeleteStockTransaction(id: number) {
   return useMutation({
     mutationFn: () => stockService.delete(id),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: STOCK_KEY })
       qc.invalidateQueries({ queryKey: ['products'] })
     },
@@ -52,6 +54,7 @@ export function useGlobalAdjustStock() {
   return useMutation({
     mutationFn: (data: GlobalAdjustStockPayload) => stockService.adjust(data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: STOCK_KEY })
       qc.invalidateQueries({ queryKey: ['products'] })
     },

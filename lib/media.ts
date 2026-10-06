@@ -1,22 +1,13 @@
 // @/lib/media.ts
-import { env } from "next-runtime-env"
-
-function getOrigin(): string {
-  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
-  try {
-    return new URL(raw).origin
-  } catch {
-    return raw.replace(/\/+$/, '').replace(/\/api$/, '')
-  }
-}
-
+// Media follows the same-origin authenticated proxy, including legacy absolute URLs.
 export function getMediaUrl(path: string | null | undefined): string {
   if (!path) return ''
-  if (path.startsWith('http://') || path.startsWith('https://')) return path
-  
-  const origin = getOrigin()
-  const clean = path.startsWith('/') ? path.slice(1) : path
-  return `${origin}/media/${clean}`
+  if (/^https?:\/\//.test(path)) {
+    const url = new URL(path)
+    return url.pathname.startsWith('/media/') ? `${url.pathname}${url.search}` : path
+  }
+  const clean = path.replace(/^\/+/, '')
+  return clean.startsWith('media/') ? `/${clean}` : `/media/${clean}`
 }
 
 export function isImagePath(path: string): boolean {

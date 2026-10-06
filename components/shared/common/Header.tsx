@@ -1,5 +1,7 @@
 'use client'
 
+import { sessionService } from '@/services/sessionService'
+import { toast } from 'sonner'
 import { useUIStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSettings } from '@/hooks/useSettings'
@@ -9,19 +11,21 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuSeparator,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut, User, ArrowLeft, Settings, ArrowLeftRight } from 'lucide-react'
+import { LogOut, User, ArrowLeft, Settings, ArrowLeftRight, ChartNoAxesCombined } from 'lucide-react'
 import Image from 'next/image'
 
 export function Header() {
   const pageTitle = useUIStore((s) => s.pageTitle)
   const username  = useAuthStore((s) => s.username)
-  const logout    = useAuthStore((s) => s.logout)
   const router    = useRouter()
   const pathname  = usePathname()
   const { data: settings } = useSettings()
 
   const isRoot = pathname === '/'
-  const handleLogout = () => { logout(); router.replace('/login') }
+  const handleLogout = async () => {
+    try { await sessionService.logout(); router.replace('/login') }
+    catch { toast.error('Could not sign out. Try again.') }
+  }
 
   const logoUrl = settings?.header_image_url ?? null
 
@@ -35,6 +39,7 @@ export function Header() {
               variant="ghost"
               size="icon"
               className="h-8 w-8 -ml-1"
+              aria-label="Go back"
               onClick={() => router.back()}
             >
               <ArrowLeft className="h-4 w-4" />
@@ -65,7 +70,7 @@ export function Header() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full shrink-0">
+            <Button variant="ghost" size="icon" aria-label="Account menu" className="rounded-full shrink-0">
               <User className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>
@@ -80,6 +85,10 @@ export function Header() {
             <DropdownMenuItem onClick={() => router.push('/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/offline')}>Offline files & drafts</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/reports')}>
+              <ChartNoAxesCombined className="mr-2 h-4 w-4" /> Reports & CA exports
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

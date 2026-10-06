@@ -1,5 +1,7 @@
 'use client'
 
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useState, useMemo } from 'react'
 import { useSend, useReceive } from '@/hooks/useContact'
 import { useAccounts } from '@/hooks/useAccount'
@@ -39,7 +41,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
 
   const [amount,    setAmount]    = useState('')
   const [accountId, setAccountId] = useState('')
-  const [date,      setDate]      = useState(new Date().toISOString().split('T')[0])
+  const [date,      setDate]      = useState(businessDate())
   const [notes,     setNotes]     = useState('')
   const [linkedDoc, setLinkedDoc] = useState('')
 
@@ -66,7 +68,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     if (!open) return
     setAmount(''); setAccountId(''); setNotes(''); setLinkedDoc('')
     setIsExpense(false); setAddInterest(false)
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(businessDate())
     setInterestLines([{ name: '', amount: '', type: 'charge' }])
     setVoucherLines([{ name: '', amount: '' }])
   }, [open, mode])
@@ -96,7 +98,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
     }, 0)
   }, [addInterest, interestLines])
 
-  // Per spec: Original Debt Settled = payment − net interest charges
+  // Per spec: Balance settled = payment − net interest charges
   // Receive: actual = +payment, interest record = −net_interest → original debt settled = payment − net_interest
   // Send:    actual = −payment, interest record = +net_interest → original debt settled = payment − net_interest
   // In both cases: originalDebtSettled = actualAmount − interestNet
@@ -335,14 +337,15 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
               >
                 <Checkbox
                   id="interest"
+                  aria-label="Charges & waivers"
                   checked={addInterest}
                   onCheckedChange={(v) => setAddInterest(!!v)}
                   onClick={e => e.stopPropagation()}
                 />
                 <div>
-                  <p className="text-sm font-medium">Add Interest / Adjustment</p>
+                  <p className="text-sm font-medium">Charges & waivers</p>
                   <p className="text-xs text-muted-foreground">
-                    Creates a separate record entry — does not change payment amount above
+                    Adjusts the balance due without changing the money sent or received
                   </p>
                 </div>
               </div>
@@ -355,7 +358,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                     <span>
                       <strong>Charge</strong> = extra amount owed (late fee, penalty)
                       &nbsp;·&nbsp;
-                      <strong>Discount</strong> = amount waived (early payment, goodwill)
+                      <strong>Waiver</strong> = amount waived (early payment, goodwill)
                     </span>
                   </div>
 
@@ -399,7 +402,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                                 ? 'bg-green-50 border-green-300 text-green-600'
                                 : 'bg-muted border-border text-muted-foreground'}`}
                           >
-                            <TrendingDown className="h-3 w-3" /> Discount
+                            <TrendingDown className="h-3 w-3" /> Waiver
                           </button>
                         </div>
                       </div>
@@ -438,7 +441,7 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
                                 variant="outline"
                                 className={`text-[10px] h-4 ${l.type === 'charge' ? 'text-red-600 border-red-200' : 'text-green-600 border-green-200'}`}
                               >
-                                {l.type}
+                                {l.type === 'charge' ? 'Charge' : 'Waiver'}
                               </Badge>
                             </span>
                             <span className={l.type === 'charge' ? 'text-red-500' : 'text-green-600'}>
@@ -449,17 +452,17 @@ export function SendReceiveSheet({ contactId, open, mode, onClose }: Props) {
 
                         <Separator />
 
-                        {/* Row 3 — Original Debt Settled (per spec) */}
+                        {/* Row 3 — Balance settled (per spec) */}
                         <div className="flex justify-between items-center font-semibold">
-                          <span>Original Debt Settled</span>
+                          <span>Balance settled</span>
                           <span className="text-primary">
                             {fmtAmount(Math.max(0, originalDebtSettled))}
                           </span>
                         </div>
                         <p className="text-[10px] text-muted-foreground">
                           {mode === 'receive'
-                            ? 'Amount of original debt actually cleared after interest'
-                            : 'Amount of original debt actually settled after interest'}
+                            ? 'Includes charges and waivers; the payment amount stays the same'
+                            : 'Includes charges and waivers; the payment amount stays the same'}
                         </p>
                       </div>
                     </>

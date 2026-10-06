@@ -1,5 +1,8 @@
 'use client'
 
+import { DocumentHistory } from './DocumentHistory'
+import { businessDate } from '@/lib/businessDate'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -20,23 +23,22 @@ import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select, SelectContent, SelectItem,
-  SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+import { SearchableSelect } from '@/components/shared/common/SearchableSelect'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuSeparator,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  MoreVertical, Banknote, Package, Trash2,
+  MoreVertical, Banknote, Package, Trash2, MessageCircle,
   ExternalLink, TrendingUp, TrendingDown,
   Plus, X, FileText, Printer, Edit,
   CheckCircle2, Tag, Clock, AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
+import { DocumentShareSheet } from './DocumentShareSheet'
+import { DocumentFlow } from './DocumentFlow'
 import { MoveStockSheet }   from './MoveStockSheet'
 import { TransactionCard }  from '@/components/shared/TransactionCard'
 import { FilePreviewSheet } from '@/components/shared/FilePreviewSheet'
@@ -73,6 +75,7 @@ export function DocumentDetailPage({ id }: Props) {
   const deleteTxnMutation = useDeleteTransaction()
   const markPaidMutation  = useMarkPaid(id)   // ✅ added
 
+  const [shareOpen, setShareOpen] = useState(false)
   const [paymentSheet,   setPaymentSheet]   = useState(false)
   const [moveStockSheet, setMoveStockSheet] = useState(false)
   const [deleteSheet,    setDeleteSheet]    = useState(false)
@@ -81,7 +84,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   const [payAmount,     setPayAmount]     = useState('')
   const [payAccount,    setPayAccount]    = useState('')
-  const [payDate,       setPayDate]       = useState(new Date().toISOString().split('T')[0])
+  const [payDate,       setPayDate]       = useState(businessDate())
   const [payNotes,      setPayNotes]      = useState('')
   const [addInterest,   setAddInterest]   = useState(false)
   const [interestLines, setInterestLines] = useState<InterestLine[]>([
@@ -125,17 +128,17 @@ export function DocumentDetailPage({ id }: Props) {
 
   // ✅ balance for display — use remaining from payment_status, not raw txn calc
   const balance    = isPayable ? Math.max(0, remaining) : 0
-  const totalPaid  = txns
-    .filter(t => t.type === 'actual')
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+  const totalPaid = Number(payStatus?.paid ?? 0)
 
   const lineItems      = doc.line_items      ?? []
   const charges        = doc.charges         ?? []
   const taxes          = doc.taxes           ?? []
   const attachmentUrls = doc.attachment_urls ?? []
 
-  const lineSubtotal = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const lineSubtotal = Number(doc.calculated_totals?.subtotal ?? lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0))
   const chargeTotal  = charges.reduce((s, c)   => s + (Number(c.amount) || 0), 0)
+  const displayedSubtotal = Number(doc.calculated_totals?.gross_subtotal ?? lineItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))
+  const displayedDiscount = Number(doc.calculated_totals?.item_discount_total ?? 0) + Number(doc.discount ?? 0)
   const taxBase      = lineSubtotal + chargeTotal - Number(doc.discount ?? 0)
 
   // ✅ Move Stock: only when there are items with remaining > 0
@@ -147,7 +150,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   const handleOpenPaymentSheet = () => {
     setPayAmount(balance > 0 ? balance.toFixed(2) : '')
-    setPayDate(new Date().toISOString().split('T')[0])
+    setPayDate(businessDate())
     setPayNotes(''); setPayAccount('')
     setAddInterest(false)
     setInterestLines([{ name: '', amount: '', type: 'charge' }])
@@ -233,7 +236,9 @@ export function DocumentDetailPage({ id }: Props) {
 
   return (
     <div className="pb-10">
+      <DocumentShareSheet key={`${doc.id}-${doc.updated_at}`} doc={doc} open={shareOpen} onOpenChange={setShareOpen} />
 
+      <DocumentFlow document={doc} />
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between">
@@ -274,6 +279,7 @@ export function DocumentDetailPage({ id }: Props) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => setShareOpen(true)}><MessageCircle className="mr-2 h-4 w-4" /> Share on WhatsApp</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push(`/documents/${doc.id}/print`)}>
                   <Printer className="mr-2 h-4 w-4" /> Print / Download PDF
                 </DropdownMenuItem>
@@ -476,6 +482,8 @@ export function DocumentDetailPage({ id }: Props) {
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm leading-tight text-foreground/90">{item.name}</p>
+                      {doc.tax_mode === 'item' && item.taxes?.map((tax, index) => <p key={index} className="text-xs text-muted-foreground mt-1">{tax.name} {tax.percentage}%</p>)}
+                      {Number(doc.calculated_totals?.line_details?.[i]?.discount ?? item.discount) > 0 && <p className="text-xs text-emerald-600 mt-1">Item discount{item.discount_percentage != null ? ` (${item.discount_percentage}%)` : ''}: −{fmtAmount(doc.calculated_totals?.line_details?.[i]?.discount ?? item.discount ?? 0)}</p>}
                       {item.hsn && (
                         <p className="text-[10px] uppercase font-bold text-muted-foreground/70 tracking-wider mt-1">
                           HSN: {item.hsn}
@@ -483,7 +491,7 @@ export function DocumentDetailPage({ id }: Props) {
                       )}
                     </div>
                     <p className="font-bold text-sm ml-3 shrink-0">
-                      {item.amount ? fmtAmount(item.amount) : '—'}
+                      {item.amount != null ? fmtAmount(doc.calculated_totals?.line_details?.[i]?.net_amount ?? item.amount) : '—'}
                     </p>
                   </div>
                   {(item.quantity != null || item.rate != null) && (
@@ -496,19 +504,21 @@ export function DocumentDetailPage({ id }: Props) {
             ))}
 
             <div className="pt-2 px-1 space-y-2">
+              {['invoice', 'bill', 'cn', 'dn', 'quotation', 'po', 'pi'].includes(doc.type) && <div className="flex justify-between text-sm font-medium"><span className="text-muted-foreground">Subtotal</span><span>{fmtAmount(displayedSubtotal)}</span></div>}
               {charges.map((c, i) => (
                 <div key={i} className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">{c.name}</span>
                   <span>+{fmtAmount(c.amount)}</span>
                 </div>
               ))}
-              {Number(doc.discount) > 0 && (
+              {displayedDiscount > 0 && (
                 <div className="flex justify-between text-sm font-medium text-emerald-600">
                   <span>Discount</span>
-                  <span>−{fmtAmount(doc.discount)}</span>
+                  <span>−{fmtAmount(displayedDiscount)}</span>
                 </div>
               )}
-              {taxes.map((t, i) => (
+              {doc.calculated_totals?.taxes.map((tax, index) => <div key={index} className="flex justify-between text-sm font-medium"><span className="text-muted-foreground">{tax.name} ({tax.percentage}%)</span><span>+{fmtAmount(tax.amount)}</span></div>)}
+              {!doc.calculated_totals && doc.tax_mode !== 'item' && taxes.map((t, i) => (
                 <div key={i} className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">{t.name} ({t.percentage}%)</span>
                   <span>+{fmtAmount((taxBase * t.percentage) / 100)}</span>
@@ -634,21 +644,9 @@ export function DocumentDetailPage({ id }: Props) {
 
             <div className="space-y-1.5">
               <Label>Account <span className="text-destructive">*</span></Label>
-              <Select
-                value={payAccount || '__none__'}
-                onValueChange={v => setPayAccount(v === '__none__' ? '' : v)}
-              >
-                <SelectTrigger className="h-11 rounded-xl font-medium">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map(a => (
-                    <SelectItem key={a.id} value={String(a.id)}>
-                      {a.name} — {a.type} — {fmtAmount(a.current_balance)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect resource="accounts" value={payAccount} onChange={setPayAccount}
+                options={accounts.map(a => ({ value: String(a.id), label: a.name, sublabel: `${a.type} · ${fmtAmount(a.current_balance)}` }))}
+                placeholder="Select account" title="Select Payment Account" searchPlaceholder="Search accounts..." />
             </div>
 
             <div className="space-y-1.5">
@@ -671,12 +669,12 @@ export function DocumentDetailPage({ id }: Props) {
                 addInterest ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-muted/30 hover:bg-muted/50'
               )}
             >
-              <Checkbox checked={addInterest} onCheckedChange={v => setAddInterest(!!v)}
+              <Checkbox aria-label="Charges & waivers" checked={addInterest} onCheckedChange={v => setAddInterest(!!v)}
                 onClick={e => e.stopPropagation()} />
               <div>
-                <p className="text-sm font-semibold text-foreground/90">Add Interest / Adjustment</p>
+                <p className="text-sm font-semibold text-foreground/90">Charges & waivers</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-                  Creates a separate record — does not change payment amount above
+                  Adjusts the balance due without changing the payment amount
                 </p>
               </div>
             </div>
@@ -687,7 +685,7 @@ export function DocumentDetailPage({ id }: Props) {
                   <span className="mt-0.5">💡</span>
                   <span className="leading-tight">
                     <strong>Charge</strong> = extra owed (late fee, penalty)<br />
-                    <strong>Discount</strong> = amount waived (early payment)
+                    <strong>Waiver</strong> = amount waived (early payment)
                   </span>
                 </div>
                 {interestLines.map((line, i) => (
@@ -717,7 +715,7 @@ export function DocumentDetailPage({ id }: Props) {
                           )}>
                           {type === 'charge'
                             ? <><TrendingUp className="h-3.5 w-3.5" /> Charge</>
-                            : <><TrendingDown className="h-3.5 w-3.5" /> Discount</>}
+                            : <><TrendingDown className="h-3.5 w-3.5" /> Waiver</>}
                         </button>
                       ))}
                     </div>
@@ -743,7 +741,7 @@ export function DocumentDetailPage({ id }: Props) {
                           {l.name}
                           <Badge variant="outline" className={cn('text-[10px] h-4',
                             l.type === 'charge' ? 'text-red-600 border-red-200' : 'text-green-600 border-green-200')}>
-                            {l.type}
+                            {l.type === 'charge' ? 'Charge' : 'Waiver'}
                           </Badge>
                         </span>
                         <span className={l.type === 'charge' ? 'text-red-500' : 'text-green-600'}>
@@ -753,7 +751,7 @@ export function DocumentDetailPage({ id }: Props) {
                     ))}
                     <Separator />
                     <div className="flex justify-between font-semibold">
-                      <span>Original Debt Settled</span>
+                      <span>Balance settled</span>
                       <span className="text-primary">{fmtAmount(Math.max(0, originalDebtSettled))}</span>
                     </div>
                   </div>
@@ -776,6 +774,8 @@ export function DocumentDetailPage({ id }: Props) {
         open={moveStockSheet}
         onClose={() => setMoveStockSheet(false)}
       />
+
+      <DocumentHistory id={id} />
 
       {/* ── Delete Sheet ──────────────────────────────────────────────────────── */}
       <Sheet open={deleteSheet} onOpenChange={setDeleteSheet}>

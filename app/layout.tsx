@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/lib/providers'
 import { Toaster } from '@/components/ui/sonner'
-import { PublicEnvScript } from 'next-runtime-env' // Import this
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -19,8 +18,6 @@ export const viewport: Viewport = {
   themeColor: '#0a0a0a',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 }
 
 export const metadata: Metadata = {
@@ -34,7 +31,7 @@ export const metadata: Metadata = {
   },
   // Add this section:
   icons: {
-    apple: '/logo.svg', // Or a 180x180 PNG for best results
+    apple: '/icons/apple-touch-icon.png',
   }
 }
 
@@ -45,10 +42,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Injects runtime env vars into the window object */}
-        <PublicEnvScript />
-      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Providers>
           {children}

@@ -15,7 +15,16 @@ export type DocumentType =
   | 'cash_payment_voucher' | 'cash_receipt_voucher'
   | 'interest' | 'expense'
 
+export type TaxMode = 'document' | 'item'
+export type SupplyCategory = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst' | 'export' | 'import'
+
 export interface LineItem {
+  discount?: number | null
+  discount_percentage?: number | null
+  taxes?: Tax[]
+  supply_category?: SupplyCategory | null
+  unit?:       string
+  type?:       'charge' | 'discount'
   name:        string
   hsn?:        string | null
   quantity?:   number
@@ -62,6 +71,7 @@ export interface StockStatusItem {
 }
 
 export interface Document {
+  stock_mode: 'none' | 'record' | 'actual' | null
   id:                   number
   type:                 DocumentType
   doc_id:               string
@@ -70,12 +80,19 @@ export interface Document {
   reference:            number | null
   line_items:           LineItem[]
   total_amount:         string | null
+  discount_percentage?: string | number | null
   discount:             string
   charges:              Charge[]
   taxes:                Tax[]
+  tax_mode: TaxMode
+  supply_category: SupplyCategory | null
+  supplier_invoice_number: string | null
+  calculated_totals?: { gross_subtotal?: string | number; item_discount_total?: string | number; subtotal?: string | number; line_details?: { net_amount: string | number; discount: string | number }[]; taxes: { name: string; percentage: string | number; amount: string | number }[] } | null
   date:                 string
   due_date:             string | null
   payment_terms:        string | null
+  place_of_supply:      string | null
+  reverse_charge:       boolean | null
   attachment_urls:      string[]
   attachment_urls_full: string[]
   notes:                string | null
@@ -112,12 +129,18 @@ export interface DocumentCreate {
   reference?:       number
   line_items?:      LineItem[]
   total_amount?:    string | number
+  discount_percentage?: number | null
   discount?:        number
   charges?:         Charge[]
   taxes?:           Tax[]
+  tax_mode?: TaxMode
+  supply_category?: SupplyCategory | null
+  supplier_invoice_number?: string | null
   date:             string
   due_date?:        string
   payment_terms?:   string
+  place_of_supply?: string
+  reverse_charge?: boolean | null
   attachment_urls?: string[]
   notes?:           string
   payment_account?: number
@@ -126,15 +149,23 @@ export interface DocumentCreate {
 }
 
 export interface DocumentUpdate {
+  expected_updated_at?: string
+  payment_account?: number | null
   doc_id?:          string         // DI-01: editable — backend returns 409 if duplicate
   contact?:         number | null
-  notes?:           string
+  notes?:           string | null
   date?:            string
-  due_date?:        string
-  payment_terms?:   string
+  due_date?:        string | null
+  payment_terms?:   string | null
+  place_of_supply?: string | null
+  reverse_charge?: boolean | null
   attachment_urls?: string[]
   charges?:         Charge[]
   taxes?:           Tax[]
+  tax_mode?: TaxMode
+  supply_category?: SupplyCategory | null
+  supplier_invoice_number?: string | null
+  discount_percentage?: number | null
   discount?:        number
   total_amount?:    string | number
   consignee?:       number | null
@@ -188,7 +219,11 @@ export interface ReferenceData {
   line_items:    LineItem[]
   charges:       Charge[]
   taxes:         Tax[]
+  tax_mode: TaxMode
+  supply_category: SupplyCategory | null
+  supplier_invoice_number: string | null
   consignee:     number | null
+  discount_percentage?: string | number | null
   discount:      string
   payment_terms: string | null
   notes:         string | null
@@ -209,7 +244,8 @@ export interface BulkPrintPayload {
 
 // ── Document list / filter params ─────────────────────────────────────────────
 export interface DocumentListParams {
-  type?:      DocumentType
+  type?:      DocumentType | string
+  payment_status?: 'paid' | 'unpaid' | 'partial' | 'due'
   contact?:   number
   date_from?: string
   date_to?:   string

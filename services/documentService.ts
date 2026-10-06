@@ -1,5 +1,5 @@
 // services/documentService.ts
-import api from '@/lib/axios'
+import api, { getApiBase } from '@/lib/axios'
 import type {
   Document,
   DocumentListItem,
@@ -65,11 +65,7 @@ export const documentService = {
       .then(r => r.data),
 
   getPdfUrl: (id: number): string => {
-    const base = (
-      api.defaults.baseURL ??
-      process.env.NEXT_PUBLIC_API_URL ??
-      ''
-    ).replace(/\/+$/, '')
+    const base = getApiBase()
     return `${base}/documents/${id}/print/`
   },
 
