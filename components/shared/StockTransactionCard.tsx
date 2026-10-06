@@ -108,7 +108,7 @@ export function StockTransactionCard({ txn, onDelete, onEdit }: StockTransaction
 
         {/* Quantity */}
         <span className={cn('font-bold text-sm tabular-nums shrink-0', qtyColor)}>
-          {isPositive ? '+' : ''}{qty.toString()}
+          {isRecord ? '(' : ''}{isPositive ? '+' : ''}{qty.toString()}{isRecord ? ')' : ''}
         </span>
       </div>
 
