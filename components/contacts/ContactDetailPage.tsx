@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ContactEditSheet }   from './ContactEditSheet'
 import { SendReceiveSheet }   from './SendReceiveSheet'
-import { computeOpeningBalanceAt, ContactLedger }      from './ContactLedger'
+import { ContactLedger }      from './ContactLedger'
 import { TransactionCard }    from '@/components/shared/TransactionCard'
 import { PrintSheet }         from '@/components/shared/PrintSheet'
 import { DOC_TYPE_LABELS }    from '@/models/document'
@@ -71,7 +71,8 @@ export function ContactDetailPage({ id }: Props) {
   const openDocSheet = useUIStore(s => s.openDocCreateSheet)
 
   const { data: contact, isLoading }                = useContact(id)
-  const { data: ledger, isLoading: loadingLedger } = useContactLedger(id, { page_size: 1000 })
+  const [listPage, setListPage] = useState(1)
+  const { data: ledger, isLoading: loadingLedger } = useContactLedger(id, { page_size: 25, page: listPage })
   const txns: FinancialTransaction[] = useMemo(() => {
     if (!ledger) return []
     return Array.isArray(ledger.results) ? ledger.results : []
@@ -151,22 +152,8 @@ export function ContactDetailPage({ id }: Props) {
     [accounts],
   )
 
-  const runningCF = useMemo(() => {
-    if (!contact) return 0
-    return computeRunningCF(Number(contact.opening_balance ?? 0), txns)
-  }, [contact, txns])
-
-  const txnsWithRunningCF = useMemo(() => {
-    const sorted = [...txns].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    )
-    let running = Number(contact?.opening_balance ?? 0)
-    return sorted.map(txn => {
-      const affectsCF = txn.document_type !== 'expense' && txn.type !== 'contra'
-      if (affectsCF) running += Number(txn.amount)
-      return { ...txn, runningCf: running }
-    })
-  }, [txns, contact])
+  const runningCF = Number(contact?.current_cf ?? 0)
+  const txnsWithRunningCF = txns.map(txn => ({ ...txn, runningCf: Number(txn.running_cf ?? 0) }))
 
   // ── Print query params — built from selections in print options sheet ───────
   const printQueryParams = useMemo(() => {
@@ -471,12 +458,13 @@ export function ContactDetailPage({ id }: Props) {
                 {/* Ledger View */}
                 {ledgerView === 'ledger' && (
                   <ContactLedger
-                    transactions={txns}
+                    contactId={id}
                     openingBalance={Number(contact.opening_balance ?? 0)}
                     onEditTxn={handleEditTxn}
                   />
                 )}
 
+                {ledgerView === 'list' && ledger && ledger.total_pages > 1 && <div className="flex justify-between items-center"><Button variant="outline" disabled={!ledger.previous} onClick={() => setListPage(p => p-1)}>Previous</Button><span className="text-sm">Page {listPage} of {ledger.total_pages}</span><Button variant="outline" disabled={!ledger.next} onClick={() => setListPage(p => p+1)}>Next</Button></div>}
                 {/* List View */}
                 {ledgerView === 'list' && (
                   <div className="space-y-2">
@@ -563,7 +551,7 @@ export function ContactDetailPage({ id }: Props) {
                 className="w-full h-11 rounded-xl font-bold mt-2"
                 onClick={() => router.push(`/documents?contact=${id}`)}
               >
-                View All {docs.length} Documents
+                View All {docsData?.count ?? docs.length} Documents
               </Button>
             )}
           </TabsContent>

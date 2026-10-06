@@ -191,7 +191,7 @@ export function TransactionCard({
                   maximumFractionDigits: 2,
                 })}
                 <span className="font-normal text-[9px] ml-0.5">
-                  {runningCf > 0 ? 'Dr' : runningCf < 0 ? 'Cr' : ''}
+                  {runningCf > 0 ? 'Payable' : runningCf < 0 ? 'Receivable' : ''}
                 </span>
               </p>
             )}

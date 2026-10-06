@@ -4,6 +4,7 @@ import type { InterestLine } from './document'
 export type TransactionType = 'record' | 'actual' | 'contra'
 
 export interface FinancialTransaction {
+  running_cf?: string
   allocations: { document: number; doc_id: string; document_type: string; amount: string }[]
   id:                       number
   type:                     TransactionType

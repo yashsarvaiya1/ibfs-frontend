@@ -15,10 +15,12 @@ import type {
 } from '@/models/pagination'
 
 export const accountService = {
-  list: (params?: { is_active?: boolean }) =>
+  list: (params?: { is_active?: boolean; page?: number; search?: string }) =>
     api
       .get<PaginatedResponse<PaymentAccount>>('/accounts/', { params })
       .then(r => r.data),
+
+  summary: () => api.get<{ count: number; total_balance: string }>('/accounts/summary/', { params: { is_active: true } }).then(r => r.data),
 
   get: (id: number) =>
     api.get<PaymentAccount>(`/accounts/${id}/`).then(r => r.data),

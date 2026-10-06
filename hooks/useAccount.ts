@@ -13,7 +13,7 @@ export const accountKey   = (id: number) => ['accounts', id] as const
 // Partial key — invalidates ALL transaction queries
 const TRANSACTIONS_BASE_KEY = ['transactions'] as const
 
-export function useAccounts(params?: { is_active?: boolean }) {
+export function useAccounts(params?: { is_active?: boolean; page?: number; search?: string }) {
   return useQuery({
     queryKey: [...ACCOUNTS_KEY, params],
     queryFn:  () => accountService.list(params),
@@ -106,4 +106,8 @@ export function useAccountTransactions(
     queryFn:  () => accountService.transactions(id, params),
     enabled:  !!id,
   })
+}
+
+export function useAccountSummary() {
+  return useQuery({ queryKey: [...ACCOUNTS_KEY, 'summary'], queryFn: accountService.summary })
 }
