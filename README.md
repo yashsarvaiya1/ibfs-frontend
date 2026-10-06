@@ -53,3 +53,7 @@ Before updating a live installation, follow the backend [release, backup and res
 Offline access needs a separate vault password. Save files while online, then unlock locally when offline. The password/key is not stored; there is no password recovery. Logout clears local copies. Drafts return to the normal online form for validation and posting; offline edits never change balances, payments or stock. Browser storage can be evicted, so retain important downloads separately.
 
 See [reports and comparisons](../backend/docs/REPORTS.md), [PDF layout](../backend/docs/PDF_LAYOUT.md), [offline behavior](../backend/docs/OFFLINE.md) and the [implementation checklist](../backend/docs/IMPROVEMENT_CHECKLIST.md). GST exports support CA review; they do not file returns, generate IRNs or determine eligible ITC. Full double-entry accounting and multi-company support are deferred.
+
+For small shared-core VMs, use `WEB_CONCURRENCY=1` and `BACKEND_HEALTH_START_PERIOD=600s` in the private Compose `.env`. Backend health probes allow slow first-time migrations and mark readiness immediately once the application responds. See the backend deployment guide for diagnostics.
+
+`docker-compose.vm.yml` is the image-only VM configuration with backend `127.0.0.1:8001:8000` and frontend `127.0.0.1:3001:3000`. Copy it to the existing VM deployment directory as `docker-compose.yml`, retaining its private `.env` and existing Compose project name so the same data volumes are used.

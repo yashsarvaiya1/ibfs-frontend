@@ -2,7 +2,7 @@ services:
   db:
     image: postgres:15-alpine
     container_name: ibfs_db
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_DB: ${DB_NAME:?Set DB_NAME}
       POSTGRES_USER: ${DB_USER:?Set DB_USER}
@@ -10,15 +10,14 @@ services:
     volumes:
       - ibfs_postgres_data:/var/lib/postgresql/data/
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 60s
     networks: [ibfs_network]
 
   volume-init:
-    image: ${BACKEND_IMAGE:-ibfs-backend:local}
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
     user: "0:0"
     restart: "no"
     network_mode: none
@@ -29,17 +28,15 @@ services:
       - ibfs_static_volume:/app/staticfiles
 
   backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    image: ${BACKEND_IMAGE:-ibfs-backend:local}
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
     container_name: ibfs_backend
-    restart: unless-stopped
+    restart: always
     env_file: [.env]
     environment:
       DB_HOST: db
       DEBUG: "False"
-    ports: ["127.0.0.1:9000:8000"]
+    ports:
+      - "127.0.0.1:8001:8000"
     volumes:
       - ibfs_media_volume:/app/media
       - ibfs_static_volume:/app/staticfiles
@@ -50,21 +47,21 @@ services:
       retries: 10
       start_period: ${BACKEND_HEALTH_START_PERIOD:-600s}
     depends_on:
-      db: {condition: service_healthy}
-      volume-init: {condition: service_completed_successfully}
+      db:
+        condition: service_healthy
+      volume-init:
+        condition: service_completed_successfully
     networks: [ibfs_network]
 
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ${FRONTEND_IMAGE:-ibfs-frontend:local}
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE}
     container_name: ibfs_frontend
-    restart: unless-stopped
+    restart: always
     environment:
       DJANGO_ORIGIN: http://backend:8000
       NODE_ENV: production
-    ports: ["${FRONTEND_BIND_ADDRESS:-127.0.0.1}:4000:3000"]
+    ports:
+      - "127.0.0.1:3001:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
@@ -72,11 +69,14 @@ services:
       retries: 5
       start_period: 30s
     depends_on:
-      backend: {condition: service_healthy}
+      backend:
+        condition: service_healthy
     networks: [ibfs_network]
 
 networks:
-  ibfs_network: {driver: bridge}
+  ibfs_network:
+    driver: bridge
+
 volumes:
   ibfs_postgres_data:
   ibfs_media_volume:
