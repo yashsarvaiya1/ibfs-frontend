@@ -2,6 +2,8 @@
 import { businessDate } from '@/lib/businessDate'
 import { DocumentTaxDetails } from './DocumentTaxDetails'
 import { ItemTaxes } from './ItemTaxes'
+import { DiscountInput } from './DiscountInput'
+import { DocumentTotalsSummary } from './DocumentTotalsSummary'
 import { useDocumentTotals } from '@/hooks/useDocumentTotals'
 import type { TaxMode, SupplyCategory } from '@/models/document'
 
@@ -158,6 +160,7 @@ export function DocumentEditPage({ id }: { id: number }) {
   const [supplyCategory, setSupplyCategory] = useState<SupplyCategory | ''>('')
   const [supplierNumber, setSupplierNumber] = useState('')
   const [notes,              setNotes]              = useState('')
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percentage'>('amount')
   const [discount,           setDiscount]           = useState('')
   const [attachmentUrls,     setAttachmentUrls]     = useState<string[]>([])
   const [fastAmountOverride, setFastAmountOverride] = useState('')
@@ -197,7 +200,8 @@ export function DocumentEditPage({ id }: { id: number }) {
     setSupplyCategory(doc.supply_category ?? '')
     setSupplierNumber(doc.supplier_invoice_number ?? '')
     setNotes(doc.notes ?? '')
-    setDiscount(doc.discount ? String(doc.discount) : '')
+    setDiscountMode(doc.discount_percentage != null ? 'percentage' : 'amount')
+    setDiscount(String(doc.discount_percentage ?? doc.discount ?? ''))
     setAttachmentUrls(doc.attachment_urls ?? [])
     setVoucherAmount(doc.total_amount ? String(doc.total_amount) : '')
 
@@ -234,7 +238,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     }
   }, [doc?.id])
 
-  const taxPreview = useDocumentTotals({ type: doc?.type ?? 'invoice', date: date || businessDate(), tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: Number(discount) || 0, supply_category: supplyCategory || null }, !!doc?.is_active && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(doc.type) && lineItems.some(item => item.name.trim()))
+  const taxPreview = useDocumentTotals({ type: doc?.type ?? 'invoice', date: date || businessDate(), tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, supply_category: supplyCategory || null }, !!doc?.is_active && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(doc.type) && lineItems.some(item => item.name.trim()))
   if (docIsError) return <div role="alert" className="p-5 space-y-3"><p>{apiError(docError, 'Could not load this document.')}</p><Button onClick={() => docRefetch()}>Retry</Button></div>
 
   // Loading state
@@ -362,13 +366,9 @@ export function DocumentEditPage({ id }: { id: number }) {
 
   // ── Totals ───────────────────────────────────────────────────────────────────
   const lineTotal    = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0)
-  const chargeTotal  = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0)
-  const discountAmt  = Number(discount) || 0
-  const taxBase      = lineTotal + chargeTotal - discountAmt
-  const sharedTaxTotal = taxes.reduce((s, t) => s + (taxBase * (Number(t.percentage) || 0)) / 100, 0)
+  const discountAmt  = discountMode === 'percentage' ? Math.round(lineTotal * (Number(discount) || 0)) / 100 : Number(discount) || 0
 
-  const taxTotal = taxPreview.ready ? Number(taxPreview.data!.tax_total) : taxMode === 'item' ? 0 : sharedTaxTotal
-  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : taxBase + taxTotal
+  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : 0
   function changeTaxMode(value: TaxMode) {
     if (value === 'item') { setLineItems(rows => rows.map(row => ({ ...row, taxes: row.taxes ?? taxes }))); setTaxes([]) }
     else setTaxes(lineItems.find(item => item.name.trim())?.taxes ?? [])
@@ -388,7 +388,7 @@ export function DocumentEditPage({ id }: { id: number }) {
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (taxMode === 'item' && !taxPreview.ready) { toast.error('Wait for a valid per-item tax calculation before saving.'); return }
+    if (['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && lineItems.some(item => item.name.trim()) && !taxPreview.ready) { toast.error('Wait for a valid total calculation before saving.'); return }
     if (CONTACT_REQUIRED.includes(docType as DocumentType) && !contactId) {
       toast.error('Select a contact'); return
     }
@@ -407,7 +407,8 @@ export function DocumentEditPage({ id }: { id: number }) {
       supply_category: supplyCategory || null,
       supplier_invoice_number: supplierNumber || null,
       notes:           notes         || null,
-      discount:        discountAmt,
+      discount:        discountMode === 'amount' ? Number(discount) || 0 : 0,
+      discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null,
       attachment_urls: attachmentUrls,
     }
 
@@ -854,15 +855,7 @@ export function DocumentEditPage({ id }: { id: number }) {
                     ))}
                   </div>
 
-                  {/* Discount */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">
-                      Discount (₹)
-                    </Label>
-                    <Input type="number" placeholder="0.00" value={discount}
-                      onChange={e => setDiscount(e.target.value)}
-                      className="h-10 rounded-lg font-semibold" />
-                  </div>
+                  <DiscountInput mode={discountMode} value={discount} subtotal={lineTotal} onMode={setDiscountMode} onValue={setDiscount} />
 
                   {/* Taxes */}
                   <div className="space-y-2">
@@ -890,35 +883,12 @@ export function DocumentEditPage({ id }: { id: number }) {
                     ))}
                   </div>
 
-                  {/* Grand total preview */}
-                  <div className="space-y-1.5 pt-2 border-t">
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Subtotal</span><span>{fmtAmount(lineTotal)}</span>
-                    </div>
-                    {chargeTotal > 0 && (
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Charges</span><span>+{fmtAmount(chargeTotal)}</span>
-                      </div>
-                    )}
-                    {discountAmt > 0 && (
-                      <div className="flex justify-between text-xs text-emerald-600">
-                        <span>Discount</span><span>−{fmtAmount(discountAmt)}</span>
-                      </div>
-                    )}
-                    {taxTotal > 0 && (
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Tax</span><span>+{fmtAmount(taxTotal)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-black text-sm pt-1 border-t">
-                      <span>Grand Total</span><span>{fmtAmount(grandTotal)}</span>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
           )}
 
+          {hasLineItems && docType !== 'challan' && lineItems.some(item => item.name.trim()) && <DocumentTotalsSummary preview={taxPreview} />}
           {renderAttachments()}
           {renderNotes()}
         </div>

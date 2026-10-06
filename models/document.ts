@@ -78,6 +78,7 @@ export interface Document {
   reference:            number | null
   line_items:           LineItem[]
   total_amount:         string | null
+  discount_percentage?: string | number | null
   discount:             string
   charges:              Charge[]
   taxes:                Tax[]
@@ -126,6 +127,7 @@ export interface DocumentCreate {
   reference?:       number
   line_items?:      LineItem[]
   total_amount?:    string | number
+  discount_percentage?: number | null
   discount?:        number
   charges?:         Charge[]
   taxes?:           Tax[]
@@ -161,6 +163,7 @@ export interface DocumentUpdate {
   tax_mode?: TaxMode
   supply_category?: SupplyCategory | null
   supplier_invoice_number?: string | null
+  discount_percentage?: number | null
   discount?:        number
   total_amount?:    string | number
   consignee?:       number | null
@@ -218,6 +221,7 @@ export interface ReferenceData {
   supply_category: SupplyCategory | null
   supplier_invoice_number: string | null
   consignee:     number | null
+  discount_percentage?: string | number | null
   discount:      string
   payment_terms: string | null
   notes:         string | null

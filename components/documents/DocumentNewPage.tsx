@@ -5,6 +5,8 @@ import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
 import { deleteOffline, loadOffline, observeVault } from '@/lib/offline/vault'
 import { useAuthStore } from '@/stores/authStore'
 import { ItemTaxes } from './ItemTaxes'
+import { DiscountInput } from './DiscountInput'
+import { DocumentTotalsSummary } from './DocumentTotalsSummary'
 import { useDocumentTotals } from '@/hooks/useDocumentTotals'
 import type { TaxMode, SupplyCategory } from '@/models/document'
 
@@ -252,6 +254,7 @@ export function DocumentNewPage() {
   const [supplierNumber, setSupplierNumber] = useState('')
   const [notes,            setNotes]            = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percentage'>('amount')
   const [discount,         setDiscount]         = useState('')
   const [fastAmount,       setFastAmount]       = useState('')
   const [voucherAmount,    setVoucherAmount]    = useState('')
@@ -417,7 +420,7 @@ export function DocumentNewPage() {
 
     // Discount — only if not set yet
     if (!discount && refDoc.discount && Number(refDoc.discount) > 0) {
-      setDiscount(String(refDoc.discount))
+      setDiscountMode(refDoc.discount_percentage != null ? 'percentage' : 'amount'); setDiscount(String(refDoc.discount_percentage ?? refDoc.discount))
       if (!showCharges) setShowCharges(true)
     }
 
@@ -532,7 +535,7 @@ export function DocumentNewPage() {
         setPaymentTerms(data.payment_terms ?? ''); setPlaceOfSupply(data.place_of_supply ?? '')
         setReverseCharge(data.reverse_charge ?? null); setTaxMode(data.tax_mode ?? 'document')
         setSupplyCategory(data.supply_category ?? ''); setSupplierNumber(data.supplier_invoice_number ?? '')
-        setNotes(data.notes ?? ''); setDiscount(String(data.discount ?? ''))
+        setNotes(data.notes ?? ''); setDiscountMode(data.discount_percentage != null ? 'percentage' : 'amount'); setDiscount(String(data.discount_percentage ?? data.discount ?? ''))
         setCharges(data.charges ?? []); setTaxes(data.taxes ?? []); setAttachmentUrls(data.attachment_urls ?? [])
         setPaymentAccountId(data.payment_account ? String(data.payment_account) : '')
         setBillMode(data.line_items?.length ? 'detailed' : 'fast'); setFastAmount(String(data.total_amount ?? ''))
@@ -549,13 +552,9 @@ export function DocumentNewPage() {
   // ── Totals ──────────────────────────────────────────────────────────────────
   const lineTotal    = lineItems.reduce((s, l) => s + Number(l.amount), 0)
   const expenseTotal = expenseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-  const chargeTotal  = charges.reduce((s, c) => s + Number(c.amount), 0)
-  const discountAmt  = Number(discount) || 0
-  const taxBase      = lineTotal + chargeTotal - discountAmt
-  const sharedTaxTotal = taxes.reduce((s, t) => s + (taxBase * Number(t.percentage) / 100), 0)
-  const taxPreview = useDocumentTotals({ type: docType as DocumentType, date, tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountAmt, supply_category: supplyCategory || null }, !isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && lineItems.some(item => item.name.trim()))
-  const taxTotal = taxPreview.ready ? Number(taxPreview.data!.tax_total) : taxMode === 'item' ? 0 : sharedTaxTotal
-  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : taxBase + taxTotal
+  const discountAmt  = discountMode === 'percentage' ? Math.round(lineTotal * (Number(discount) || 0)) / 100 : Number(discount) || 0
+  const taxPreview = useDocumentTotals({ type: docType as DocumentType, date, tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, supply_category: supplyCategory || null }, !isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && lineItems.some(item => item.name.trim()))
+  const grandTotal = taxPreview.ready ? Number(taxPreview.data!.total) : 0
   function changeTaxMode(value: TaxMode) {
     if (value === 'item') { setLineItems(rows => rows.map(row => ({ ...row, taxes: row.taxes ?? taxes }))); setTaxes([]) }
     else setTaxes(lineItems.find(item => item.name.trim())?.taxes ?? [])
@@ -565,7 +564,7 @@ export function DocumentNewPage() {
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (offlineDraftId && loadedOfflineDraft.current !== offlineDraftId) { toast.error('Load and review the local draft before creating it.'); return }
-    if (taxMode === 'item' && !isFastMode && docType !== 'challan' && !taxPreview.ready) { toast.error('Wait for a valid per-item tax calculation before saving.'); return }
+    if (!isFastMode && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(docType) && !taxPreview.ready) { toast.error('Wait for a valid total calculation before saving.'); return }
     if (CONTACT_REQUIRED.includes(docType) && !contactId) {
       toast.error('Select a contact'); return
     }
@@ -604,7 +603,8 @@ export function DocumentNewPage() {
       notes:           notes        || undefined,
       reference:       referenceId  ? Number(referenceId) : undefined,
       consignee:       consigneeId  ? Number(consigneeId) : undefined,
-      discount:        discountAmt,
+      discount:        discountMode === 'amount' ? Number(discount) || 0 : 0,
+      discount_percentage: !isFastMode && docType !== 'challan' && discountMode === 'percentage' ? Number(discount) || 0 : null,
       attachment_urls: attachmentUrls,
     }
 
@@ -1295,21 +1295,9 @@ export function DocumentNewPage() {
 
               <Separator />
 
-              {/* Discount */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Discount (flat ₹)
-                </Label>
-                <Input
-                  type="number" placeholder="0.00"
-                  value={discount} onChange={e => setDiscount(e.target.value)}
-                  className="h-10 rounded-lg text-sm font-semibold"
-                />
-              </div>
+              <DiscountInput mode={discountMode} value={discount} subtotal={lineTotal} onMode={setDiscountMode} onValue={setDiscount} />
 
-              <Separator />
-
-              {/* Taxes */}
+                  {/* Taxes */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1341,40 +1329,7 @@ export function DocumentNewPage() {
             </div>
           )}
 
-          {/* Grand Total card */}
-          {docType !== 'challan' && (
-            <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
-              {lineTotal > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Items subtotal</span>
-                  <span className="font-medium">{fmtAmount(lineTotal)}</span>
-                </div>
-              )}
-              {chargeTotal > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Charges</span>
-                  <span className="font-medium">+ {fmtAmount(chargeTotal)}</span>
-                </div>
-              )}
-              {discountAmt > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Discount</span>
-                  <span className="font-medium text-green-600">− {fmtAmount(discountAmt)}</span>
-                </div>
-              )}
-              {taxTotal > 0 && (
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Tax</span>
-                  <span className="font-medium">+ {fmtAmount(taxTotal)}</span>
-                </div>
-              )}
-              {(chargeTotal > 0 || discountAmt > 0 || taxTotal > 0) && <Separator />}
-              <div className="flex justify-between items-center">
-                <span className="text-base font-bold">Grand Total</span>
-                <span className="text-xl font-black text-primary">{fmtAmount(grandTotal)}</span>
-              </div>
-            </div>
-          )}
+          {docType !== 'challan' && <DocumentTotalsSummary preview={taxPreview} />}
 
           {/* Payment account */}
           {showPaymentAccount && (
@@ -1460,7 +1415,7 @@ export function DocumentNewPage() {
       )}
 
       {/* ── SUBMIT BUTTON ─────────────────────────────────────────────────────── */}
-      {['bill', 'invoice', 'quotation', 'po', 'pi'].includes(docType) && <div className="rounded-xl border p-4 space-y-2"><p className="text-xs text-muted-foreground">Save an unposted draft on this device and continue later.</p><SaveOfflineButton kind="draft" label="Save local draft" existingId={restoredDraftId ?? undefined} load={async () => new Blob([JSON.stringify({ type: docType, contact: contactId ? Number(contactId) : undefined, consignee: consigneeId ? Number(consigneeId) : undefined, reference: referenceId ? Number(referenceId) : undefined, date, due_date: dueDate || undefined, payment_terms: paymentTerms || undefined, place_of_supply: placeOfSupply || undefined, reverse_charge: reverseCharge, tax_mode: isFastMode ? 'document' : taxMode, supply_category: supplyCategory || null, supplier_invoice_number: supplierNumber || null, notes, line_items: isFastMode ? [] : lineItems.map(item => ({ ...item, key: undefined })), taxes: taxMode === 'item' ? [] : taxes, charges, discount: discountAmt, total_amount: isFastMode ? fastAmount : undefined, payment_account: paymentAccountId ? Number(paymentAccountId) : undefined, attachment_urls: attachmentUrls })], { type: 'application/json' })} title={`${getDocLabel(docType)} draft · ${date}`} filename={`${docType}-draft.json`} /></div>}
+      {['bill', 'invoice', 'quotation', 'po', 'pi'].includes(docType) && <div className="rounded-xl border p-4 space-y-2"><p className="text-xs text-muted-foreground">Save an unposted draft on this device and continue later.</p><SaveOfflineButton kind="draft" label="Save local draft" existingId={restoredDraftId ?? undefined} load={async () => new Blob([JSON.stringify({ type: docType, contact: contactId ? Number(contactId) : undefined, consignee: consigneeId ? Number(consigneeId) : undefined, reference: referenceId ? Number(referenceId) : undefined, date, due_date: dueDate || undefined, payment_terms: paymentTerms || undefined, place_of_supply: placeOfSupply || undefined, reverse_charge: reverseCharge, tax_mode: isFastMode ? 'document' : taxMode, supply_category: supplyCategory || null, supplier_invoice_number: supplierNumber || null, notes, line_items: isFastMode ? [] : lineItems.map(item => ({ ...item, key: undefined })), taxes: taxMode === 'item' ? [] : taxes, charges, discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, total_amount: isFastMode ? fastAmount : undefined, payment_account: paymentAccountId ? Number(paymentAccountId) : undefined, attachment_urls: attachmentUrls })], { type: 'application/json' })} title={`${getDocLabel(docType)} draft · ${date}`} filename={`${docType}-draft.json`} /></div>}
       {offlineDraftId && <div role={offlineDraftError ? 'alert' : 'status'} className="rounded-xl border p-4 text-sm">{offlineDraftError || 'Local draft loaded. Review the contact, items and accounting controls before creating it.'}{offlineDraftError && <a href="/offline" className="text-primary block mt-2">Unlock or review offline files</a>}</div>}
       {taxMode === 'item' && <p role={taxPreview.isError ? 'alert' : 'status'} className="text-xs text-muted-foreground">{taxPreview.isError ? 'Check item taxes, charges and discount to calculate the total.' : taxPreview.ready ? 'Per-item total calculated from saved accounting rules.' : 'Calculating per-item taxes…'}</p>}
       {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={!isFastMode && docType !== 'challan'} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}

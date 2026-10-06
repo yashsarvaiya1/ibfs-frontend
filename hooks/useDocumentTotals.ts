@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/axios'
 import type { DocumentCreate } from '@/models/document'
 
-export interface CalculatedTotals { total: string | number; tax_total: string | number; taxable_amount: string | number; taxes: { name: string; percentage: string | number; amount: string | number }[] }
+export interface CalculatedTotals { subtotal: string | number; charges_total: string | number; discount: string | number; total: string | number; tax_total: string | number; taxable_amount: string | number; taxes: { name: string; percentage: string | number; amount: string | number }[] }
 
 export function useDocumentTotals(data: DocumentCreate, enabled: boolean) {
   const serialized = JSON.stringify(data)
