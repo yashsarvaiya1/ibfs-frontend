@@ -10,6 +10,18 @@ export function useDocumentTotals(data: DocumentCreate, enabled: boolean) {
   const serialized = JSON.stringify(data)
   const [settled, setSettled] = useState(serialized)
   useEffect(() => { const timer = setTimeout(() => setSettled(serialized), 250); return () => clearTimeout(timer) }, [serialized])
-  const query = useQuery({ queryKey: ['document-totals', settled], queryFn: ({ signal }) => api.post<CalculatedTotals>('/documents/preview_totals/', JSON.parse(settled), { signal }).then(r => r.data), enabled, retry: false, staleTime: 60_000 })
-  return { ...query, ready: enabled && settled === serialized && !query.isFetching && !!query.data }
+  const query = useQuery({
+    queryKey: ['document-totals', settled],
+    queryFn: ({ signal }) => api.post<CalculatedTotals>('/documents/preview_totals/', JSON.parse(settled), { signal, timeout: 20_000 }).then(r => r.data),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+  })
+  const state = !enabled ? 'idle'
+    : settled !== serialized ? 'calculating'
+    : query.fetchStatus === 'paused' ? 'offline'
+    : query.isFetching ? 'calculating'
+    : query.isError ? 'error'
+    : query.data ? 'ready' : 'calculating'
+  return { ...query, state, ready: state === 'ready' }
 }

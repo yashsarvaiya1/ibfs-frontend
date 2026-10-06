@@ -239,7 +239,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     }
   }, [doc?.id])
 
-  const taxPreview = useDocumentTotals({ type: doc?.type ?? 'invoice', date: date || businessDate(), tax_mode: taxMode, line_items: lineItems.filter(item => item.name.trim()), charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, supply_category: supplyCategory || null }, !!doc?.is_active && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(doc.type) && lineItems.some(item => item.name.trim()))
+  const taxPreview = useDocumentTotals({ type: doc?.type ?? 'invoice', date: date || businessDate(), tax_mode: taxMode, line_items: lineItems, charges: charges.filter(c => c.name), taxes: taxMode === 'item' ? [] : taxes.filter(tax => tax.name), discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, supply_category: supplyCategory || null }, !!doc?.is_active && ['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation'].includes(doc.type))
   if (docIsError) return <div role="alert" className="p-5 space-y-3"><p>{apiError(docError, 'Could not load this document.')}</p><Button onClick={() => docRefetch()}>Retry</Button></div>
 
   // Loading state
@@ -890,14 +890,14 @@ export function DocumentEditPage({ id }: { id: number }) {
             </div>
           )}
 
-          {hasLineItems && docType !== 'challan' && lineItems.some(item => item.name.trim()) && <DocumentTotalsSummary preview={taxPreview} />}
+          {hasLineItems && docType !== 'challan' && lineItems.length > 0 && <DocumentTotalsSummary preview={taxPreview} />}
           {renderAttachments()}
           {renderNotes()}
         </div>
       )}
 
       {/* Submit */}
-      {taxMode === 'item' && <p role={taxPreview.isError ? 'alert' : 'status'} className="text-xs text-muted-foreground">{taxPreview.isError ? 'Check item taxes, charges and discount to calculate the total.' : taxPreview.ready ? 'Per-item total calculated from saved accounting rules.' : 'Calculating per-item taxes…'}</p>}
+      {taxMode === 'item' && taxPreview.ready && <p className="text-xs text-muted-foreground">Per-item total calculated from saved accounting rules.</p>}
       {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={docType !== 'challan' && lineItems.some(item => item.name.trim())} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
       <div className="pt-4 pb-8 flex gap-3">
         <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>
