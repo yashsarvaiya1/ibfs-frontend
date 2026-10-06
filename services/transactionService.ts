@@ -28,7 +28,7 @@ export const transactionService = {
 
   linkDocument: (id: number, data: LinkDocumentPayload) =>
     api
-      .post<FinancialTransaction>(`/transactions/${id}/link-document/`, data)
+      .post<FinancialTransaction>(`/transactions/${id}/link_document/`, data)
       .then(r => r.data),
 
   /**

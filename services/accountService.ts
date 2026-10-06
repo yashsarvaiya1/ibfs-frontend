@@ -34,7 +34,7 @@ export const accountService = {
 
   setBalance: (id: number, data: SetBalancePayload) =>
     api
-      .post<PaymentAccount>(`/accounts/${id}/set-balance/`, data)
+      .post<PaymentAccount>(`/accounts/${id}/set_balance/`, data)
       .then(r => r.data),
 
   transfer: (data: TransferPayload) =>

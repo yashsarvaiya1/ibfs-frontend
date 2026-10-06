@@ -186,7 +186,7 @@ export function PdfViewer({ url, className }: PdfViewerProps) {
                 <Page
                   pageNumber={pageNumber}
                   width={baseWidth} // Never change this on zoom
-                  renderTextLayer={false}
+                  renderTextLayer={true}
                   renderAnnotationLayer={false}
                   onLoadSuccess={(page: any) => {
                     setAspectRatio(page.originalHeight / page.originalWidth)

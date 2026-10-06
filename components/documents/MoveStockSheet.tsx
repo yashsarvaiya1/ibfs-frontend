@@ -18,8 +18,8 @@ interface Props {
   onClose:      () => void
 }
 
-// FIX 2 helper — normalise DRF Decimal string to integer string for input display
-const toQtyStr = (v: string | number) => String(Math.floor(Number(v)))
+// FIX 2 helper — normalise DRF Decimal string without losing fractional stock for input display
+const toQtyStr = (v: string | number) => String(Number(v))
 
 export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
   const moveStock = useMoveStock(docId)
@@ -118,6 +118,7 @@ export function MoveStockSheet({ docId, stockPreview, open, onClose }: Props) {
                       </Label>
                       <Input
                         type="number"
+                        step="0.01"
                         min={0}
                         max={remaining}
                         className="w-24 h-9 font-bold text-center rounded-lg border-primary/30 focus-visible:ring-primary/20"

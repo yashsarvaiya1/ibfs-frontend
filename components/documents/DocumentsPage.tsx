@@ -27,7 +27,7 @@ import {
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-import { env } from 'next-runtime-env'
+import api, { getApiBase } from '@/lib/axios'
 import { toast } from 'sonner'
 import type { Settings } from '@/models/settings'
  
@@ -86,10 +86,6 @@ const PAYMENT_FILTERS = [
   { label: 'Due',     value: 'due' },
 ] as const
 
-function getApiBase(): string {
-  const raw = env('NEXT_PUBLIC_API_URL') ?? 'http://localhost:8000/api'
-  return raw.replace(/\/$/, '')
-}
 
 function countActiveFilters(opts: {
   selectedTypes:  string[]
@@ -174,15 +170,7 @@ function DocPrintSheet({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(url, {
-        method,
-        credentials: 'include',
-        ...(method === 'POST' && fetchBody
-          ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fetchBody) }
-          : {}),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
+      const { data: blob } = await api.request<Blob>({ url, method, data: fetchBody, responseType: 'blob' })
       setBlobUrl(URL.createObjectURL(blob))
     } catch (err) {
       console.error('Doc PDF error:', err)
@@ -280,7 +268,7 @@ function DocPrintSheet({
                 <Page
                   pageNumber={pageNumber}
                   width={baseWidth}
-                  renderTextLayer={false}
+                  renderTextLayer={true}
                   renderAnnotationLayer={false}
                   onRenderSuccess={onPageRenderSuccess}
                   onRenderError={err => setError(`Page error: ${err.message}`)}

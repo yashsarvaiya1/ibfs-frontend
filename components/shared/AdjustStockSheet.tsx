@@ -76,9 +76,8 @@ export function AdjustStockSheet({ editTxn, onEditClose }: AdjustStockSheetProps
     : adjustStockMode === 'add'
 
   const delta      = Number(qty) || 0
-  const afterStock = isAdd
-    ? Number(product?.current_stock ?? 0) + delta
-    : Number(product?.current_stock ?? 0) - delta
+  const signedQuantity = isAdd ? delta : -delta
+  const afterStock = Number(product?.current_stock ?? 0) + signedQuantity - (isEditMode ? Number(editTxn!.quantity) : 0)
 
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
