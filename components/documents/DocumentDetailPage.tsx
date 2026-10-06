@@ -29,13 +29,14 @@ import {
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  MoreVertical, Banknote, Package, Trash2,
+  MoreVertical, Banknote, Package, Trash2, MessageCircle,
   ExternalLink, TrendingUp, TrendingDown,
   Plus, X, FileText, Printer, Edit,
   CheckCircle2, Tag, Clock, AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
+import { DocumentShareSheet } from './DocumentShareSheet'
 import { DocumentFlow } from './DocumentFlow'
 import { MoveStockSheet }   from './MoveStockSheet'
 import { TransactionCard }  from '@/components/shared/TransactionCard'
@@ -73,6 +74,7 @@ export function DocumentDetailPage({ id }: Props) {
   const deleteTxnMutation = useDeleteTransaction()
   const markPaidMutation  = useMarkPaid(id)   // ✅ added
 
+  const [shareOpen, setShareOpen] = useState(false)
   const [paymentSheet,   setPaymentSheet]   = useState(false)
   const [moveStockSheet, setMoveStockSheet] = useState(false)
   const [deleteSheet,    setDeleteSheet]    = useState(false)
@@ -231,6 +233,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   return (
     <div className="pb-10">
+      <DocumentShareSheet key={`${doc.id}-${doc.updated_at}`} doc={doc} open={shareOpen} onOpenChange={setShareOpen} />
 
       <DocumentFlow document={doc} />
       {/* ── Header ──────────────────────────────────────────────────────────── */}
@@ -273,6 +276,7 @@ export function DocumentDetailPage({ id }: Props) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => setShareOpen(true)}><MessageCircle className="mr-2 h-4 w-4" /> Share on WhatsApp</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push(`/documents/${doc.id}/print`)}>
                   <Printer className="mr-2 h-4 w-4" /> Print / Download PDF
                 </DropdownMenuItem>
