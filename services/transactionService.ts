@@ -15,6 +15,9 @@ export const transactionService = {
       .get<PaginatedResponse<FinancialTransaction>>('/transactions/', { params })
       .then(r => r.data),
 
+  allocate: (id: number, allocations: { document: number; amount: string }[]) =>
+    api.post<FinancialTransaction>(`/transactions/${id}/allocate/`, { allocations }).then(r => r.data),
+
   get: (id: number) =>
     api.get<FinancialTransaction>(`/transactions/${id}/`).then(r => r.data),
 

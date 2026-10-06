@@ -80,7 +80,7 @@ export function EditTransactionSheet({ txn, open, onClose, contactId, onDelete }
   const originalAmount = Math.abs(Number(txn.amount))
   const newAmount      = Number(amount) || 0
   const amountChanged  = newAmount !== originalAmount
-  const isOutgoing     = Number(txn.amount) >= 0
+  const isOutgoing     = Number(txn.amount) < 0
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -134,7 +134,7 @@ export function EditTransactionSheet({ txn, open, onClose, contactId, onDelete }
             'text-lg font-black shrink-0 tabular-nums',
             isOutgoing ? 'text-red-600' : 'text-emerald-600',
           )}>
-            {isOutgoing ? '+' : '-'}{fmtAmount(originalAmount)}
+            {isOutgoing ? '-' : '+'}{fmtAmount(originalAmount)}
           </p>
         </div>
 
@@ -154,7 +154,7 @@ export function EditTransactionSheet({ txn, open, onClose, contactId, onDelete }
             <Label>
               Amount
               <span className="text-[10px] text-muted-foreground ml-2 font-normal uppercase tracking-wider">
-                ({isOutgoing ? 'Dr / outgoing' : 'Cr / incoming'} — sign preserved)
+                ({isOutgoing ? 'Outgoing' : 'Incoming'} — sign preserved)
               </span>
             </Label>
             <Input

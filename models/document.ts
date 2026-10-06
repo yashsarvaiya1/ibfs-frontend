@@ -214,7 +214,8 @@ export interface BulkPrintPayload {
 
 // ── Document list / filter params ─────────────────────────────────────────────
 export interface DocumentListParams {
-  type?:      DocumentType
+  type?:      DocumentType | string
+  payment_status?: 'paid' | 'unpaid' | 'partial' | 'due'
   contact?:   number
   date_from?: string
   date_to?:   string

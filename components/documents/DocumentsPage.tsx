@@ -482,7 +482,7 @@ export function DocumentsPage() {
     if (dateFrom) p.date_from = dateFrom
     if (dateTo)   p.date_to   = dateTo
 
-    // Partial is handled client-side; paid/unpaid go to backend
+    if (paymentFilter) p.payment_status = paymentFilter
     if (paymentFilter === 'paid')   p.is_paid = 'true'
     if (paymentFilter === 'unpaid') p.is_paid = 'false'
     // Bug #4: due filter — backend handles via is_due=true
@@ -501,20 +501,7 @@ export function DocumentsPage() {
   const hasPrev    = page > 1
   const hasNext    = page < totalPages
 
-  // Client-side partial filter (only applied on current page results)
-  const docs = useMemo(() => {
-    if (paymentFilter !== 'partial') return allDocs
-    return allDocs.filter(doc => {
-      if (!HAS_BALANCE.has(doc.type)) return false
-      const ps = doc.payment_status
-      if (!ps)  return false
-      const isPaid = doc.is_paid || ps.is_paid
-      if (isPaid)  return false
-      const rem   = Number(ps.remaining)
-      const total = Number(doc.total_amount)
-      return rem > 0 && rem < total
-    })
-  }, [allDocs, paymentFilter])
+  const docs = allDocs
 
   // ── Counts ─────────────────────────────────────────────────────────────────
   const activeFilterCount = countActiveFilters({
@@ -554,6 +541,7 @@ export function DocumentsPage() {
     if (dateFrom) params.set('date_from', dateFrom)
     if (dateTo)   params.set('date_to', dateTo)
 
+    if (paymentFilter) params.set('payment_status', paymentFilter)
     if (paymentFilter === 'paid')   params.set('is_paid', 'true')
     if (paymentFilter === 'unpaid') params.set('is_paid', 'false')
     if (paymentFilter === 'due')    params.set('is_due',  'true')

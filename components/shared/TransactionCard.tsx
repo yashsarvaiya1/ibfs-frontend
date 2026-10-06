@@ -9,9 +9,10 @@ import {
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { fmtDate, txnAmountLabel, cn } from '@/lib/utils'   // txnAmountLabel replaces fmtAmount here
+import { useUIStore } from '@/stores/uiStore'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import type { FinancialTransaction } from '@/models/transaction'
-import { MoreVertical, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, ExternalLink, Split } from 'lucide-react'
 
 const DOC_LABELS = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined): string =>
@@ -40,9 +41,11 @@ export function TransactionCard({
 }: TransactionCardProps) {
   const router   = useRouter()
   const amount   = Number(txn.amount)
-  const isCredit = amount < 0    // negative = they owe us / money incoming = green
+  const isCredit = txn.type === 'record' ? amount < 0 : amount >= 0
+  const openAllocation = useUIStore(s => s.openPaymentAllocation)
+  const canAllocate = txn.type === 'actual' && txn.document_type !== 'expense'
   const canEdit  = txn.type === 'actual'
-  const hasMenu  = !!(onEdit || onDelete)
+  const hasMenu  = !!(onEdit || onDelete || canAllocate)
 
   // Fix 1: contact_name is already typed on FinancialTransaction — no cast needed
   const resolvedContact =
@@ -81,7 +84,7 @@ export function TransactionCard({
                   }}
                   className="flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md hover:bg-primary/20 transition-colors"
                 >
-                  {getDocLabel(txn.document_type)} #{txn.document}
+                  {txn.doc_id ?? `${getDocLabel(txn.document_type)} #${txn.document}`}
                   <ExternalLink className="h-2.5 w-2.5 ml-0.5 shrink-0" />
                 </button>
               )}
@@ -142,6 +145,7 @@ export function TransactionCard({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-40">
+                    {canAllocate && <DropdownMenuItem onClick={() => openAllocation(txn.id)}><Split className="mr-2 h-3.5 w-3.5" /> Allocate payment</DropdownMenuItem>}
                     {onEdit && (
                       <DropdownMenuItem
                         onClick={onEdit}

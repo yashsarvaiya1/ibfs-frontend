@@ -569,7 +569,7 @@ export function AccountDetailPage({ id }: Props) {
                 </div>
                 <p className={cn(
                   'text-lg font-black shrink-0',
-                  Number(editTxn.amount) >= 0 ? 'text-red-600' : 'text-emerald-600',
+                  Number(editTxn.amount) < 0 ? 'text-red-600' : 'text-emerald-600',
                 )}>
                   {Number(editTxn.amount) >= 0 ? '+' : ''}{fmtAmount(editTxn.amount)}
                 </p>
@@ -590,7 +590,7 @@ export function AccountDetailPage({ id }: Props) {
                   <Label>
                     Amount
                     <span className="text-[10px] text-muted-foreground ml-2 font-normal uppercase tracking-wider">
-                      ({Number(editTxn.amount) >= 0 ? 'outgoing / Dr' : 'incoming / Cr'} — sign preserved)
+                      ({Number(editTxn.amount) < 0 ? 'Outgoing' : 'Incoming'} — sign preserved)
                     </span>
                   </Label>
                   <Input

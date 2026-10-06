@@ -125,9 +125,7 @@ export function DocumentDetailPage({ id }: Props) {
 
   // ✅ balance for display — use remaining from payment_status, not raw txn calc
   const balance    = isPayable ? Math.max(0, remaining) : 0
-  const totalPaid  = txns
-    .filter(t => t.type === 'actual')
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+  const totalPaid = Number(payStatus?.paid ?? 0)
 
   const lineItems      = doc.line_items      ?? []
   const charges        = doc.charges         ?? []
