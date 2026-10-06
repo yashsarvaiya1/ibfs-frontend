@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocument, useUpdateDocument, useDocuments } from '@/hooks/useDocument'
@@ -32,6 +32,7 @@ import {
 } from '@/components/shared/common/SearchableSelect'
 import { UploadInput }     from '@/components/shared/common/UploadInput'
 import { FilePreviewSheet } from '@/components/shared/FilePreviewSheet'
+import { apiError } from '@/lib/apiError'
 
 const DOC_LABELS  = DOC_TYPE_LABELS as Record<string, string>
 const getDocLabel = (t: string | null | undefined) => t ? (DOC_LABELS[t] ?? t) : ''
@@ -167,9 +168,12 @@ export function DocumentEditPage({ id }: { id: number }) {
     setPageTitle(`Edit ${getDocLabel(doc.type)} ${doc.doc_id}`)
   }, [doc?.id, doc?.doc_id, doc?.type, setPageTitle])
 
-  // Populate form from doc
+  const loadedRevision = useRef<{ id: number; updatedAt: string } | null>(null)
+
+  // Keep the user's draft intact when the query refreshes in the background.
   useEffect(() => {
-    if (!doc) return
+    if (!doc || loadedRevision.current?.id === doc.id) return
+    loadedRevision.current = { id: doc.id, updatedAt: doc.updated_at }
     setContactId(doc.contact    ? String(doc.contact)    : '')
     setConsigneeId(doc.consignee ? String(doc.consignee) : '')
     setReferenceId(doc.reference ? String(doc.reference) : '')
@@ -283,7 +287,7 @@ export function DocumentEditPage({ id }: { id: number }) {
   const updateSimpleRow = (key: string, field: 'name' | 'amount' | 'type', value: string) =>
     setSimpleRows(p => p.map(r => r.key !== key ? r : { ...r, [field]: value }))
 
-  const simpleTotal = simpleRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const simpleTotal = Math.abs(simpleRows.reduce((s, r) => s + (docType === 'interest' && r.type === 'discount' ? -1 : 1) * (Number(r.amount) || 0), 0))
 
   // ── Line item handlers (regular docs) ────────────────────────────────────────
   const handleProductPickerConfirm = (selected: any[]) => {
@@ -363,9 +367,10 @@ export function DocumentEditPage({ id }: { id: number }) {
       consignee:       consigneeId  ? Number(consigneeId)  : null,
       reference:       referenceId  ? Number(referenceId)  : null,  // ✅ always included
       date,
-      due_date:        dueDate       || undefined,
-      payment_terms:   paymentTerms  || undefined,
-      notes:           notes         || undefined,
+      expected_updated_at: loadedRevision.current?.updatedAt,
+      due_date:        dueDate       || null,
+      payment_terms:   paymentTerms  || null,
+      notes:           notes         || null,
       discount:        discountAmt,
       attachment_urls: attachmentUrls,
     }
@@ -374,7 +379,7 @@ export function DocumentEditPage({ id }: { id: number }) {
       // expense / interest
       const validRows = simpleRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one entry with a name and amount'); return }
-      payload.line_items    = validRows.map(r => ({ name: r.name, amount: Number(r.amount) }))
+      payload.line_items    = validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type as 'charge' | 'discount' }))
       payload.total_amount  = simpleTotal.toFixed(2)
     } else if (isVoucher) {
       if (!voucherAmount || Number(voucherAmount) <= 0) { toast.error('Enter amount'); return }
@@ -402,8 +407,8 @@ export function DocumentEditPage({ id }: { id: number }) {
       await updateDocument.mutateAsync(payload)
       toast.success('Document updated')
       router.back()
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? 'Failed to update document')
+    } catch (e: unknown) {
+      toast.error(apiError(e, 'Failed to update document'))
     }
   }
 
@@ -542,6 +547,9 @@ export function DocumentEditPage({ id }: { id: number }) {
                 <Input type="number" placeholder="0.00"
                   value={row.amount} onChange={e => updateSimpleRow(row.key, 'amount', e.target.value)}
                   className="w-32 h-11 rounded-xl font-semibold" />
+                <Button type="button" variant="outline" size="sm" onClick={() => updateSimpleRow(row.key, 'type', row.type === 'discount' ? 'charge' : 'discount')} className={row.type === 'discount' ? 'text-emerald-700' : ''}>
+                    {row.type === 'discount' ? 'Discount' : 'Charge'}
+                </Button>
                 {simpleRows.length > 1 && (
                   <button onClick={() => removeSimpleRow(row.key)}
                     className="p-2 text-muted-foreground hover:text-destructive transition-colors">

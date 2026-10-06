@@ -16,6 +16,8 @@ export type DocumentType =
   | 'interest' | 'expense'
 
 export interface LineItem {
+  unit?:       string
+  type?:       'charge' | 'discount'
   name:        string
   hsn?:        string | null
   quantity?:   number
@@ -62,6 +64,7 @@ export interface StockStatusItem {
 }
 
 export interface Document {
+  stock_mode: 'none' | 'record' | 'actual' | null
   id:                   number
   type:                 DocumentType
   doc_id:               string
@@ -126,12 +129,14 @@ export interface DocumentCreate {
 }
 
 export interface DocumentUpdate {
+  expected_updated_at?: string
+  payment_account?: number | null
   doc_id?:          string         // DI-01: editable — backend returns 409 if duplicate
   contact?:         number | null
-  notes?:           string
+  notes?:           string | null
   date?:            string
-  due_date?:        string
-  payment_terms?:   string
+  due_date?:        string | null
+  payment_terms?:   string | null
   attachment_urls?: string[]
   charges?:         Charge[]
   taxes?:           Tax[]

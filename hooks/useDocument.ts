@@ -70,6 +70,10 @@ export function useUpdateDocument(id: number) {
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: stockPreviewKey(id) })
       qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['contacts'] })
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
     },
   })
 }
