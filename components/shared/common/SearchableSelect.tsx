@@ -1,6 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import api from '@/lib/axios'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { Button } from '@/components/ui/button'
 import { Search, Check, X, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -25,7 +29,16 @@ export interface SearchableSelectGroup {
   options: SearchableSelectOption[]
 }
 
+type LookupResource = 'contacts' | 'accounts' | 'products' | 'documents'
+
+function lookupOption(resource: LookupResource, row: Record<string, unknown>): SearchableSelectOption {
+  return { value: String(row.id), label: String(resource === 'contacts' ? row.company_name || row.contact_name : resource === 'documents' ? row.doc_id : row.name),
+    sublabel: String(resource === 'contacts' ? row.phone || '' : resource === 'products' ? `${row.current_stock} ${row.unit}` : resource === 'documents' ? row.date || '' : row.type || '') }
+}
+
 interface SearchableSelectProps {
+  resource?: LookupResource
+  resourceParams?: Record<string, unknown>
   options:            SearchableSelectOption[]   // flat list (used when no groups)
   groups?:            SearchableSelectGroup[]    // optional grouped mode
   value:              string
@@ -46,6 +59,8 @@ interface SearchableSelectProps {
 
 export function SearchableSelect({
   options,
+  resource,
+  resourceParams,
   groups,
   value,
   onChange,
@@ -62,11 +77,27 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open,  setOpen]  = useState(false)
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const debouncedQuery = useDebouncedValue(query)
+  useEffect(() => setPage(1), [debouncedQuery, open])
+  const { data: remote, isLoading: loadingRemote, isError: remoteError, refetch } = useQuery({
+    queryKey: ['lookup', resource, resourceParams, debouncedQuery, page],
+    queryFn: ({ signal }) => api.get<{results: Record<string, unknown>[]; next: string | null; count: number}>(`/${resource}/`, { params: { is_active:true, ...resourceParams, search:debouncedQuery, page, page_size:20 }, signal }).then(r => r.data),
+    enabled: !!resource && open,
+    staleTime: 15000,
+  })
+  const { data: selectedRemote } = useQuery({
+    queryKey: ['lookup', resource, value],
+    queryFn: ({signal}) => api.get<Record<string, unknown>>(`/${resource}/${value}/`, {signal}).then(r=>r.data),
+    enabled: !!resource && !!value && !options.some(option=>option.value===value),
+  })
+  const remoteOptions = resource && remote ? remote.results.map(row=>lookupOption(resource,row)) : options
+  const effectiveOptions = resource ? [...options.filter(option=>option.value===''), ...remoteOptions.filter(option=>option.value!==''), ...(selectedRemote ? [lookupOption(resource!, selectedRemote)] : [])].filter((option,index,all)=>all.findIndex(other=>other.value===option.value)===index) : options
 
   // Flatten groups + options to find selected item label
   const allOptions: SearchableSelectOption[] = groups
     ? groups.flatMap(g => g.options)
-    : options
+    : effectiveOptions
 
   const selected = allOptions.find(o => o.value === value)
 
@@ -91,13 +122,13 @@ export function SearchableSelect({
     : null
 
   const filteredFlat: SearchableSelectOption[] = !groups
-    ? q
-      ? options.filter(o =>
+    ? q && !resource
+      ? effectiveOptions.filter(o =>
           o.label.toLowerCase().includes(q) ||
           o.sublabel?.toLowerCase().includes(q) ||
           o.badge?.toLowerCase().includes(q)
         )
-      : options
+      : effectiveOptions
     : []
 
   const isEmpty = groups
@@ -122,6 +153,8 @@ export function SearchableSelect({
       <button
         type="button"
         disabled={disabled}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => !disabled && setOpen(true)}
         className={cn(
           'w-full flex items-center justify-between gap-2',
@@ -203,6 +236,8 @@ export function SearchableSelect({
           </SheetHeader>
 
           <div className="overflow-y-auto pb-10" style={{ maxHeight: 'calc(85vh - 130px)' }}>
+            {resource && loadingRemote && <p className="px-4 py-2 text-sm text-muted-foreground">Searching…</p>}
+            {remoteError && <Button variant="outline" className="m-4" onClick={()=>refetch()}>Could not load options. Retry</Button>}
             {isEmpty ? (
               <div className="text-center py-10 text-sm text-muted-foreground">{emptyText}</div>
             ) : groups ? (
@@ -246,6 +281,7 @@ export function SearchableSelect({
                 ))}
               </div>
             )}
+            {resource && remote && remote.count>20 && <div className="flex items-center justify-between gap-2 px-4 py-3 border-t"><Button variant="outline" disabled={page===1} onClick={()=>setPage(p=>p-1)}>Previous</Button><span className="text-xs">{page} / {Math.ceil(remote.count/20)}</span><Button variant="outline" disabled={!remote.next} onClick={()=>setPage(p=>p+1)}>Next</Button></div>}
           </div>
         </SheetContent>
       </Sheet>

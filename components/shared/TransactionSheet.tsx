@@ -521,7 +521,7 @@ export function TransactionSheet() {
             <div className="space-y-1.5">
               <Label>Account <span className="text-destructive">*</span></Label>
               <SearchableSelect
-                options={accountOptions}
+                resource="accounts" options={accountOptions}
                 value={accountId}
                 onChange={setAccountId}
                 placeholder="Select account"
@@ -595,23 +595,7 @@ export function TransactionSheet() {
                   Link Document
                   <span className="text-xs text-muted-foreground ml-1">(optional)</span>
                 </Label>
-                {docGroups.length > 0 ? (
-                  <SearchableSelect
-                    options={[]}
-                    groups={docGroups}
-                    value={selectedDocId}
-                    onChange={setSelectedDocId}
-                    placeholder="Link a document..."
-                    title="Select Document"
-                    searchPlaceholder="Search by type or ID..."
-                    clearable
-                  />
-                ) : (
-                  <div className="flex items-center gap-2 p-3 rounded-xl border border-dashed text-muted-foreground text-sm">
-                    <FileText className="h-4 w-4 shrink-0" />
-                    No documents for this contact
-                  </div>
-                )}
+                <SearchableSelect resource="documents" resourceParams={{contact:contactId, type:'bill,invoice,cn,dn'}} options={[]} value={selectedDocId} onChange={setSelectedDocId} placeholder="Link a document…" title="Select document" clearable />
               </div>
             )}
 

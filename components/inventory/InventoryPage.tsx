@@ -1,5 +1,8 @@
 'use client'
 
+import { PageControls } from '@/components/shared/common/PageControls'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -43,8 +46,12 @@ export function InventoryPage() {
   const [printSheetOpen,   setPrintSheetOpen]   = useState(false)
 
   const { data: lowStockData } = useProducts({ is_active: true, low_stock: true })
-  const { data, isLoading }    = useProducts({
-    search:    search || undefined,
+  const [page, setPage] = useState(1)
+  const debouncedSearch = useDebouncedValue(search)
+  useEffect(()=>setPage(1),[debouncedSearch,showLowStock])
+  const { data, isLoading, isError, refetch } = useProducts({
+    page,
+    search:    debouncedSearch || undefined,
     low_stock: showLowStock || undefined,
     is_active: true,
   })
@@ -115,7 +122,7 @@ export function InventoryPage() {
     setSelectedIds(new Set())
   }, [])
 
-  const allSelected   = products.length > 0 && selectedIds.size === products.length
+  const allSelected   = products.length > 0 && products.every(p => selectedIds.has(p.id))
   const someSelected  = selectedIds.size > 0 && !allSelected
 
   // ── Print query params ─────────────────────────────────────────────────────
@@ -126,13 +133,14 @@ export function InventoryPage() {
     }
     const p: Record<string, unknown> = { is_active: true }
     if (showLowStock) p.low_stock = true
+    if (search) p.search = search
     return p
-  }, [selectedIds, showLowStock])
+  }, [selectedIds, showLowStock, search])
 
   const printTitle = useMemo(() => {
     if (selectedIds.size > 0) return `Selected Products (${selectedIds.size})`
     return showLowStock ? 'Low Stock Report' : 'Inventory Stock Report'
-  }, [selectedIds, showLowStock])
+  }, [selectedIds, showLowStock, search])
 
   return (
     <div className="pb-24">  {/* extra bottom padding for floating bar */}
@@ -368,6 +376,8 @@ export function InventoryPage() {
       )}
 
       {/* ── Create Product Sheet ──────────────────────────────────────────── */}
+      {isError && <Button variant="outline" onClick={()=>refetch()}>Could not load inventory. Retry</Button>}
+      <PageControls page={page} count={data?.count ?? 0} onChange={setPage} />
       <Sheet open={createOpen} onOpenChange={v => { setCreateOpen(v); if (!v) resetForm() }}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10 max-h-[92vh] overflow-y-auto">
           <SheetHeader className="mb-5">

@@ -82,6 +82,7 @@ export function useUpdateContact(id: number) {
   return useMutation({
     mutationFn: (data: ContactUpdate) => contactService.update(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: contactKey(id) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })
     },
@@ -93,6 +94,7 @@ export function useSend(contactId: number) {
   return useMutation({
     mutationFn: (data: SendReceivePayload) => contactService.send(contactId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       // Invalidate all ledger combos for this contact (partial key match)
       qc.invalidateQueries({ queryKey: ['contacts', contactId, 'ledger'] })
       qc.invalidateQueries({ queryKey: contactKey(contactId) })
@@ -108,6 +110,7 @@ export function useReceive(contactId: number) {
   return useMutation({
     mutationFn: (data: SendReceivePayload) => contactService.receive(contactId, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: ['contacts', contactId, 'ledger'] })
       qc.invalidateQueries({ queryKey: contactKey(contactId) })
       qc.invalidateQueries({ queryKey: CONTACTS_KEY })

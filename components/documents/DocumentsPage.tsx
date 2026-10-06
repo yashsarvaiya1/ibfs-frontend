@@ -349,6 +349,7 @@ export function DocumentsPage() {
   // ── URL params ─────────────────────────────────────────────────────────────
   const urlContact = searchParams.get('contact')
   const urlType    = searchParams.get('type')
+  const urlReference = searchParams.get('reference')
 
   // ── Applied filters ────────────────────────────────────────────────────────
   const [page,          setPage]          = useState(1)
@@ -475,6 +476,7 @@ export function DocumentsPage() {
       ordering:  '-date,-created_at',
       page,
       page_size: PAGE_SIZE,
+      reference: urlReference ? Number(urlReference) : undefined,
     }
 
     // ── Multi-type: comma-separated → backend uses type__in ──────────────────
@@ -493,7 +495,7 @@ export function DocumentsPage() {
     return p
   }, [
     search, filterContact, showDeleted, selectedTypes,
-    dateFrom, dateTo, paymentFilter, page,
+    dateFrom, dateTo, paymentFilter, page, urlReference,
   ])
 
   const { data, isLoading } = useDocuments(queryParams)
@@ -531,6 +533,7 @@ export function DocumentsPage() {
     // so backend's filter_queryset() picks them up exactly like the list view
     const params = new URLSearchParams()
 
+    if (urlReference) params.set('reference', urlReference)
     if (search)        params.set('search', search)
     if (filterContact) params.set('contact', filterContact)
 
@@ -552,7 +555,7 @@ export function DocumentsPage() {
     return qs ? `${base}?${qs}` : base
   }, [
     selectedDocIds, search, filterContact, showDeleted,
-    selectedTypes, dateFrom, dateTo, paymentFilter,
+    selectedTypes, dateFrom, dateTo, paymentFilter, urlReference,
   ])
   const bulkPrintBody = isAllPagesSelected || selectedDocIds.length === 0
   ? {}
@@ -1088,7 +1091,7 @@ export function DocumentsPage() {
                 Contact
               </p>
               <SearchableSelect
-                options={contactOptions}
+                resource="contacts" options={contactOptions}
                 value={stagedContact}
                 onChange={setStagedContact}
                 placeholder="All contacts"

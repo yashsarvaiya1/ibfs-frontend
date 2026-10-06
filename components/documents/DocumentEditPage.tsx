@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { productService } from '@/services/productService'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocument, useUpdateDocument, useDocuments } from '@/hooks/useDocument'
 import { useContacts } from '@/hooks/useContact'
@@ -319,10 +320,11 @@ export function DocumentEditPage({ id }: { id: number }) {
       return updated
     }))
 
-  const onProductSelect = (key: string, productId: string) => {
+  const onProductSelect = async (key: string, productId: string) => {
     if (!productId) { updateLineItem(key, 'product_id', null); return }
-    const product = products.find(p => String(p.id) === productId)
-    if (!product) return
+    let product
+    try { product = products.find(p => String(p.id) === productId) ?? await productService.get(Number(productId)) }
+    catch { toast.error('Could not load product. Select it again.'); return }
     setLineItems(p => p.map(l => {
       if (l.key !== key) return l
       const qty = Number(l.quantity) || 1
@@ -333,6 +335,7 @@ export function DocumentEditPage({ id }: { id: number }) {
         rate:       Number(product.rate),
         amount:     qty * Number(product.rate),
         hsn:        product.hsn_code ?? undefined,
+        unit:       product.unit,
       }
     }))
   }
@@ -454,7 +457,7 @@ export function DocumentEditPage({ id }: { id: number }) {
         <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>
       </Label>
       <SearchableSelect
-        options={referenceOptions}
+        resource="documents" resourceParams={{ contact:contactId || undefined }} options={referenceOptions}
         value={referenceId}
         onChange={setReferenceId}
         placeholder="Link to another document"
@@ -493,7 +496,7 @@ export function DocumentEditPage({ id }: { id: number }) {
           }
         </Label>
         <SearchableSelect
-          options={contactOptions}
+          resource="contacts" options={contactOptions}
           value={contactId}
           onChange={setContactId}
           placeholder="Select contact"
@@ -641,7 +644,7 @@ export function DocumentEditPage({ id }: { id: number }) {
                 <span className="text-xs text-muted-foreground ml-1">optional</span>
               </Label>
               <SearchableSelect
-                options={consigneeOptions}
+                resource="contacts" options={consigneeOptions}
                 value={consigneeId}
                 onChange={setConsigneeId}
                 placeholder="Select consignee"
@@ -718,7 +721,7 @@ export function DocumentEditPage({ id }: { id: number }) {
                     {/* Product link */}
                     {products.length > 0 && (
                       <SearchableSelect
-                        options={productOptions}
+                        resource="products" options={productOptions}
                         value={item.product_id ? String(item.product_id) : ''}
                         onChange={v => onProductSelect(item.key, v)}
                         placeholder="Link to inventory product (optional)"

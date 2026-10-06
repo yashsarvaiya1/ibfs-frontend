@@ -150,7 +150,7 @@ export function RecordPaymentSheet() {
           <div className="space-y-1.5">
             <Label>Account <span className="text-destructive">*</span></Label>
             <SearchableSelect
-              options={accountOptions}
+              resource="accounts" options={accountOptions}
               value={accountId}
               onChange={setAccountId}
               placeholder="Select account"

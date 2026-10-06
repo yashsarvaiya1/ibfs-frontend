@@ -248,7 +248,7 @@ export function ProductDetailPage({ id }: Props) {
                   <DropdownMenuItem onClick={() => setEditSheet(true)}>
                     Edit Details & Stock
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/transactions?product=${id}`)}>
+                  <DropdownMenuItem onClick={() => router.push(`/stock-transactions?product=${id}`)}>
                     View All Transactions
                   </DropdownMenuItem>
                 </DropdownMenuContent>

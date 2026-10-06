@@ -596,7 +596,7 @@ export function DocumentPrintPage({ id }: Props) {
             <div className="space-y-1.5">
               <Label>Payment Account <span className="text-destructive">*</span></Label>
               <SearchableSelect
-                options={accountOptions} value={paidAccount} onChange={setPaidAccount}
+                resource="accounts" options={accountOptions} value={paidAccount} onChange={setPaidAccount}
                 placeholder="Select account" title="Select Payment Account"
                 searchPlaceholder="Search accounts..."
               />

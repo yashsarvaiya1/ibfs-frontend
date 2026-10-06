@@ -4,6 +4,7 @@ import { businessDate } from '@/lib/businessDate'
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { productService } from '@/services/productService'
 import { useUIStore } from '@/stores/uiStore'
 import { useCreateDocument, useDocuments, useDocument, useStandaloneInterest } from '@/hooks/useDocument'
 import { useSettings } from '@/hooks/useSettings'
@@ -455,14 +456,15 @@ export function DocumentNewPage() {
       if (field === 'quantity' || field === 'rate') updated.amount = Number(updated.quantity ?? 0) * Number(updated.rate ?? 0)
       return updated
     }))
-  const onProductSelect = (key: string, productId: string) => {
+  const onProductSelect = async (key: string, productId: string) => {
     if (!productId) { updateLineItem(key, 'product_id', null); return }
-    const product = products.find(p => String(p.id) === productId)
-    if (!product) return
+    let product
+    try { product = products.find(p => String(p.id) === productId) ?? await productService.get(Number(productId)) }
+    catch { toast.error('Could not load product. Select it again.'); return }
     setLineItems(p => p.map(l => {
       if (l.key !== key) return l
       const qty = Number(l.quantity) || 1
-      return { ...l, product_id: product.id, name: product.name, rate: Number(product.rate), amount: qty * Number(product.rate), hsn: product.hsn_code ?? undefined }
+      return { ...l, product_id: product.id, name: product.name, rate: Number(product.rate), amount: qty * Number(product.rate), hsn: product.hsn_code ?? undefined, unit: product.unit }
     }))
   }
 
@@ -639,7 +641,7 @@ export function DocumentNewPage() {
         )}
 
         <SearchableSelect
-          options={refDocOptions}
+          resource="documents" resourceParams={{ type:selectedRefDocType, contact:contactId || undefined }} options={refDocOptions}
           value={referenceId}
           onChange={setReferenceId}
           placeholder={selectedRefDocType ? `Select ${getDocLabel(selectedRefDocType)}` : 'Select reference doc'}
@@ -715,7 +717,7 @@ export function DocumentNewPage() {
             : <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>}
         </Label>
         <SearchableSelect
-          options={contactOptions}
+          resource="contacts" options={contactOptions}
           value={contactId}
           onChange={setContactId}
           placeholder="Select contact"
@@ -775,7 +777,7 @@ export function DocumentNewPage() {
               <span className="text-xs text-muted-foreground ml-1 font-normal">optional — auto-fills contact</span>
             </Label>
             <SearchableSelect
-              options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
+              resource="documents" resourceParams={{contact:contactId || undefined}} options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
               placeholder="Link to an existing document" title="Select Document"
               searchPlaceholder="Search by doc ID, date..." clearable emptyText="No documents found"
             />
@@ -787,7 +789,7 @@ export function DocumentNewPage() {
               <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited</span>
             </Label>
             <SearchableSelect
-              options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+              resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
               placeholder="Select account" title="Select Payment Account"
               searchPlaceholder="Search accounts..." clearable
             />
@@ -942,7 +944,7 @@ export function DocumentNewPage() {
               <span className="text-xs text-muted-foreground ml-1 font-normal">optional — inherits contact if selected</span>
             </Label>
             <SearchableSelect
-              options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
+              resource="documents" resourceParams={{contact:contactId || undefined}} options={allDocOptions} value={interestLinkedDoc} onChange={setInterestLinkedDoc}
               placeholder="Link to an existing document" title="Select Document"
               searchPlaceholder="Search by doc ID, date..." clearable emptyText="No documents found"
             />
@@ -997,7 +999,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Consignee <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                resource="contacts" options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
                 placeholder="Select consignee" title="Select Consignee"
                 searchPlaceholder="Search contacts..." clearable
               />
@@ -1009,7 +1011,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
                 placeholder="Select account" title="Select Payment Account"
                 searchPlaceholder="Search accounts..." clearable
               />
@@ -1051,7 +1053,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Consignee <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
+                resource="contacts" options={consigneeOptions} value={consigneeId} onChange={setConsigneeId}
                 placeholder="Select consignee" title="Select Consignee"
                 searchPlaceholder="Search contacts..." clearable
               />
@@ -1088,7 +1090,7 @@ export function DocumentNewPage() {
                     </span>
                     {docType !== 'challan' && (
                       <SearchableSelect
-                        options={productOptions}
+                        resource="products" options={productOptions}
                         value={item.product_id ? String(item.product_id) : ''}
                         onChange={v => onProductSelect(item.key, v)}
                         placeholder="Product (optional)"
@@ -1306,7 +1308,7 @@ export function DocumentNewPage() {
             <div className="space-y-1.5">
               <Label>Payment Account <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
               <SearchableSelect
-                options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+                resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
                 placeholder="Select account" title="Select Payment Account"
                 searchPlaceholder="Search accounts..." clearable
               />
@@ -1368,7 +1370,7 @@ export function DocumentNewPage() {
           <div className="space-y-1.5">
             <Label>Payment Account <span className="text-destructive">*</span></Label>
             <SearchableSelect
-              options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
+              resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
               placeholder="Select account" title="Select Payment Account"
               searchPlaceholder="Search accounts..." clearable
             />

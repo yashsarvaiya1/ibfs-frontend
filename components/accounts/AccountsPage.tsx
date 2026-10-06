@@ -1,9 +1,12 @@
 'use client'
 
+import { PageControls } from '@/components/shared/common/PageControls'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
-import { useAccounts, useCreateAccount } from '@/hooks/useAccount'
+import { useAccounts, useCreateAccount, useAccountSummary } from '@/hooks/useAccount'
 import { fmtAmount } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,7 +31,12 @@ export function AccountsPage() {
   const setPageTitle = useUIStore((s) => s.setPageTitle)
   useEffect(() => setPageTitle('Accounts'), [setPageTitle])
 
-  const { data, isLoading } = useAccounts({ is_active: true })
+  const [page, setPage] = useState(1)
+  const [search,setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search)
+  useEffect(()=>setPage(1),[debouncedSearch])
+  const { data, isLoading, isError, refetch } = useAccounts({ is_active: true, page, search:debouncedSearch })
+  const { data:summary } = useAccountSummary()
   const accounts = data?.results ?? []
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -68,9 +76,7 @@ export function AccountsPage() {
     }
   }
 
-  const totalBalance = accounts.reduce(
-    (s, a) => s + Number(a.current_balance), 0
-  )
+  const totalBalance = Number(summary?.total_balance ?? 0)
 
   const maskAccountNumber = (num: string) => {
     if (num.length <= 4) return num
@@ -79,6 +85,9 @@ export function AccountsPage() {
 
   return (
     <div className="px-4 py-4 space-y-4 pb-10">
+      <Input aria-label="Search accounts" placeholder="Search accounts…" value={search} onChange={e=>setSearch(e.target.value)} />
+      {isError && <Button variant="outline" onClick={()=>refetch()}>Could not load accounts. Retry</Button>}
+      <PageControls page={page} count={data?.count ?? 0} onChange={setPage} />
 
       {/* Total Balance */}
       <Card className="bg-primary text-primary-foreground">

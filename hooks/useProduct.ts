@@ -50,6 +50,7 @@ export function useUpdateProduct(id: number) {
   return useMutation({
     mutationFn: (data: ProductUpdate) => productService.update(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: productKey(id) })
       qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
     },
@@ -62,6 +63,7 @@ export function useAdjustStock(id: number) {
   return useMutation({
     mutationFn: (data: AdjustStockPayload) => productService.adjustStock(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: productKey(id) })
       qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
       qc.invalidateQueries({ queryKey: pendingMovesKey(id) })
@@ -76,6 +78,7 @@ export function useSetStock(id: number) {
   return useMutation({
     mutationFn: (data: SetStockPayload) => productService.setStock(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: productKey(id) })
       qc.invalidateQueries({ queryKey: PRODUCTS_KEY })
     },
@@ -89,6 +92,7 @@ export function useMoveStockFromProduct(id: number) {
     mutationFn: (data: { document_id: number; quantity: number; date?: string }) =>
       productService.moveStockFromProduct(id, data),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: productKey(id) })
       qc.invalidateQueries({ queryKey: pendingMovesKey(id) })
       qc.invalidateQueries({ queryKey: PRODUCTS_KEY })

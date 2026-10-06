@@ -913,7 +913,7 @@ export function TransactionsPage() {
                 Contact
               </p>
               <SearchableSelect
-                options={contactOptions}
+                resource="contacts" options={contactOptions}
                 value={stagedContact}
                 onChange={setStagedContact}
                 placeholder="All contacts"
@@ -936,7 +936,7 @@ export function TransactionsPage() {
                 Payment Account
               </p>
               <SearchableSelect
-                options={accountOptions}
+                resource="accounts" options={accountOptions}
                 value={stagedAccount}
                 onChange={setStagedAccount}
                 placeholder="All accounts"

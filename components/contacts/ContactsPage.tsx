@@ -1,5 +1,8 @@
 'use client'
 
+import { PageControls } from '@/components/shared/common/PageControls'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/uiStore'
@@ -24,10 +27,15 @@ export function ContactsPage() {
   const [createOpen,   setCreateOpen]   = useState(false)
   const [showDeleted,  setShowDeleted]  = useState(false)
 
-  const { data, isLoading } = useContacts({
-    search:    search || undefined,
+  const [page, setPage] = useState(1)
+  const debouncedSearch = useDebouncedValue(search)
+  const { data, isLoading, isError, refetch } = useContacts({
+    page,
+    search:    debouncedSearch || undefined,
     is_active: showDeleted ? false : true,
   })
+
+  useEffect(() => setPage(1), [debouncedSearch, showDeleted])
 
   const contacts = data?.results ?? []
 
@@ -92,7 +100,7 @@ export function ContactsPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
           {contacts.map((contact) => (
             <Card
               key={contact.id}
@@ -137,6 +145,8 @@ export function ContactsPage() {
         </div>
       )}
 
+      {isError && <Button variant="outline" onClick={()=>refetch()}>Could not load contacts. Retry</Button>}
+      <PageControls page={page} count={data?.count ?? 0} onChange={setPage} />
       <ContactCreateSheet open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   )

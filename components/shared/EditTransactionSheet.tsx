@@ -185,7 +185,7 @@ export function EditTransactionSheet({ txn, open, onClose, contactId, onDelete }
           <div className="space-y-1.5">
             <Label>Payment Account</Label>
             <SearchableSelect
-              options={accountOptions}
+              resource="accounts" options={accountOptions}
               value={account}
               onChange={setAccount}
               placeholder="Select account"

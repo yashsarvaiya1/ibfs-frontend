@@ -612,7 +612,7 @@ export function AccountDetailPage({ id }: Props) {
                 <div className="space-y-1.5">
                   <Label>Payment Account</Label>
                   <SearchableSelect
-                    options={accountOptions}
+                    resource="accounts" options={accountOptions}
                     value={txnAccountId}
                     onChange={setTxnAccountId}
                     placeholder="Select account"
