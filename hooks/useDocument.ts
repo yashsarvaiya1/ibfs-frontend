@@ -1,5 +1,5 @@
 // hooks/useDocument.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { documentService } from '@/services/documentService'
 // Import from canonical model source, not service re-export
 import type { DocumentListParams } from '@/models/document'
@@ -15,6 +15,12 @@ export const DOCUMENTS_KEY    = ['documents'] as const
 export const documentKey      = (id: number) => ['documents', id] as const
 export const stockPreviewKey  = (id: number) => ['documents', id, 'stock_preview'] as const
 export const referenceDataKey = (id: number) => ['documents', id, 'reference_data'] as const
+
+function refreshReports(qc: QueryClient) {
+  for (const key of ['financial-year-report', 'gst-report', 'hsn-report', 'allocation-review']) {
+    void qc.invalidateQueries({ queryKey: [key] })
+  }
+}
 
 export function useDocuments(params?: DocumentListParams) {
   return useQuery({
@@ -53,6 +59,9 @@ export function useCreateDocument() {
   return useMutation({
     mutationFn: (data: DocumentCreate) => documentService.create(data),
     onSuccess: () => {
+      refreshReports(qc)
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['stock-transactions'] })
       qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
       qc.invalidateQueries({ queryKey: ['accounts'] })
@@ -67,6 +76,7 @@ export function useUpdateDocument(id: number) {
   return useMutation({
     mutationFn: (data: DocumentUpdate) => documentService.update(id, data),
     onSuccess: () => {
+      refreshReports(qc)
       qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(id) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
@@ -98,6 +108,7 @@ export function useRecordPayment(docId: number) {
   return useMutation({
     mutationFn: (data: RecordPaymentPayload) => documentService.recordPayment(docId, data),
     onSuccess: () => {
+      refreshReports(qc)
       qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })
@@ -129,6 +140,7 @@ export function useAddDetails(docId: number) {
     mutationFn: (line_items: DocumentCreate['line_items']) =>
       documentService.addDetails(docId, { line_items: line_items ?? [] }),
     onSuccess: () => {
+      refreshReports(qc)
       qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: stockPreviewKey(docId) })
@@ -142,6 +154,7 @@ export function useDeleteDocument(docId: number) {
   return useMutation({
     mutationFn: (data: DeleteDocumentPayload) => documentService.deleteDocument(docId, data),
     onSuccess: () => {
+      refreshReports(qc)
       qc.invalidateQueries({ queryKey: ['lookup'] })
       qc.invalidateQueries({ queryKey: documentKey(docId) })
       qc.invalidateQueries({ queryKey: DOCUMENTS_KEY })

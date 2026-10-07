@@ -204,6 +204,11 @@ function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export function DocumentNewPage() {
+  const searchParams = useSearchParams()
+  return <DocumentNewForm key={searchParams.toString()} />
+}
+
+function DocumentNewForm() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const setPageTitle = useUIStore(s => s.setPageTitle)
