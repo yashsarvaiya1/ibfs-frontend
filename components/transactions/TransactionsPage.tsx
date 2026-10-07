@@ -50,7 +50,7 @@ import type {
   FinancialTransaction
 } from '@/models/transaction'
 
-type TxnTypeFilter = 'actual' | 'record' | 'contra' | 'expense'
+type TxnTypeFilter = 'actual' | 'record' | 'contra' | 'expense' | 'income'
 type GroupBy = '' | 'contact' | 'account'
 
 const TYPE_OPTIONS: { label: string; value: TxnTypeFilter; desc: string }[] = [
@@ -58,6 +58,7 @@ const TYPE_OPTIONS: { label: string; value: TxnTypeFilter; desc: string }[] = [
   { label: 'Expected', value: 'record', desc: 'Linked document records' },
   { label: 'Transfer', value: 'contra', desc: 'Account-to-account transfers' },
   { label: 'Expense', value: 'expense', desc: 'Expense-tagged actuals' },
+  { label: 'Income', value: 'income', desc: 'Income receipts without party settlement' },
 ]
 
 const QUICK_RANGES = [

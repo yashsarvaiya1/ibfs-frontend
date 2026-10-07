@@ -1,4 +1,5 @@
 'use client'
+import { LoadingState } from '@/components/shared/common/LoadingState'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
@@ -12,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
 import { toast } from 'sonner'
 
-const columns: [keyof FYAmounts, string][] = [['net_sales', 'Sales after credit notes'], ['net_purchases', 'Purchases after debit notes'], ['expenses', 'Expense documents'], ['cash_received', 'Cash received'], ['cash_paid', 'Cash paid']]
+const columns: [keyof FYAmounts, string][] = [['net_sales', 'Sales after credit notes'], ['net_purchases', 'Purchases after debit notes'], ['expenses', 'Expense documents'], ['other_income', 'Other income receipts'], ['cash_received', 'Cash received'], ['cash_paid', 'Cash paid']]
 export function FinancialYearReport() {
   const current = currentFinancialYear()
   const [year, setYear] = useState(current)
@@ -26,7 +27,7 @@ export function FinancialYearReport() {
   }
   const report = query.data
   return <div className="space-y-5"><div className="space-y-2 max-w-sm"><Label htmlFor="business-fy">Financial year (April–March)</Label><select id="business-fy" className="h-10 w-full rounded-md border bg-background px-3" value={year} onChange={event => setYear(Number(event.target.value))}>{Array.from({ length: 8 }, (_, i) => current - i).map(y => <option key={y} value={y}>{y}–{String(y + 1).slice(2)}</option>)}</select></div>
-    {query.isPending ? <p role="status">Preparing financial year business report…</p> : query.isError || !report ? <p role="alert">Could not load the business report. <Button onClick={() => query.refetch()}>Retry</Button></p> : <>
+    {query.isPending ? <LoadingState label="Preparing financial year business report…" className="py-4" /> : query.isError || !report ? <p role="alert">Could not load the business report. <Button onClick={() => query.refetch()}>Retry</Button></p> : <>
       <p className="text-sm text-muted-foreground">{fmtDate(report.date_from)} – {fmtDate(report.date_to)}</p>
       <div className="flex gap-2 flex-wrap"><Button variant="outline" disabled={!!busy} onClick={() => download('pdf')}>Download FY PDF</Button><Button variant="outline" disabled={!!busy} onClick={() => download('csv')}>Download FY CSV</Button><SaveOfflineButton load={() => reportService.financialYearExport(year, 'pdf')} title={`FY business ${year}–${year + 1}`} filename={`FY_Business_${year}_${year + 1}.pdf`} /></div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">{columns.map(([key, label]) => <Card key={key}><CardContent className="pt-4"><p className="text-xs text-muted-foreground">{label}</p><p className="text-xl font-semibold mt-1">{fmtAmount(report.totals[key])}</p>{['net_sales', 'net_purchases', 'expenses'].includes(key) && <p className="text-xs text-muted-foreground mt-1">Including tax</p>}</CardContent></Card>)}</div>

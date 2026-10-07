@@ -1,39 +1,31 @@
 'use client'
 
-import { sessionService } from '@/services/sessionService'
-import { toast } from 'sonner'
+import { useNetworkStore } from '@/stores/networkStore'
+import { LoaderCircle } from 'lucide-react'
+
 import { useUIStore } from '@/stores/uiStore'
-import { useAuthStore } from '@/stores/authStore'
 import { useSettings } from '@/hooks/useSettings'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuSeparator,
-  DropdownMenuItem, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { LogOut, User, ArrowLeft, Settings, ArrowLeftRight, ChartNoAxesCombined } from 'lucide-react'
+import { ArrowLeft, Settings } from 'lucide-react'
+import { ThemeToggle } from './ThemeToggle'
 import Image from 'next/image'
 
 export function Header() {
+  const pending = useNetworkStore(s => s.pending)
   const pageTitle = useUIStore((s) => s.pageTitle)
-  const username  = useAuthStore((s) => s.username)
   const router    = useRouter()
   const pathname  = usePathname()
   const { data: settings } = useSettings()
 
   const isRoot = pathname === '/'
-  const handleLogout = async () => {
-    try { await sessionService.logout(); router.replace('/login') }
-    catch { toast.error('Could not sign out. Try again.') }
-  }
-
   const logoUrl = settings?.header_image_url ?? null
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="flex h-14 items-center justify-between px-4">
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {!isRoot && (
             <Button
               variant="ghost"
@@ -65,40 +57,16 @@ export function Header() {
           </button>
 
           <span className="text-muted-foreground text-sm">/</span>
-          <span className="text-sm font-medium truncate max-w-40">{pageTitle}</span>
+          <span className="text-sm font-medium truncate max-w-[min(40vw,20rem)]">{pageTitle}</span>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Account menu" className="rounded-full shrink-0">
-              <User className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <div className="px-2 py-1.5 text-xs text-muted-foreground border-b mb-1">
-              {username}
-            </div>
-            <DropdownMenuItem onClick={() => router.push('/transactions')}>
-              <ArrowLeftRight className="mr-2 h-4 w-4" />
-              All Transactions
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/settings')}>
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/offline')}>Offline files & drafts</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/reports')}>
-              <ChartNoAxesCombined className="mr-2 h-4 w-4" /> Reports & CA exports
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={handleLogout}
-              className="text-destructive focus:text-destructive"
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Logout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-1">
+          {pending > 0 && <span role="status" aria-label="Loading" className="flex items-center"><LoaderCircle aria-hidden="true" className="h-4 w-4 text-primary animate-spin motion-reduce:animate-none" /></span>}
+          <ThemeToggle />
+          <Button variant="ghost" size="icon" aria-label="Settings" className="h-9 w-9 shrink-0" onClick={() => router.push('/settings')}>
+            <Settings className="h-4 w-4" />
+          </Button>
+        </div>
 
       </div>
     </header>

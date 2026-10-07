@@ -235,7 +235,7 @@ export function DocumentDetailPage({ id }: Props) {
   }
 
   return (
-    <div className="pb-10">
+    <div className="max-w-4xl mx-auto pb-6">
       <DocumentShareSheet key={`${doc.id}-${doc.updated_at}`} doc={doc} open={shareOpen} onOpenChange={setShareOpen} />
 
       <DocumentFlow document={doc} />
@@ -252,7 +252,7 @@ export function DocumentDetailPage({ id }: Props) {
                 <Badge variant="destructive" className="rounded-md">Deleted</Badge>
               )}
             </div>
-            <h1 className="text-2xl font-black text-foreground/90 tracking-tight">#{doc.doc_id}</h1>
+            <h1 className="text-xl font-bold text-foreground/90 tracking-tight">#{doc.doc_id}</h1>
             <p className="text-sm font-medium text-muted-foreground mt-0.5">{fmtDate(doc.date)}</p>
             {doc.due_date && (
               <p className="text-xs text-muted-foreground/80 mt-0.5">Due: {fmtDate(doc.due_date)}</p>
@@ -272,7 +272,7 @@ export function DocumentDetailPage({ id }: Props) {
                 <Edit className="h-4 w-4" /> Edit
               </Button>
             )}
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-9 w-9 bg-muted/50 -mr-2">
                   <MoreVertical className="h-5 w-5" />
@@ -368,13 +368,14 @@ export function DocumentDetailPage({ id }: Props) {
 
       {/* ── Payment Summary ──────────────────────────────────────────────────── */}
       {totalAmount > 0 && (
-        <div className="px-4 py-4">
+        <div className="px-4 py-3">
           <Card className="rounded-xl shadow-sm border-border/80">
             <CardContent className="p-4 space-y-2.5">
               <div className="flex justify-between text-sm font-medium text-muted-foreground">
-                <span>Total Amount</span>
+                <span>{doc.type === 'income' ? 'Income received' : doc.type === 'expense' ? 'Expense paid' : 'Total amount'}</span>
                 <span className="text-foreground font-semibold">{fmtAmount(doc.total_amount)}</span>
               </div>
+              {doc.type === 'income' && <p className="text-xs text-muted-foreground">Received into {txns.find(t => t.type === 'actual')?.payment_account_name ?? 'the selected account'}. {doc.contact_display?.name ? `Source: ${doc.contact_display?.name}. ` : ''}No amount is due from the contact.</p>}
               {isPayable && totalPaid > 0 && (
                 <div className="flex justify-between text-sm font-medium">
                   <span className="text-muted-foreground">{isOutgoing ? 'Paid' : 'Received'}</span>
@@ -447,7 +448,7 @@ export function DocumentDetailPage({ id }: Props) {
           {/* ✅ Show Record Payment only when balance > 0 AND not manually settled */}
           {isRecordable && balance > 0 && !isFullyPaid && (
             <Button
-              className="flex-1 h-12 gap-2 rounded-xl shadow-md shadow-primary/20"
+              className="flex-1 h-11 gap-2 rounded-xl"
               onClick={handleOpenPaymentSheet}
             >
               <Banknote className="h-4 w-4" />
@@ -760,7 +761,7 @@ export function DocumentDetailPage({ id }: Props) {
             )}
 
             <Button className="w-full h-14 text-lg font-bold rounded-2xl shadow-lg shadow-primary/20"
-              onClick={handleRecordPayment} disabled={recordPayment.isPending}>
+              onClick={handleRecordPayment} loading={recordPayment.isPending}>
               {recordPayment.isPending ? 'Recording...' : isOutgoing ? 'Confirm Payment' : 'Confirm Receipt'}
             </Button>
           </div>
@@ -809,7 +810,7 @@ export function DocumentDetailPage({ id }: Props) {
             </div>
             <Button variant="destructive"
               className="w-full h-12 font-bold rounded-xl shadow-lg shadow-destructive/20"
-              onClick={handleDelete} disabled={deleteDocument.isPending}>
+              onClick={handleDelete} loading={deleteDocument.isPending}>
               {deleteDocument.isPending ? 'Deleting...' : 'Confirm Delete'}
             </Button>
           </div>

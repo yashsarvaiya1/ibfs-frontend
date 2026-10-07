@@ -48,8 +48,9 @@ export function TransactionCard({
   const router   = useRouter()
   const amount   = Number(txn.amount)
   const isCredit = txn.type === 'record' ? amount < 0 : amount >= 0
+  const openDeleteDocument = useUIStore(s => s.openDeleteDocSheet)
   const openAllocation = useUIStore(s => s.openPaymentAllocation)
-  const canAllocate = txn.type === 'actual' && txn.document_type !== 'expense'
+  const canAllocate = txn.type === 'actual' && !['expense', 'income'].includes(txn.document_type ?? '')
   const canEdit  = txn.type === 'actual'
   const canReverse = txn.type === 'contra' && !!txn.transfer_group && !txn.is_reversed
   const [confirmReverse,setConfirmReverse] = useState(false)
@@ -145,7 +146,7 @@ export function TransactionCard({
               </p>
 
               {hasMenu && (
-                <DropdownMenu>
+                <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
@@ -160,7 +161,7 @@ export function TransactionCard({
                     {canAllocate && <DropdownMenuItem onClick={() => openAllocation(txn.id)}><Split className="mr-2 h-3.5 w-3.5" /> Allocate payment</DropdownMenuItem>}
                     {onEdit && (
                       <DropdownMenuItem
-                        onClick={onEdit}
+                        onClick={() => txn.document_type === 'income' && txn.document ? router.push(`/documents/${txn.document}/edit`) : onEdit?.()}
                         disabled={!canEdit}
                         className={cn(!canEdit && 'opacity-50 cursor-not-allowed')}
                       >
@@ -175,7 +176,7 @@ export function TransactionCard({
                     )}
                     {onDelete && (
                       <DropdownMenuItem
-                        onClick={() => onDelete(txn.id)}
+                        onClick={() => txn.document_type === 'income' && txn.document ? openDeleteDocument(txn.document) : onDelete(txn.id)}
                         className="text-destructive focus:text-destructive"
                       >
                         <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -211,7 +212,7 @@ export function TransactionCard({
           </div>
         </div>
       </CardContent>
-      <AlertDialog open={confirmReverse} onOpenChange={setConfirmReverse}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reverse this transfer?</AlertDialogTitle><AlertDialogDescription>Both account balances will be restored. The original entries and their reversal stay in history.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><Button disabled={reverse.isPending} onClick={()=>reverse.mutate()}>{reverse.isPending ? 'Reversing…' : 'Reverse transfer'}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={confirmReverse} onOpenChange={setConfirmReverse}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reverse this transfer?</AlertDialogTitle><AlertDialogDescription>Both account balances will be restored. The original entries and their reversal stay in history.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><Button loading={reverse.isPending} onClick={()=>reverse.mutate()}>{reverse.isPending ? 'Reversing…' : 'Reverse transfer'}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </Card>
   )
 }

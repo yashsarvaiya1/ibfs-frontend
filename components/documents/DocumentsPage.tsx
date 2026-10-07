@@ -46,6 +46,8 @@ const PAGE_SIZE = 20
 const BASE_TYPE_OPTIONS: { label: string; value: string }[] = [
   { label: 'Bills',    value: 'bill' },
   { label: 'Invoices', value: 'invoice' },
+  { label: 'Expenses', value: 'expense' },
+  { label: 'Income', value: 'income' },
 ]
 
 const OPTIONAL_TYPE_OPTIONS: {
@@ -70,6 +72,7 @@ const TYPE_BADGE_COLORS: Record<string, string> = {
   cn:                    'bg-green-100 text-green-700 border-green-200',
   dn:                    'bg-red-100 text-red-700 border-red-200',
   challan:               'bg-yellow-100 text-yellow-700 border-yellow-200',
+  income:                'bg-emerald-100 text-emerald-700 border-emerald-200',
   expense:               'bg-gray-100 text-gray-700 border-gray-200',
   interest:              'bg-pink-100 text-pink-700 border-pink-200',
   cash_payment_voucher:  'bg-teal-100 text-teal-700 border-teal-200',
@@ -451,6 +454,7 @@ export function DocumentsPage() {
     ...BASE_TYPE_OPTIONS,
     ...OPTIONAL_TYPE_OPTIONS.filter(f => settings?.[f.flag]),
     { label: 'Expense', value: 'expense' },
+    { label: 'Income', value: 'income' },
   ], [settings])
 
   // ── Contact options ────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 'use client'
+import { LoadingState } from '@/components/shared/common/LoadingState'
 
 import { useState } from 'react'
 import Link from 'next/link'
@@ -26,7 +27,7 @@ export function ContactLedger({ contactId, openingBalance, onEditTxn, onRangeCha
       {(dateFrom || dateTo) && <Button variant="outline" onClick={() => {setDateFrom('');setDateTo('');setPage(1);onRangeChange?.({from:'',to:''})}}>Clear</Button>}
     </div>
     {dateFrom && dateTo && dateFrom > dateTo && <p className="text-sm text-destructive">From date must be before To date.</p>}
-    {isLoading ? <p className="py-8 text-center text-sm text-muted-foreground">Loading ledger…</p> : isError ? <div className="py-8 text-center"><p>Ledger could not be loaded.</p><Button variant="outline" onClick={() => refetch()}>Retry</Button></div> : <>
+    {isLoading ? <LoadingState label="Loading ledger…" className="py-4" /> : isError ? <div className="py-8 text-center"><p>Ledger could not be loaded.</p><Button variant="outline" onClick={() => refetch()}>Retry</Button></div> : <>
       <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-muted/60 text-xs text-muted-foreground"><tr><th className="p-3 text-left">Date</th><th className="p-3 text-left">Particulars</th><th className="p-3 text-right">Debit</th><th className="p-3 text-right">Credit</th><th className="p-3 text-right">Balance</th></tr></thead>
@@ -35,7 +36,7 @@ export function ContactLedger({ contactId, openingBalance, onEditTxn, onRangeCha
             {data?.results.map(txn => {
               const amount = Number(txn.amount)
               const balance = Number(txn.running_cf ?? 0)
-              const affectsCf = txn.type !== 'contra' && txn.document_type !== 'expense'
+              const affectsCf = txn.type !== 'contra' && !['expense', 'income'].includes(txn.document_type ?? '')
               return <tr key={txn.id} className="hover:bg-muted/20">
                 <td className="p-3 whitespace-nowrap">{fmtDate(txn.date)}</td>
                 <td className="p-3"><div className="flex items-center gap-2 flex-wrap">
