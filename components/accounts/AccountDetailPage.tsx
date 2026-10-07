@@ -38,7 +38,7 @@ import {
   ChevronLeft, ChevronRight, ExternalLink, Printer, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AccountType, SetBalancePayload } from '@/models/account'
+import type { AccountType } from '@/models/account'
 import { FinancialTransaction } from '@/models/transaction'
 import { DOC_TYPE_LABELS } from '@/models/document'
 import { TransactionCard } from '@/components/shared/TransactionCard'
@@ -134,16 +134,16 @@ export function AccountDetailPage({ id }: Props) {
     if (account) setPageTitle(account.name)
   }, [account, setPageTitle])
 
-  useEffect(() => {
-    if (editAccountOpen && account) {
-      setEditOpening(account.opening_balance)
-      setEditName(account.name)
-      setEditType(account.type as AccountType)
-      setEditAccNum(account.account_number ?? '')
-      setEditIfsc(account.ifsc_code ?? '')
-      setEditUpiId(account.upi_id ?? '')
-    }
-  }, [editAccountOpen, account])
+  const openAccountEditor = () => {
+    if (!account) return
+    setEditOpening(account.opening_balance)
+    setEditName(account.name)
+    setEditType(account.type as AccountType)
+    setEditAccNum(account.account_number ?? '')
+    setEditIfsc(account.ifsc_code ?? '')
+    setEditUpiId(account.upi_id ?? '')
+    setEditAccountOpen(true)
+  }
 
   useEffect(() => {
     if (!editTxn) return
@@ -279,7 +279,7 @@ export function AccountDetailPage({ id }: Props) {
   const handleSetBalance = async () => {
     if (directBalance === '') { toast.error('Enter a balance'); return }
     try {
-      await setBalanceMutation.mutateAsync({ current_balance: directBalance } as SetBalancePayload)
+      await setBalanceMutation.mutateAsync({ current_balance: directBalance })
       toast.success('Balance updated')
       setEditBalanceOpen(false)
     } catch { toast.error('Failed to update') }
@@ -355,7 +355,7 @@ export function AccountDetailPage({ id }: Props) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setEditAccountOpen(true)}>
+                  <DropdownMenuItem onClick={openAccountEditor}>
                     <Pencil className="mr-2 h-4 w-4" /> Edit Account
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {

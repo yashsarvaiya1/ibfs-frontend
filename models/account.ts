@@ -32,7 +32,6 @@ export interface AdjustBalancePayload {
 }
 
 export interface SetBalancePayload {
-  opening_balance: string
   current_balance: string | number
 }
 
