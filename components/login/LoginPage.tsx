@@ -29,7 +29,9 @@ export function LoginPage() {
     sessionService.status().then(session=>{
       if(session.authenticated){login(session.username!,session.csrf_token);router.replace('/')}
       else useAuthStore.getState().logout()
-    }).catch(()=>{}).finally(()=>setChecking(false))
+    }).catch(() => {
+      if (useAuthStore.getState().isAuthenticated) router.replace('/')
+    }).finally(() => setChecking(false))
   },[login,router])
 
 
