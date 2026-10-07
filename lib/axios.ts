@@ -24,7 +24,7 @@ api.interceptors.request.use((config) => {
   config.baseURL = url === base || url.startsWith(`${base}/`) || url.startsWith('/media/') ? '' : base
 
   const token = useAuthStore.getState().csrfToken
-  if (token && !['get','head','options'].includes(config.method?.toLowerCase() ?? 'get')) config.headers['X-CSRFToken'] = token
+  if (token && !config.headers['X-CSRFToken'] && !['get','head','options'].includes(config.method?.toLowerCase() ?? 'get')) config.headers['X-CSRFToken'] = token
   return config
 })
 

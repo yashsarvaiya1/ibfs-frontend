@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { ThemeProvider } from 'next-themes'
 import { clearOffline } from '@/lib/offline/vault'
-import { useAuthStore } from '@/stores/authStore'
+import { useAuthStore, isSessionRestoreBlocked, SESSION_LOCK_KEY } from '@/stores/authStore'
 
 // Private — only used inside Providers below
 function HydrationGate({ children }: { children: React.ReactNode }) {
@@ -44,6 +44,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(()=>useAuthStore.subscribe((state,previous)=>{
     if(previous.isAuthenticated && !state.isAuthenticated){queryClient.cancelQueries();queryClient.clear(); void clearOffline().catch(() => { /* Browser storage may be unavailable. */ })}
   }),[queryClient])
+
+  useEffect(() => {
+    const lock = () => { if (isSessionRestoreBlocked()) useAuthStore.getState().logout() }
+    const onStorage = (event: StorageEvent) => { if (event.key === SESSION_LOCK_KEY && event.newValue === 'true') lock() }
+    lock()
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>

@@ -128,7 +128,12 @@ export function SettingsPage() {
   }
 
   const [loggingOut, setLoggingOut] = useState(false)
-  const handleLogout = async () => { setLoggingOut(true); try { await sessionService.logout(); router.replace('/login') } catch { toast.error('Could not sign out. Please retry.') } finally { setLoggingOut(false) } }
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    try { await sessionService.logout() }
+    catch { toast.error('Signed out on this device. Server sign-out could not be confirmed.') }
+    finally { router.replace('/login'); setLoggingOut(false) }
+  }
 
   if (isLoading) return (
     <div className="px-4 py-4 space-y-3">
