@@ -1,4 +1,5 @@
 'use client'
+import { ReportTrendChart, ReportBarChart, REPORT_COLORS, monthLabel } from './ReportCharts'
 import { LoadingState } from '@/components/shared/common/LoadingState'
 
 import { FinancialYearReport } from './FinancialYearReport'
@@ -117,13 +118,17 @@ function GSTReportView({ period }: { period: ReportPeriod }) {
   const [reviewOnly, setReviewOnly] = useState(false)
   const query = useQuery({ queryKey: ['gst-report', period, page, reviewOnly], queryFn: () => reportService.gst({ ...period, page, review_only: reviewOnly }) })
   const data = query.data
-  if (query.isPending) return <p role="status" className="text-sm text-muted-foreground">Calculating GST…</p>
+  if (query.isPending) return <LoadingState label="Calculating GST…" />
   if (query.isError || !data) return <div role="alert" className="text-sm text-destructive">{apiError(query.error, 'Could not load GST summary.')} <Button variant="outline" onClick={() => query.refetch()}>Retry</Button></div>
   const totals = data.totals
   const components: (keyof GSTAmounts)[] = ['cgst', 'sgst', 'igst', 'utgst', 'cess', 'unsplit_gst', 'other_tax']
   return <div className="space-y-5">
     <ReportDownloads period={period} kind="gst" reviewOnly={reviewOnly} />
     <div className="grid sm:grid-cols-3 gap-3">{[['Sales GST after credit notes', totals.output.gst_total], ['Purchase GST after debit notes', totals.purchase.gst_total], ['Book GST difference', data.difference.gst_total]].map(([label, value]) => <Card key={label}><CardContent className="pt-4"><p className="text-xs text-muted-foreground">{label}</p><p className="text-xl font-semibold mt-1">{fmtAmount(value)}</p></CardContent></Card>)}</div>
+    <div className="grid xl:grid-cols-2 gap-4">
+      {data.months.length === 1 ? <ReportBarChart title="Sales and purchase GST" description="Selected month, after credit/debit notes. This compares recorded tax before ITC review." rows={[{label: 'Sales GST', value: Number(totals.output.gst_total), color: REPORT_COLORS[0]}, {label: 'Purchase GST', value: Number(totals.purchase.gst_total), color: REPORT_COLORS[1]}]} /> : <ReportTrendChart title="Monthly GST trend" description="Full selected period, after credit/debit notes. Reverse charge and excluded tax are shown separately below." series={[{label: 'Sales GST', color: REPORT_COLORS[0]}, {label: 'Purchase GST', color: REPORT_COLORS[1]}]} rows={data.months.map(month => ({ label: monthLabel(month.month), values: [Number(month.totals.output.gst_total), Number(month.totals.purchase.gst_total)] }))} />}
+      <ReportBarChart title="GST composition" description="Sales and purchase GST recorded in the full period. These are book amounts, before ITC review." rows={['cgst', 'sgst', 'igst', 'utgst', 'cess', 'unsplit_gst'].flatMap(key => { const component = key as keyof GSTAmounts; const label = key === 'unsplit_gst' ? 'GST without split' : key.toUpperCase(); return [{label: `${label} · Sales`, value: Number(totals.output[component]), color: REPORT_COLORS[0]}, {label: `${label} · Purchases`, value: Number(totals.purchase[component]), color: REPORT_COLORS[1]}] }).filter(row => row.value !== 0)} />
+    </div>
     <div className="rounded-xl border bg-muted/40 p-4 text-sm space-y-2"><p>Purchase GST needs GSTR-2B matching and ITC review. The book GST difference is not tax payable.</p><details><summary className="cursor-pointer font-medium">How this connects to your flow</summary><p className="mt-2">{data.basis}</p><p className="text-muted-foreground">Purchase GST is the tax recorded in bills, before GSTR-2B matching and ITC eligibility review. The difference is a book comparison, not tax payable. Reverse charge and excluded documents are shown separately.</p><p className="text-muted-foreground">Shared document rates remain the default; optional per-item rates support mixed GST. Missing details and unspecified classifications are flagged below. HSN/SAC reports use saved codes and units; no portal validation is performed.</p></details></div>
     <div className="overflow-x-auto rounded-xl border"><table className="w-full text-sm min-w-[720px]"><thead className="bg-muted/40"><tr><th className="text-left p-3">Tax component</th>{(Object.keys(bucketLabels) as GSTBucket[]).map(bucket => <th className="text-right p-3" key={bucket}>{bucketLabels[bucket]}</th>)}</tr></thead><tbody>{components.map(key => <tr key={key} className="border-t"><th className="text-left p-3 font-medium">{key === 'unsplit_gst' ? 'GST without split' : key === 'other_tax' ? 'Other tax (not GST)' : key.toUpperCase()}</th>{(Object.keys(bucketLabels) as GSTBucket[]).map(bucket => <td className="text-right p-3 tabular-nums" key={bucket}>{fmtAmount(totals[bucket][key])}</td>)}</tr>)}</tbody></table></div>
     <div><h2 className="font-semibold mb-3">Monthly GST in this period</h2>{!data.months.length ? <p className="text-sm text-muted-foreground">No GST documents in this period.</p> : <div className="overflow-x-auto rounded-xl border"><table className="w-full min-w-[680px] text-sm"><thead className="bg-muted/40"><tr>{['Month', 'Sales GST', 'Purchase GST', 'RCM sales', 'RCM purchases', 'Excluded tax'].map(label => <th key={label} className="p-3 text-right first:text-left">{label}</th>)}</tr></thead><tbody>{data.months.map(month => <tr key={month.month} className="border-t"><th className="p-3 text-left font-medium">{month.month}</th>{(Object.keys(bucketLabels) as GSTBucket[]).map(bucket => <td className="p-3 text-right tabular-nums" key={bucket}>{fmtAmount(month.totals[bucket].gst_total)}</td>)}</tr>)}</tbody></table></div>}</div>
@@ -149,10 +154,23 @@ function HSNReportView({ period }: { period: ReportPeriod }) {
   const [page, setPage] = useState(1)
   const [excludedPage, setExcludedPage] = useState(1)
   const query = useQuery({ queryKey: ['hsn-report', period], queryFn: () => reportService.hsn(period) })
-  if (query.isPending) return <p role="status">Preparing HSN/SAC summary…</p>
+  if (query.isPending) return <LoadingState label="Preparing HSN/SAC summary…" />
   if (query.isError || !query.data) return <div role="alert">Could not load the HSN/SAC summary. <Button onClick={() => query.refetch()}>Retry</Button></div>
   const data = query.data
+  const byCode = new Map<string, { label: string; sales: number; purchases: number }>()
+  for (const row of data.results) {
+    if (!['output', 'purchase'].includes(row.bucket)) continue
+    const label = row.hsn || 'Missing HSN/SAC'
+    const group = byCode.get(label) ?? { label, sales: 0, purchases: 0 }
+    if (row.bucket === 'output') group.sales += Number(row.taxable_amount)
+    else group.purchases += Number(row.taxable_amount)
+    byCode.set(label, group)
+  }
+  const ranked = [...byCode.values()].sort((a, b) => Math.abs(b.sales) + Math.abs(b.purchases) - Math.abs(a.sales) - Math.abs(a.purchases))
+  const top = ranked.slice(0, 6)
+  if (ranked.length > 6) top.push({ label: 'Other codes', sales: ranked.slice(6).reduce((sum, row) => sum + row.sales, 0), purchases: ranked.slice(6).reduce((sum, row) => sum + row.purchases, 0) })
   return <div className="space-y-4"><ReportDownloads period={period} kind="hsn" /><p className="text-sm text-muted-foreground">{data.basis}</p><h2 className="font-semibold">HSN/SAC groups · {data.results.length}</h2>{!data.results.length && <p className="text-sm text-muted-foreground">No calculable item groups in this period.</p>}
+    <ReportBarChart title="Taxable activity by HSN/SAC" description="Top six codes by combined sales/purchase activity, with remaining codes grouped as Other codes. Full period; reverse charge and excluded documents are not included here." rows={top.flatMap(row => [{label: `${row.label} · Sales`, value: row.sales, color: REPORT_COLORS[0]}, {label: `${row.label} · Purchases`, value: row.purchases, color: REPORT_COLORS[1]}])} />
     <div className="overflow-x-auto rounded-xl border"><table className="w-full text-sm min-w-[800px]"><thead className="bg-muted/40"><tr>{['HSN/SAC', 'Classification', 'Unit / qty', 'GST %', 'Taxable value', 'GST total', 'Documents'].map(label => <th className="p-3 text-left" key={label}>{label}</th>)}</tr></thead><tbody>{data.results.slice((page - 1) * 50, page * 50).map((row, index) => <tr className="border-t" key={index}><td className="p-3">{row.hsn || 'Missing code'}<p className="text-xs text-muted-foreground">{bucketLabels[row.bucket]}</p></td><td className="p-3">{row.supply_category?.replaceAll('_', ' ') || 'Not specified'}</td><td className="p-3">{row.unit || '—'} / {row.quantity ?? '—'}</td><td className="p-3">{row.rate}%</td><td className="p-3 tabular-nums">{fmtAmount(row.taxable_amount)}</td><td className="p-3 tabular-nums">{fmtAmount(row.gst_total)}{row.issues.length > 0 && <details className="text-xs text-amber-700 dark:text-amber-400 mt-1"><summary className="cursor-pointer">Review details</summary>{row.issues.map(issue => <p key={issue}>{issue}</p>)}</details>}</td><td className="p-3">{row.document_count}</td></tr>)}</tbody></table></div>
     <PageButtons page={page} size={50} count={data.results.length} onPage={setPage} busy={false} />
     {data.excluded.length > 0 && <div className="space-y-2"><h2 className="font-semibold">Excluded documents · {data.excluded.length}</h2>{data.excluded.slice((excludedPage - 1) * 50, excludedPage * 50).map(row => <Card key={row.id}><CardContent className="pt-4"><Link href={`/documents/${row.id}/edit`} className="text-primary text-sm font-semibold">Review {row.doc_id}</Link><p className="text-xs text-muted-foreground mt-1">{row.issues.join(' · ')}</p></CardContent></Card>)}<PageButtons page={excludedPage} size={50} count={data.excluded.length} onPage={setExcludedPage} busy={false} /></div>}
@@ -162,7 +180,7 @@ function HSNReportView({ period }: { period: ReportPeriod }) {
 function PaymentReviewView({ period }: { period: ReportPeriod }) {
   const [page, setPage] = useState(1)
   const query = useQuery({ queryKey: ['allocation-review', period, page], queryFn: () => reportService.allocationReview({ ...period, page }) })
-  if (query.isPending) return <p role="status">Reviewing payments…</p>
+  if (query.isPending) return <LoadingState label="Reviewing payments…" />
   if (query.isError || !query.data) return <div role="alert">Could not load payment review. <Button onClick={() => query.refetch()}>Retry</Button></div>
   const data = query.data
   return <div className="space-y-3"><h2 className="font-semibold">{data.count} payments with unallocated or inconsistent cash</h2><p className="text-sm text-muted-foreground">Advance payments can stay unallocated. Open the transaction’s allocation editor when you know which documents it settles. No matches are guessed from amounts.</p>{data.results.map(row => <Card key={row.id}><CardContent className="pt-4 space-y-2"><div className="flex justify-between gap-3"><div><Link href={`/transactions?review_payment=${row.id}`} className="text-primary font-semibold text-sm">Payment #{row.id}</Link><p className="text-xs text-muted-foreground">{fmtDate(row.date)} · {row.contact || 'No contact'} · {row.account || 'No account'}</p></div><div className="text-right"><p className="text-sm font-semibold">{fmtAmount(row.unallocated)}</p><p className="text-xs text-muted-foreground">Unallocated</p></div></div><p className="text-xs text-muted-foreground">{row.issue}</p>{row.document_id && <Link href={`/documents/${row.document_id}`} className="text-xs text-primary">Open {row.doc_id}</Link>}</CardContent></Card>)}<PageButtons page={page} size={data.page_size} count={data.count} onPage={setPage} busy={query.isFetching} /></div>
