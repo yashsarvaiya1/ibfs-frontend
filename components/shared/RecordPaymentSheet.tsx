@@ -243,7 +243,7 @@ export function RecordPaymentSheet() {
             </div>
           )}
 
-          <Button className="w-full h-12" onClick={handleSubmit} disabled={recordPayment.isPending}>
+          <Button className="w-full h-12" onClick={handleSubmit} loading={recordPayment.isPending}>
             {recordPayment.isPending ? 'Recording...' : 'Confirm Payment'}
           </Button>
         </div>

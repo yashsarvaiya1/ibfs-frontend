@@ -462,7 +462,7 @@ export function InventoryPage() {
             <Button
               className="w-full h-12 rounded-xl mt-2"
               onClick={handleCreate}
-              disabled={createProduct.isPending}
+              loading={createProduct.isPending}
             >
               {createProduct.isPending ? 'Creating...' : 'Create Product'}
             </Button>

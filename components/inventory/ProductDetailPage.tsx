@@ -475,7 +475,7 @@ export function ProductDetailPage({ id }: Props) {
             <Button
               className="w-full h-12 mt-2 rounded-xl"
               onClick={handleUpdate}
-              disabled={updateProduct.isPending}
+              loading={updateProduct.isPending}
             >
               {updateProduct.isPending ? 'Saving...' : 'Save Changes'}
             </Button>
