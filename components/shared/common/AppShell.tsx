@@ -1,6 +1,7 @@
 // components/shared/common/AppShell.tsx
 'use client'
 
+import { LoadingState } from './LoadingState'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
@@ -24,7 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hasHydrated     = useAuthStore((s) => s._hasHydrated)
 
   // Verify stored credentials are still valid — runs once per session
-  useVerifyAuth()
+  const checking = useVerifyAuth()
 
   useEffect(() => {
     // Wait for sessionStorage to be read before redirecting
@@ -36,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // HydrationGate in Providers already shows the spinner — this just
   // prevents the shell from flashing before the redirect fires
-  if (!hasHydrated || !isAuthenticated) return null
+  if (!hasHydrated || checking || !isAuthenticated) return <LoadingState fullScreen label={isAuthenticated ? 'Checking your session…' : 'Opening sign in…'} />
 
   return (
     <div className="flex h-dvh bg-background overflow-hidden">

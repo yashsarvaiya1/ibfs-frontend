@@ -2,11 +2,14 @@ import api from '@/lib/axios'
 import { clearOffline } from '@/lib/offline/vault'
 import { useAuthStore } from '@/stores/authStore'
 interface Session { authenticated:boolean; username:string | null; csrf_token:string }
+let pendingStatus: Promise<Session> | null = null
 export const sessionService = {
-  status:async()=>{
-    const {data}=await api.get<Session>('/session/status/')
-    useAuthStore.getState().setCsrfToken(data.csrf_token)
-    return data
+  status: () => {
+    if (!pendingStatus) pendingStatus = api.get<Session>('/session/status/', { timeout: 60000 }).then(({data}) => {
+      useAuthStore.getState().setCsrfToken(data.csrf_token)
+      return data
+    }).finally(() => { pendingStatus = null })
+    return pendingStatus
   },
   login:async(username:string,password:string)=>{
     await sessionService.status()

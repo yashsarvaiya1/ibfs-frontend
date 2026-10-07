@@ -1,5 +1,7 @@
 'use client'
 
+import { sessionService } from '@/services/sessionService'
+
 import { useEffect, useState, useCallback } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
@@ -71,7 +73,6 @@ export function SettingsPage() {
 
   const { data: settings, isLoading } = useSettings()
   const updateSettings = useUpdateSettings()
-  const logout   = useAuthStore((s) => s.logout)
   const username = useAuthStore((s) => s.username)
 
   const isPending = updateSettings.isPending
@@ -126,7 +127,8 @@ export function SettingsPage() {
     }
   }
 
-  const handleLogout = () => { logout(); router.replace('/login') }
+  const [loggingOut, setLoggingOut] = useState(false)
+  const handleLogout = async () => { setLoggingOut(true); try { await sessionService.logout(); router.replace('/login') } catch { toast.error('Could not sign out. Please retry.') } finally { setLoggingOut(false) } }
 
   if (isLoading) return (
     <div className="px-4 py-4 space-y-3">
@@ -236,7 +238,7 @@ export function SettingsPage() {
       </div>
 
       {/* ── Logout ────────────────────────────────────────────────────── */}
-      <Button variant="destructive" className="w-full h-12 gap-2" onClick={handleLogout}>
+      <Button variant="destructive" className="w-full h-12 gap-2" onClick={handleLogout} loading={loggingOut}>
         <LogOut className="h-4 w-4" /> Logout
       </Button>
 

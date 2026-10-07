@@ -1,5 +1,6 @@
 'use client'
 
+import { LoadingState } from '@/components/shared/common/LoadingState'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,18 +17,19 @@ export function LoginPage() {
   const login           = useAuthStore((s) => s.login)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
+  const [checking, setChecking] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   
   // Fetch settings directly — useSettings() is auth-guarded so won't fire here
-  const [logoUrl, setLogoUrl]   = useState<string | null>(null)
+  const [logoUrl]   = useState<string | null>(null)
 
   useEffect(() => {
     sessionService.status().then(session=>{
       if(session.authenticated){login(session.username!,session.csrf_token);router.replace('/')}
       else useAuthStore.getState().logout()
-    }).catch(()=>{})
+    }).catch(()=>{}).finally(()=>setChecking(false))
   },[login,router])
 
 
@@ -54,7 +56,7 @@ export function LoginPage() {
     }
   }
 
-  if (isAuthenticated) return null
+  if (checking || isAuthenticated) return <LoadingState fullScreen label="Checking your session…" />
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
@@ -107,7 +109,7 @@ export function LoginPage() {
                 disabled={loading}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" loading={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>
           </form>
