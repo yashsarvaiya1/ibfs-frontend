@@ -453,8 +453,6 @@ export function DocumentsPage() {
   const allTypeOptions = useMemo(() => [
     ...BASE_TYPE_OPTIONS,
     ...OPTIONAL_TYPE_OPTIONS.filter(f => settings?.[f.flag]),
-    { label: 'Expense', value: 'expense' },
-    { label: 'Income', value: 'income' },
   ], [settings])
 
   // ── Contact options ────────────────────────────────────────────────────────
