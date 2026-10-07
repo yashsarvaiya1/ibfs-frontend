@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { LoadingState } from '@/components/shared/common/LoadingState'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/stores/authStore'
+import { useAuthStore, isSessionRestoreBlocked } from '@/stores/authStore'
 import { sessionService } from '@/services/sessionService'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,19 +17,24 @@ export function LoginPage() {
   const login           = useAuthStore((s) => s.login)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
+  const attemptStarted = useRef(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   
   // Fetch settings directly — useSettings() is auth-guarded so won't fire here
-  const [logoUrl, setLogoUrl]   = useState<string | null>(null)
+  const [logoUrl]   = useState<string | null>(null)
 
   useEffect(() => {
-    sessionService.status().then(session=>{
-      if(session.authenticated){login(session.username!,session.csrf_token);router.replace('/')}
-      else useAuthStore.getState().logout()
-    }).catch(()=>{})
-  },[login,router])
+    if (isSessionRestoreBlocked()) return
+    if (useAuthStore.getState().isAuthenticated) { router.replace('/'); return }
+    let active = true
+    sessionService.status().then(session => {
+      if (!active || attemptStarted.current || isSessionRestoreBlocked()) return
+      if (session.authenticated) { login(session.username!, session.csrf_token); router.replace('/') }
+    }).catch(() => { /* Keep sign-in usable while the server is unavailable. */ })
+    return () => { active = false }
+  }, [login, router])
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,6 +43,7 @@ export function LoginPage() {
       toast.error('Enter username and password')
       return
     }
+    attemptStarted.current = true
     setLoading(true)
     try {
       await sessionService.login(username.trim(), password)
@@ -54,7 +61,7 @@ export function LoginPage() {
     }
   }
 
-  if (isAuthenticated) return null
+  if (isAuthenticated) return <LoadingState fullScreen label="Opening your workspace…" />
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
@@ -107,7 +114,7 @@ export function LoginPage() {
                 disabled={loading}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" loading={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>
           </form>

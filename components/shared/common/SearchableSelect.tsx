@@ -1,4 +1,5 @@
 'use client'
+import { LoadingState } from '@/components/shared/common/LoadingState'
 
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -236,7 +237,7 @@ export function SearchableSelect({
           </SheetHeader>
 
           <div className="overflow-y-auto pb-10" style={{ maxHeight: 'calc(85vh - 130px)' }}>
-            {resource && loadingRemote && <p className="px-4 py-2 text-sm text-muted-foreground">Searching…</p>}
+            {resource && loadingRemote && <LoadingState label="Searching…" className="py-4" />}
             {remoteError && <Button variant="outline" className="m-4" onClick={()=>refetch()}>Could not load options. Retry</Button>}
             {isEmpty ? (
               <div className="text-center py-10 text-sm text-muted-foreground">{emptyText}</div>

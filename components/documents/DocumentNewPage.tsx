@@ -1,4 +1,6 @@
 'use client'
+
+import { DocumentExtras } from './DocumentExtras'
 import { DocumentTaxDetails } from './DocumentTaxDetails'
 import { apiError } from '@/lib/apiError'
 import { SaveOfflineButton } from '@/components/offline/SaveOfflineButton'
@@ -56,7 +58,7 @@ const WITH_PAYMENT:        DocumentType[] = ['bill', 'invoice', 'cn', 'dn']
 const IS_VOUCHER:          DocumentType[] = ['cash_payment_voucher', 'cash_receipt_voucher']
 const FAST_BILL_TYPES:     DocumentType[] = ['bill', 'invoice']
 const CONTACT_REQUIRED:    DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher']
-const IS_EXPENSE_TYPE:     DocumentType[] = ['expense', 'interest']
+const IS_EXPENSE_TYPE:     DocumentType[] = ['expense', 'income', 'interest']
 const AUTO_COPY_REF_TYPES: DocumentType[] = ['cn', 'dn']
 
 // ✅ Now supports multiple ref types per doc type
@@ -202,6 +204,11 @@ function ProductMultiPickerSheet({ open, products, onConfirm, onClose }: {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export function DocumentNewPage() {
+  const searchParams = useSearchParams()
+  return <DocumentNewForm key={searchParams.toString()} />
+}
+
+function DocumentNewForm() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const setPageTitle = useUIStore(s => s.setPageTitle)
@@ -233,7 +240,7 @@ export function DocumentNewPage() {
     shouldFetchRefDocs ? { type: selectedRefDocType as DocumentType } : undefined
   )
 
-  const isInterestOrExpense = docType === 'interest' || docType === 'expense'
+  const isInterestOrExpense = docType === 'interest' || docType === 'expense' || docType === 'income'
   const { data: allDocsData } = useDocuments(
     isInterestOrExpense ? { page_size: 50 } : undefined
   )
@@ -307,7 +314,7 @@ export function DocumentNewPage() {
   const showPaymentAccount =
     (WITH_PAYMENT.includes(docType) && !!settings?.auto_transaction)
     || IS_VOUCHER.includes(docType)
-    || docType === 'expense'
+    || docType === 'expense' || docType === 'income'
 
   // ── Interest CF preview ─────────────────────────────────────────────────────
   const interestNet = useMemo(() => {
@@ -337,7 +344,7 @@ export function DocumentNewPage() {
     })),
   ]
   const accountOptions: SearchableSelectOption[] = [
-    { value: '', label: 'None', sublabel: 'Record only / pay later' },
+    ...(docType === 'income' ? [] : [{ value: '', label: 'None', sublabel: 'Record only / pay later' }]),
     ...accounts.map(a => ({
       value: String(a.id), label: a.name,
       sublabel: `${a.type} · ${fmtAmount(a.current_balance)}`,
@@ -540,6 +547,7 @@ export function DocumentNewPage() {
         setCharges(data.charges ?? []); setTaxes(data.taxes ?? []); setAttachmentUrls(data.attachment_urls ?? [])
         setPaymentAccountId(data.payment_account ? String(data.payment_account) : '')
         setBillMode(data.line_items?.length ? 'detailed' : 'fast'); setFastAmount(String(data.total_amount ?? ''))
+        if (docType === 'expense' || docType === 'income') setExpenseRows((data.line_items ?? []).map(item => ({ key: crypto.randomUUID(), name: item.name, amount: String(item.amount ?? '') })))
         setLineItems((data.line_items?.length ? data.line_items : [{ name: '', quantity: 1, rate: 0, amount: 0 }]).map(item => ({ ...item, key: crypto.randomUUID() })))
         setShowCharges(!!(data.charges?.length || data.taxes?.length || data.discount))
         setOfflineDraftError('')
@@ -609,14 +617,15 @@ export function DocumentNewPage() {
       attachment_urls: attachmentUrls,
     }
 
-    if (docType === 'expense') {
+    if (docType === 'expense' || docType === 'income') {
+      if (expenseRows.some(row => !row.name.trim() && Number(row.amount) > 0)) { toast.error('Add a description for every entry with an amount'); return }
       const validRows = expenseRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one entry with a name and amount'); return }
       if (!paymentAccountId)      { toast.error('Select a payment account'); return }
       payload.line_items      = validRows.map(r => ({ name: r.name, amount: Number(r.amount) }))
       payload.total_amount    = expenseTotal
       payload.payment_account = Number(paymentAccountId)
-      payload.reference       = interestLinkedDoc ? Number(interestLinkedDoc) : undefined
+      payload.reference       = docType === 'expense' && interestLinkedDoc ? Number(interestLinkedDoc) : undefined
 
     } else if (isVoucher) {
       if (!voucherAmount || Number(voucherAmount) === 0) { toast.error('Enter amount'); return }
@@ -656,22 +665,7 @@ export function DocumentNewPage() {
   }
 
   // ── Attachments helper ──────────────────────────────────────────────────────
-  const renderAttachmentsSection = () => (
-    <div className="space-y-2">
-      <Label className="flex items-center gap-1.5">
-        <LinkIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        Attachments
-        <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>
-      </Label>
-      <UploadInput
-        value={attachmentUrls}
-        onChange={setAttachmentUrls}
-        context="document"
-        maxFiles={10}
-        onPreview={(idx) => { setPreviewIndex(idx); setPreviewOpen(true) }}
-      />
-    </div>
-  )
+  const renderAttachmentsSection = () => <DocumentExtras notes={notes} onNotes={setNotes} attachments={attachmentUrls} onAttachments={setAttachmentUrls} onPreview={idx => { setPreviewIndex(idx); setPreviewOpen(true) }} />
 
   const isSubmitting = createDocument.isPending || standaloneInterest.isPending
 
@@ -779,8 +773,9 @@ export function DocumentNewPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="px-4 py-4 pb-10 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-4 pb-6 space-y-4">
 
+      <section className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem] rounded-xl border bg-card p-3">
       {/* Contact */}
       <div className="space-y-1.5">
         <Label>
@@ -808,15 +803,15 @@ export function DocumentNewPage() {
         <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-11 rounded-xl" />
       </div>
 
-      <Separator />
+      </section>
 
       {/* EXPENSE MODE */}
-      {docType === 'expense' && (
-        <div className="space-y-6">
+      {(docType === 'expense' || docType === 'income') && (
+        <div className="space-y-4">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Expense Entries
+                {docType === 'income' ? 'Income entries' : 'Expense entries'}
               </Label>
               <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40" onClick={addExpenseRow}>
                 <Plus className="h-3.5 w-3.5" /> Add Row
@@ -824,10 +819,10 @@ export function DocumentNewPage() {
             </div>
             {expenseRows.map(row => (
               <div key={row.key} className="flex gap-2 items-center">
-                <Input placeholder="e.g. Rent, Electricity, Salary..."
+                <Input aria-label="Entry description" placeholder={docType === 'income' ? 'e.g. Salary, Bonus, Investment gain' : 'e.g. Rent, Electricity, Salary'}
                   value={row.name} onChange={e => updateExpenseRow(row.key, 'name', e.target.value)}
                   className="flex-1 h-11 rounded-xl" />
-                <Input type="number" placeholder="0.00"
+                <Input aria-label="Entry amount" type="number" min="0" step="0.01" placeholder="0.00"
                   value={row.amount} onChange={e => updateExpenseRow(row.key, 'amount', e.target.value)}
                   className="w-32 h-11 rounded-xl font-semibold" />
                 {expenseRows.length > 1 && (
@@ -844,6 +839,7 @@ export function DocumentNewPage() {
             </div>
           </div>
 
+          {docType === 'expense' && <>
           <div className="space-y-1.5">
             <Label>
               Link Document
@@ -856,31 +852,27 @@ export function DocumentNewPage() {
             />
           </div>
 
+          </>}
           <div className="space-y-1.5">
             <Label>
-              Payment Account <span className="text-destructive">*</span>
-              <span className="text-xs text-muted-foreground ml-1 font-normal">account to be debited</span>
+              {docType === 'income' ? 'Received into' : 'Paid from'} <span className="text-destructive">*</span>
             </Label>
             <SearchableSelect
               resource="accounts" options={accountOptions} value={paymentAccountId} onChange={setPaymentAccountId}
               placeholder="Select account" title="Select Payment Account"
-              searchPlaceholder="Search accounts..." clearable
+              searchPlaceholder="Search accounts..." clearable={docType !== 'income'}
             />
+            {docType === 'income' && <p className="text-xs text-muted-foreground">Records money received. The optional contact is the source; their balance stays unchanged.</p>}
           </div>
 
           {renderAttachmentsSection()}
 
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
         </div>
       )}
 
       {/* INTEREST MODE */}
       {docType === 'interest' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="space-y-2">
             <Label className="text-sm font-semibold">
               Payment Direction <span className="text-destructive">*</span>
@@ -1025,11 +1017,6 @@ export function DocumentNewPage() {
 
           {renderAttachmentsSection()}
 
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
         </div>
       )}
 
@@ -1051,7 +1038,7 @@ export function DocumentNewPage() {
 
       {/* FAST MODE */}
       {!isExpenseType && isFastMode && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
             <Label className="text-primary font-semibold">
               Total Amount <span className="text-destructive">
@@ -1106,17 +1093,12 @@ export function DocumentNewPage() {
 
           {renderAttachmentsSection()}
 
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
         </div>
       )}
 
       {/* DETAILED LINE ITEMS MODE */}
       {!isExpenseType && !isFastMode && hasLineItems && (
-        <div className="space-y-6">
+        <div className="space-y-4">
 
           {/* Reference doc */}
           {renderReferenceSection()}
@@ -1360,32 +1342,22 @@ export function DocumentNewPage() {
 
           {renderAttachmentsSection()}
 
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
         </div>
       )}
 
       {/* NON-LINE-ITEM DOCS — vouchers, po, pi, quotation, challan ref only */}
       {!isExpenseType && !hasLineItems && !isVoucher && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {renderReferenceSection()}
 
           {renderAttachmentsSection()}
 
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
         </div>
       )}
 
       {/* VOUCHER MODE */}
       {isVoucher && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="space-y-1.5 bg-primary/5 border border-primary/10 p-4 rounded-xl">
             <Label className="text-primary font-semibold">
               Amount <span className="text-destructive">*</span>
@@ -1408,11 +1380,6 @@ export function DocumentNewPage() {
 
           {renderAttachmentsSection()}
 
-          <div className="space-y-1.5">
-            <Label>Notes <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span></Label>
-            <Input placeholder="Internal remarks..." value={notes}
-              onChange={e => setNotes(e.target.value)} className="h-11 rounded-xl" />
-          </div>
         </div>
       )}
 
@@ -1420,15 +1387,19 @@ export function DocumentNewPage() {
       {['bill', 'invoice', 'quotation', 'po', 'pi'].includes(docType) && <div className="rounded-xl border p-4 space-y-2"><p className="text-xs text-muted-foreground">Save an unposted draft on this device and continue later.</p><SaveOfflineButton kind="draft" label="Save local draft" existingId={restoredDraftId ?? undefined} load={async () => new Blob([JSON.stringify({ type: docType, contact: contactId ? Number(contactId) : undefined, consignee: consigneeId ? Number(consigneeId) : undefined, reference: referenceId ? Number(referenceId) : undefined, date, due_date: dueDate || undefined, payment_terms: paymentTerms || undefined, place_of_supply: placeOfSupply || undefined, reverse_charge: reverseCharge, tax_mode: isFastMode ? 'document' : taxMode, supply_category: supplyCategory || null, supplier_invoice_number: supplierNumber || null, notes, line_items: isFastMode ? [] : lineItems.map(item => ({ ...item, key: undefined })), taxes: taxMode === 'item' ? [] : taxes, charges, discount: discountMode === 'amount' ? Number(discount) || 0 : 0, discount_percentage: discountMode === 'percentage' ? Number(discount) || 0 : null, total_amount: isFastMode ? fastAmount : undefined, payment_account: paymentAccountId ? Number(paymentAccountId) : undefined, attachment_urls: attachmentUrls })], { type: 'application/json' })} title={`${getDocLabel(docType)} draft · ${date}`} filename={`${docType}-draft.json`} /></div>}
       {offlineDraftId && <div role={offlineDraftError ? 'alert' : 'status'} className="rounded-xl border p-4 text-sm">{offlineDraftError || 'Local draft loaded. Review the contact, items and accounting controls before creating it.'}{offlineDraftError && <a href="/offline" className="text-primary block mt-2">Unlock or review offline files</a>}</div>}
       {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={!isFastMode && docType !== 'challan'} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
+      <div className="sticky bottom-0 z-10 flex gap-3 border-t bg-background/95 backdrop-blur px-1 py-3">
+      <Button variant="outline" className="h-11 rounded-xl" onClick={() => router.back()} disabled={isSubmitting}>Cancel</Button>
       <Button
-        className="w-full h-14 rounded-2xl text-base font-bold shadow-lg shadow-primary/20 gap-2"
-        disabled={isSubmitting}
+        className="flex-1 h-11 rounded-xl font-semibold"
+        loading={isSubmitting}
         onClick={handleSubmit}
       >
         {isSubmitting
           ? 'Creating...'
           : `Create ${getDocLabel(docType)}`}
       </Button>
+
+      </div>
 
       {/* ── SHEETS ────────────────────────────────────────────────────────────── */}
       <LineItemPickerSheet

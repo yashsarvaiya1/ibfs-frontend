@@ -4,7 +4,6 @@ import { useUIStore } from '@/stores/uiStore'
 import { useDeleteDocument } from '@/hooks/useDocument'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Trash2, RotateCcw, Unlink } from 'lucide-react'
 
@@ -35,7 +34,6 @@ export function DeleteDocSheet() {
     closeDeleteDocSheet,
   } = useUIStore()
 
-  const router    = useRouter()
   const docId     = deleteDocId ?? 0
   const deleteMut = useDeleteDocument(docId)
 
@@ -44,7 +42,6 @@ export function DeleteDocSheet() {
       await deleteMut.mutateAsync({ strategy })
       toast.success('Document deleted')
       closeDeleteDocSheet()
-      router.back()
     } catch {
       toast.error('Delete failed')
     }

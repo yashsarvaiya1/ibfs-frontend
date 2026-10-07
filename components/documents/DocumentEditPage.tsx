@@ -1,4 +1,6 @@
 'use client'
+
+import { DocumentExtras } from './DocumentExtras'
 import { businessDate } from '@/lib/businessDate'
 import { DocumentTaxDetails } from './DocumentTaxDetails'
 import { ItemTaxes } from './ItemTaxes'
@@ -14,6 +16,7 @@ import { productService } from '@/services/productService'
 import { useUIStore } from '@/stores/uiStore'
 import { useDocument, useUpdateDocument, useDocuments } from '@/hooks/useDocument'
 import { useContacts } from '@/hooks/useContact'
+import { useAccounts } from '@/hooks/useAccount'
 import { useProducts } from '@/hooks/useProduct'
 import {
   DocumentType, DOC_TYPE_LABELS,
@@ -51,7 +54,7 @@ const WITH_LINE_ITEMS: DocumentType[] = ['bill', 'invoice', 'po', 'pi', 'quotati
 const WITH_CONSIGNEE:  DocumentType[] = ['challan', 'invoice', 'bill']
 const IS_VOUCHER:      DocumentType[] = ['cash_payment_voucher', 'cash_receipt_voucher']
 const CONTACT_REQUIRED: DocumentType[] = ['bill', 'invoice', 'cn', 'dn', 'cash_payment_voucher', 'cash_receipt_voucher']
-const IS_EXPENSE_TYPE: DocumentType[] = ['expense', 'interest']
+const IS_EXPENSE_TYPE: DocumentType[] = ['expense', 'income', 'interest']
 
 // ── Local row types ──────────────────────────────────────────────────────────
 interface LineItemRow extends LineItem { key: string }
@@ -144,11 +147,13 @@ export function DocumentEditPage({ id }: { id: number }) {
   const updateDocument = useUpdateDocument(id)
   const { data: contactsData } = useContacts({ is_active: true })
   const { data: productsData } = useProducts({ is_active: true })
+  const { data: accountsData } = useAccounts({ is_active: true })
 
   // ✅ For reference picker — fetch all active docs
   const { data: allDocsData } = useDocuments({ ordering: '-date', page_size: 200, is_active: true } as any)
 
   // ── Form state ──────────────────────────────────────────────────────────────
+  const [paymentAccountId, setPaymentAccountId] = useState('')
   const [contactId,          setContactId]          = useState('')
   const [consigneeId,        setConsigneeId]        = useState('')
   const [referenceId,        setReferenceId]        = useState('')
@@ -192,6 +197,7 @@ export function DocumentEditPage({ id }: { id: number }) {
     setContactId(doc.contact    ? String(doc.contact)    : '')
     setConsigneeId(doc.consignee ? String(doc.consignee) : '')
     setReferenceId(doc.reference ? String(doc.reference) : '')
+    setPaymentAccountId(String(doc.transactions?.find(txn => txn.type === 'actual')?.payment_account ?? ''))
     setDate(doc.date)
     setDueDate(doc.due_date ?? '')
     setPaymentTerms(doc.payment_terms ?? '')
@@ -261,9 +267,11 @@ export function DocumentEditPage({ id }: { id: number }) {
   const products       = productsData?.results ?? []
   const allDocs        = allDocsData?.results  ?? []
 
+  const isIncome       = docType === 'income'
+  const isCashOnly     = docType === 'expense' || isIncome
   const isExpense      = docType === 'expense'
   const isInterest     = docType === 'interest'
-  const isSimple       = isExpense || isInterest
+  const isSimple       = isCashOnly || isInterest
   const isVoucher      = IS_VOUCHER.includes(docType as DocumentType)
   const hasLineItems   = WITH_LINE_ITEMS.includes(docType as DocumentType)
   const hasConsignee   = WITH_CONSIGNEE.includes(docType as DocumentType)
@@ -414,10 +422,12 @@ export function DocumentEditPage({ id }: { id: number }) {
     }
 
     if (isSimple) {
-      // expense / interest
+      if (simpleRows.some(row => !row.name.trim() && Number(row.amount) > 0)) { toast.error('Add a description for every entry with an amount'); return }
+      if (isIncome && !paymentAccountId) { toast.error('Choose the account that received this income'); return }
+      if (isCashOnly) payload.payment_account = paymentAccountId ? Number(paymentAccountId) : null
       const validRows = simpleRows.filter(r => r.name.trim() && Number(r.amount) > 0)
       if (validRows.length === 0) { toast.error('Add at least one entry with a name and amount'); return }
-      payload.line_items    = validRows.map(r => ({ name: r.name, amount: Number(r.amount), type: r.type as 'charge' | 'discount' }))
+      payload.line_items    = validRows.map(r => ({ name: r.name, amount: Number(r.amount), ...(isInterest ? { type: r.type as 'charge' | 'discount' } : {}) }))
       payload.total_amount  = simpleTotal.toFixed(2)
     } else if (isVoucher) {
       if (!voucherAmount || Number(voucherAmount) <= 0) { toast.error('Enter amount'); return }
@@ -452,37 +462,7 @@ export function DocumentEditPage({ id }: { id: number }) {
   }
 
   // ── Shared render helpers ────────────────────────────────────────────────────
-  const renderAttachments = () => (
-    <div className="space-y-2">
-      <Label className="flex items-center gap-1.5">
-        <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
-        Attachments
-        <span className="text-xs text-muted-foreground font-normal ml-1">optional</span>
-      </Label>
-      <UploadInput
-        value={attachmentUrls}
-        onChange={setAttachmentUrls}
-        context="document"
-        maxFiles={10}
-        onPreview={idx => { setPreviewIndex(idx); setPreviewOpen(true) }}
-      />
-    </div>
-  )
-
-  const renderNotes = () => (
-    <div className="space-y-1.5">
-      <Label>
-        Notes
-        <span className="text-xs text-muted-foreground ml-1 font-normal">optional</span>
-      </Label>
-      <Input
-        placeholder="Internal remarks..."
-        value={notes}
-        onChange={e => setNotes(e.target.value)}
-        className="h-11 rounded-xl"
-      />
-    </div>
-  )
+  const renderAttachments = () => <DocumentExtras notes={notes} onNotes={setNotes} attachments={attachmentUrls} onAttachments={setAttachmentUrls} onPreview={idx => { setPreviewIndex(idx); setPreviewOpen(true) }} />
 
   // ✅ Reference picker — shared, shown for ALL doc types
   const renderReference = () => (
@@ -512,16 +492,17 @@ export function DocumentEditPage({ id }: { id: number }) {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="px-4 py-4 pb-10 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-4 pb-6 space-y-4">
 
       {/* Warning */}
-      <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+      <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3 text-xs text-muted-foreground">
         <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
         <p className="font-medium leading-snug">
-          Updating this document will automatically recalculate associated financial and stock ledgers.
+          Changes update the linked account, ledger and stock entries automatically.
         </p>
       </div>
 
+      <section className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem] rounded-xl border bg-card p-3">
       {/* Contact — always shown */}
       <div className="space-y-1.5">
         <Label>
@@ -549,8 +530,10 @@ export function DocumentEditPage({ id }: { id: number }) {
         <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-11 rounded-xl" />
       </div>
 
+      </section>
+
       {/* ✅ Reference Document — shown for ALL types including interest/expense */}
-      {renderReference()}
+      {!isIncome && renderReference()}
 
       <Separator />
 
@@ -558,7 +541,7 @@ export function DocumentEditPage({ id }: { id: number }) {
           INTEREST EDIT
       ═══════════════════════════════════════════════════════════════════════ */}
       {isInterest && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Direction read-only info */}
           <div className="flex items-start gap-3 p-3 bg-muted/40 border rounded-xl text-sm">
             <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
@@ -583,7 +566,7 @@ export function DocumentEditPage({ id }: { id: number }) {
                 <Input placeholder="e.g. Late fee, Processing charge..."
                   value={row.name} onChange={e => updateSimpleRow(row.key, 'name', e.target.value)}
                   className="flex-1 h-11 rounded-xl" />
-                <Input type="number" placeholder="0.00"
+                <Input aria-label="Entry amount" type="number" min="0" step="0.01" placeholder="0.00"
                   value={row.amount} onChange={e => updateSimpleRow(row.key, 'amount', e.target.value)}
                   className="w-32 h-11 rounded-xl font-semibold" />
                 <Button type="button" variant="outline" size="sm" onClick={() => updateSimpleRow(row.key, 'type', row.type === 'discount' ? 'charge' : 'discount')} className={row.type === 'discount' ? 'text-emerald-700' : ''}>
@@ -604,19 +587,19 @@ export function DocumentEditPage({ id }: { id: number }) {
           </div>
 
           {renderAttachments()}
-          {renderNotes()}
+
         </div>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
           EXPENSE EDIT
       ═══════════════════════════════════════════════════════════════════════ */}
-      {isExpense && (
-        <div className="space-y-6">
+      {isCashOnly && (
+        <div className="space-y-4">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Expense Entries
+                {isIncome ? 'Income entries' : 'Expense entries'}
               </Label>
               <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs rounded-lg px-2.5 bg-muted/40"
                 onClick={addSimpleRow}>
@@ -625,10 +608,10 @@ export function DocumentEditPage({ id }: { id: number }) {
             </div>
             {simpleRows.map(row => (
               <div key={row.key} className="flex gap-2 items-center">
-                <Input placeholder="e.g. Rent, Electricity, Salary..."
+                <Input aria-label="Entry description" placeholder={isIncome ? 'e.g. Salary, Bonus, Investment gain' : 'e.g. Rent, Electricity, Salary'}
                   value={row.name} onChange={e => updateSimpleRow(row.key, 'name', e.target.value)}
                   className="flex-1 h-11 rounded-xl" />
-                <Input type="number" placeholder="0.00"
+                <Input aria-label="Entry amount" type="number" min="0" step="0.01" placeholder="0.00"
                   value={row.amount} onChange={e => updateSimpleRow(row.key, 'amount', e.target.value)}
                   className="w-32 h-11 rounded-xl font-semibold" />
                 {simpleRows.length > 1 && (
@@ -645,8 +628,13 @@ export function DocumentEditPage({ id }: { id: number }) {
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <Label>{isIncome ? 'Received into' : 'Paid from'}{isIncome && <span className="text-destructive"> *</span>}</Label>
+            <SearchableSelect resource="accounts" options={(accountsData?.results ?? []).map(account => ({ value: String(account.id), label: account.name, sublabel: `${account.type} · ${fmtAmount(account.current_balance)}` }))} value={paymentAccountId} onChange={setPaymentAccountId} placeholder="Select account" title="Select Payment Account" clearable={!isIncome} />
+            {isIncome && <p className="text-xs text-muted-foreground">The optional contact identifies the source. Their balance stays unchanged.</p>}
+          </div>
           {renderAttachments()}
-          {renderNotes()}
+
         </div>
       )}
 
@@ -654,7 +642,7 @@ export function DocumentEditPage({ id }: { id: number }) {
           VOUCHER EDIT
       ═══════════════════════════════════════════════════════════════════════ */}
       {isVoucher && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Amount <span className="text-destructive">*</span></Label>
             <Input type="number" placeholder="0.00"
@@ -662,7 +650,7 @@ export function DocumentEditPage({ id }: { id: number }) {
               value={voucherAmount} onChange={e => setVoucherAmount(e.target.value)} />
           </div>
           {renderAttachments()}
-          {renderNotes()}
+
         </div>
       )}
 
@@ -670,7 +658,7 @@ export function DocumentEditPage({ id }: { id: number }) {
           REGULAR DOC EDIT — bill, invoice, po, pi, cn, dn, challan, quotation
       ═══════════════════════════════════════════════════════════════════════ */}
       {!isSimple && !isVoucher && (
-        <div className="space-y-6">
+        <div className="space-y-4">
 
           {/* Consignee */}
           {hasConsignee && (
@@ -892,18 +880,18 @@ export function DocumentEditPage({ id }: { id: number }) {
 
           {hasLineItems && docType !== 'challan' && lineItems.length > 0 && <DocumentTotalsSummary preview={taxPreview} />}
           {renderAttachments()}
-          {renderNotes()}
+
         </div>
       )}
 
       {/* Submit */}
       {['bill', 'invoice', 'cn', 'dn', 'po', 'pi', 'quotation', 'challan'].includes(docType) && <DocumentTaxDetails place={placeOfSupply} reverse={reverseCharge} onPlace={setPlaceOfSupply} onReverse={setReverseCharge} mode={taxMode} category={supplyCategory} supplierNumber={supplierNumber} allowItem={docType !== 'challan' && lineItems.some(item => item.name.trim())} onMode={docType === 'challan' ? undefined : changeTaxMode} onCategory={setSupplyCategory} onSupplierNumber={['bill', 'dn'].includes(docType) ? setSupplierNumber : undefined} />}
-      <div className="pt-4 pb-8 flex gap-3">
-        <Button variant="outline" className="flex-1 h-14 rounded-2xl" onClick={() => router.back()}>
+      <div className="sticky bottom-0 z-10 flex gap-3 border-t bg-background/95 backdrop-blur px-1 py-3">
+        <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => router.back()}>
           Cancel
         </Button>
-        <Button className="flex-1 h-14 text-lg font-bold rounded-2xl shadow-lg shadow-primary/20"
-          onClick={handleSubmit} disabled={updateDocument.isPending}>
+        <Button className="flex-1 h-11 font-semibold rounded-xl"
+          onClick={handleSubmit} loading={updateDocument.isPending}>
           {updateDocument.isPending ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>

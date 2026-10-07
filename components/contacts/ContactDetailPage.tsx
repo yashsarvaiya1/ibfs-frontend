@@ -57,7 +57,7 @@ function computeRunningCF(
   txns: FinancialTransaction[],
 ): number {
   return txns.reduce((cf, t) => {
-    if (t.document_type === 'expense') return cf
+    if (['expense', 'income'].includes(t.document_type ?? '')) return cf
     if (t.type === 'contra')           return cf
     return cf + Number(t.amount)
   }, openingBalance)
@@ -481,7 +481,7 @@ export function ContactDetailPage({ id }: Props) {
                           key={txn.id}
                           txn={txn}
                           runningCf={
-                            txn.document_type !== 'expense' && txn.type !== 'contra'
+                            !['expense', 'income'].includes(txn.document_type ?? '') && txn.type !== 'contra'
                               ? txn.runningCf
                               : undefined
                           }
@@ -875,7 +875,7 @@ export function ContactDetailPage({ id }: Props) {
                 <Button
                   className="w-full h-12 mt-2 rounded-xl text-md font-bold"
                   onClick={handleUpdateTxn}
-                  disabled={updateTxn.isPending}
+                  loading={updateTxn.isPending}
                 >
                   {updateTxn.isPending ? 'Saving...' : 'Save Changes'}
                 </Button>

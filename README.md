@@ -67,3 +67,31 @@ Live totals include unfinished item rows, so entering quantities/rates before de
 Contact opening balances can be edited, cleared or switched between “They owe us” and “We owe them.” Payment adjustment forms use **Charge** and **Waiver**: a waiver settles part of the amount due without changing cash paid/received. Document item discounts remain separate from payment waivers.
 
 Contact and account ledgers have date filters and PDF download/print. PDFs include every matching entry, across all pages. Contact print options start with the visible ledger dates; account List/Ledger controls switch the screen and PDF format. Running balances include preceding entries and previous pages. See [ledger signs and edit behavior](../backend/docs/REPORTS.md#ledgers-and-document-edits).
+
+## Income, balances and workspace controls
+
+Quick Actions has Bill, Invoice, Expense and Income first, optional documents next, and Transactions, Accounts, Reports and Offline files last. Settings is available directly in the header. The header theme control supports Light, Dark and System on desktop and mobile.
+
+Income records money received into an account, with optional contact/source and simple description/amount lines. It creates no contact debt, settlement, stock or GST entry. Use an invoice for a taxable sale. Correct an income receipt through its document, including its account, date and amount; deletion can reverse the receipt or retain it using the existing keep-transactions option. FY Other income shows entered receipts separately from sales; Cash received includes each receipt once.
+
+Edit Account includes Opening balance, including zero or a negative opening amount. This rebases current and running balances without creating cash movement or changing settled documents. Contacts retain the same opening-balance editing flow. Self transfer moves money between your accounts; Adjust is for recorded charges, interest and other adjustments. Reconcile balance records a correction to current cash, separately from opening balance.
+
+Document create/edit/view screens are narrower and more compact. Contact/date share a desktop row, notes/attachments are optional expandable controls, and save actions remain visible while scrolling. Session validation, page/data loading and pending actions have animated, accessible feedback. Unreachable-session checks retain saved access for offline files; private server data still requires a valid server session.
+
+Deploy with the existing Compose and environment. Startup applies the additive income migration automatically; no ports or new environment fields are required.
+
+FY reports include interactive monthly business-activity and cash-flow graphs, with exact month values and a net cash movement summary. GST reports compare sales/purchase tax for one month or plot their trend for a longer range, alongside component comparisons. HSN/SAC shows the top six codes by combined taxable sales/purchase activity and groups remaining codes. Graphs use complete period aggregates, retain negative return adjustments, support both themes and show an empty state instead of sample values. Existing PDF/CSV exports retain their detailed tables; the new interactive graphs are on the report screens.
+
+## Regression checks
+
+Run `npm run test:flows` and `npm run typecheck`. The flow tests exercise real session and account mutation modules with controlled network responses: failed logout, pending status/login responses, CSRF bootstrap/rotation and cached ledger invalidation.
+
+For browser coverage, use a disposable **local** backend database, a QA user and the built frontend. Install the backend requirements and Playwright Chromium, then run:
+
+```sh
+IBFS_QA_URL=http://127.0.0.1:4100 IBFS_QA_USERNAME=qa-user IBFS_QA_PASSWORD='your-local-test-password' python tools/tests/browser_flows.py
+```
+
+The script creates local accounting fixtures. It verifies Income Quick Actions, session requests held open, offline drafts, duplicate filters, account edits during background refetch, recalculated ledger balances, income deletion from both lists and failed logout across reloads/tabs. It refuses remote URLs. Do not point the local backend at production data.
+
+Session checks run in the background with a 10-second timeout. Sign-in reuses an available CSRF cookie; a first visit obtains one before submitting credentials. Logout immediately locks local access and clears saved files even if the server request fails. A local logout marker prevents the remaining server cookie from reopening the workspace until an explicit successful sign-in.

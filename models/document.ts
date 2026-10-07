@@ -13,7 +13,7 @@ export type DocumentType =
   | 'challan'
   | 'cn' | 'dn'
   | 'cash_payment_voucher' | 'cash_receipt_voucher'
-  | 'interest' | 'expense'
+  | 'interest' | 'expense' | 'income'
 
 export type TaxMode = 'document' | 'item'
 export type SupplyCategory = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst' | 'export' | 'import'
@@ -272,17 +272,18 @@ export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   cash_receipt_voucher: 'Cash Receipt Voucher',
   interest:             'Interest',
   expense:              'Expense',
+  income:               'Income',
 }
 
 export const NO_FTXN_DOC_TYPES: DocumentType[] = [
   'po', 'pi', 'quotation', 'challan',
-  'interest', 'expense',
+  'interest', 'expense', 'income',
   'cash_payment_voucher', 'cash_receipt_voucher',
 ]
 
 export const NO_STXN_DOC_TYPES: DocumentType[] = [
   'po', 'pi', 'quotation',
-  'interest', 'expense',
+  'interest', 'expense', 'income',
   'cash_payment_voucher', 'cash_receipt_voucher',
 ]
 

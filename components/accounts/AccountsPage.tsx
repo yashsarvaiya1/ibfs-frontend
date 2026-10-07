@@ -250,7 +250,7 @@ export function AccountsPage() {
             <Button
               className="w-full"
               onClick={handleCreate}
-              disabled={createAccount.isPending}
+              loading={createAccount.isPending}
             >
               {createAccount.isPending ? 'Creating...' : 'Create Account'}
             </Button>

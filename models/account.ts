@@ -8,13 +8,14 @@ export interface PaymentAccount {
   account_number:  string | null
   ifsc_code:       string | null
   upi_id:          string | null
+  opening_balance: string
   current_balance: string          // signed Decimal as string
   is_active:       boolean
   created_at:      string
   updated_at:      string
 }
 
-export type AccountCreate = Omit<PaymentAccount, 'id' | 'created_at' | 'updated_at'>
+export type AccountCreate = Omit<PaymentAccount, 'id' | 'created_at' | 'updated_at' | 'opening_balance'> & { opening_balance?: string }
 export type AccountUpdate = Partial<AccountCreate>
 
 export interface TransferPayload {

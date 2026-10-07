@@ -83,7 +83,7 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
               variant={contact.is_active ? 'ghost' : 'outline'}
               size="sm"
               onClick={handleToggleStatus}
-              disabled={updateContact.isPending}
+              loading={updateContact.isPending}
               className={cn(
                 'h-8 px-2.5 text-xs font-bold gap-1.5',
                 contact.is_active
@@ -157,7 +157,7 @@ export function ContactEditSheet({ contact, open, onClose }: Props) {
           <Button
             className="w-full h-12 mt-2 rounded-xl text-md font-bold"
             onClick={handleSave}
-            disabled={updateContact.isPending}
+            loading={updateContact.isPending}
           >
             {updateContact.isPending ? 'Saving...' : 'Save Changes'}
           </Button>

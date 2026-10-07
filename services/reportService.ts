@@ -15,7 +15,7 @@ export interface AllocationReview { count: number; page_size: number; results: {
 
 export interface ComparisonResult { basis: string; results: { row: number; date: string; number: string; status: string; detail: string; amount: string; matches: { id: number; kind: 'document' | 'transaction'; label: string }[] }[]; unmatched_books: { id: number; kind: 'document' | 'transaction'; label: string; date: string; amount: string }[] }
 
-export interface FYAmounts { net_sales: string; net_purchases: string; expenses: string; cash_received: string; cash_paid: string; sales: string; sales_returns: string; purchases: string; purchase_returns: string }
+export interface FYAmounts { net_sales: string; net_purchases: string; expenses: string; other_income: string; cash_received: string; cash_paid: string; sales: string; sales_returns: string; purchases: string; purchase_returns: string }
 export interface FYReport { fy: number; date_from: string; date_to: string; basis: string; totals: FYAmounts; known_pre_tax: FYAmounts; document_counts: Record<string, number>; review: { id: number; doc_id: string; reason: string }[]; months: (FYAmounts & { month: string })[] }
 export const reportService = {
   financialYear: (fy: number) => api.get<FYReport>('/reports/financial_year/', { params: { fy } }).then(r => r.data),

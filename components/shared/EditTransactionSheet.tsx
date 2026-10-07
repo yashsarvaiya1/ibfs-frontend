@@ -215,7 +215,7 @@ export function EditTransactionSheet({ txn, open, onClose, contactId, onDelete }
             <Button
               className="h-12 rounded-xl"
               onClick={handleSave}
-              disabled={updateMutation.isPending}
+              loading={updateMutation.isPending}
             >
               {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
             </Button>

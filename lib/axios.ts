@@ -1,5 +1,6 @@
 // lib/axios.ts
 import axios from 'axios'
+import { useNetworkStore } from '@/stores/networkStore'
 import { clearOffline } from '@/lib/offline/vault'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -16,19 +17,21 @@ const api = axios.create({
 
 // ✅ baseURL injected at request time — reads runtime env, not build-time
 api.interceptors.request.use((config) => {
+  useNetworkStore.getState().start()
   const base = getApiBase()
   const url = config.url ?? ''
   // Preview links already use app-root API/media URLs. Do not prefix them again.
   config.baseURL = url === base || url.startsWith(`${base}/`) || url.startsWith('/media/') ? '' : base
 
   const token = useAuthStore.getState().csrfToken
-  if (token && !['get','head','options'].includes(config.method?.toLowerCase() ?? 'get')) config.headers['X-CSRFToken'] = token
+  if (token && !config.headers['X-CSRFToken'] && !['get','head','options'].includes(config.method?.toLowerCase() ?? 'get')) config.headers['X-CSRFToken'] = token
   return config
 })
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => { useNetworkStore.getState().finish(); return response },
   (error) => {
+    useNetworkStore.getState().finish()
     if (error.response?.status === 401) {
       const { isAuthenticated, logout } = useAuthStore.getState()
       if (isAuthenticated) {

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check:lint-dependencies": "node tools/next-glob/check.cjs"
+    "check:lint-dependencies": "node tools/next-glob/check.cjs",
+    "test:flows": "node --test tools/tests/*.test.cjs"
   },
   "dependencies": {
     "@radix-ui/react-visually-hidden": "^1.2.4",

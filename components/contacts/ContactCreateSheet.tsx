@@ -112,7 +112,7 @@ export function ContactCreateSheet({ open, onClose }: Props) {
 
           <OpeningBalanceInput amount={obAmount} direction={obType} onAmount={setObAmount} onDirection={setObType} />
 
-          <Button className="w-full" onClick={handleSave} disabled={createContact.isPending}>
+          <Button className="w-full" onClick={handleSave} loading={createContact.isPending}>
             {createContact.isPending ? 'Saving...' : 'Save Contact'}
           </Button>
         </div>

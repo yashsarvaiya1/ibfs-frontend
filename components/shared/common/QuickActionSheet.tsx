@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import {
   FileText, Receipt, ClipboardList, Truck,
   RotateCcw, RotateCw, Banknote, AlertCircle,
-  Package, Wallet, ArrowLeftRight, Settings,
+  Wallet, ArrowLeftRight, ChartNoAxesCombined, HardDriveDownload, CircleDollarSign,
 } from 'lucide-react'
 import type { DocumentType } from '@/models/document'
 
@@ -23,7 +23,6 @@ export function QuickActionSheet() {
 
   const quickActionOpen    = useUIStore((s) => s.quickActionOpen)
   const closeQuickAction   = useUIStore((s) => s.closeQuickAction)
-  const openQuickAction    = useUIStore((s) => s.openQuickAction)
   const openDocCreateSheet = useUIStore((s) => s.openDocCreateSheet)
   const { data: settings } = useSettings()
 
@@ -50,14 +49,11 @@ export function QuickActionSheet() {
     { label: 'Bill',    icon: FileText, action: () => doc('bill') },
     { label: 'Invoice', icon: Receipt,  action: () => doc('invoice') },
     { label: 'Expense', icon: Banknote, action: () => subAction('expense') },
-    // Interest Quick Action requires enable_interest === true (Path C)
-    ...(settings?.enable_interest === true
-      ? [{ label: 'Interest', icon: AlertCircle, action: () => subAction('interest') }]
-      : []
-    ),
+    { label: 'Income', icon: CircleDollarSign, action: () => doc('income') },
   ]
 
   const optionalActions = ([
+    settings?.enable_interest  && { label: 'Interest', icon: AlertCircle, action: () => subAction('interest') },
     settings?.enable_po        && { label: 'Purch. Order', icon: ClipboardList, action: () => doc('po') },
     settings?.enable_pi        && { label: 'Proforma Inv', icon: ClipboardList, action: () => doc('pi') },
     settings?.enable_quotation && { label: 'Quotation',    icon: ClipboardList, action: () => doc('quotation') },
@@ -67,10 +63,10 @@ export function QuickActionSheet() {
   ] as (ActionItem | false)[]).filter((x): x is ActionItem => Boolean(x))
 
   const pageActions: ActionItem[] = [
-    { label: 'Accounts',     icon: Wallet,         action: () => nav('/accounts') },
     { label: 'Transactions', icon: ArrowLeftRight, action: () => nav('/transactions') },
-    { label: 'Inventory',    icon: Package,        action: () => nav('/inventory') },
-    { label: 'Settings',     icon: Settings,       action: () => nav('/settings') },
+    { label: 'Accounts',     icon: Wallet,         action: () => nav('/accounts') },
+    { label: 'Reports', icon: ChartNoAxesCombined, action: () => nav('/reports') },
+    { label: 'Offline files', icon: HardDriveDownload, action: () => nav('/offline') },
   ]
 
   const renderGrid = (actions: ActionItem[]) => (
@@ -91,7 +87,7 @@ export function QuickActionSheet() {
 
   return (
     <Sheet open={quickActionOpen} onOpenChange={(open) => { if (!open) close() }}>
-      <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
+      <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-8 max-h-[85dvh] overflow-y-auto">
         <SheetHeader className="mb-4">
           <SheetTitle className="text-left">Quick Actions</SheetTitle>
         </SheetHeader>

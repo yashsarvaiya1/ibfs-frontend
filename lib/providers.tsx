@@ -1,22 +1,20 @@
 // lib/providers.tsx
 'use client'
 
+import { LoadingState } from '@/components/shared/common/LoadingState'
 import { useState, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { ThemeProvider } from 'next-themes'
 import { clearOffline } from '@/lib/offline/vault'
-import { useAuthStore } from '@/stores/authStore'
+import { useAuthStore, isSessionRestoreBlocked, SESSION_LOCK_KEY } from '@/stores/authStore'
 
 // Private — only used inside Providers below
 function HydrationGate({ children }: { children: React.ReactNode }) {
   const hasHydrated = useAuthStore((s) => s._hasHydrated)
 
   if (!hasHydrated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+    return <LoadingState fullScreen label="Opening IBFS…" />
   }
 
   return <>{children}</>
@@ -47,7 +45,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
     if(previous.isAuthenticated && !state.isAuthenticated){queryClient.cancelQueries();queryClient.clear(); void clearOffline().catch(() => { /* Browser storage may be unavailable. */ })}
   }),[queryClient])
 
+  useEffect(() => {
+    const lock = () => { if (isSessionRestoreBlocked()) useAuthStore.getState().logout() }
+    const onStorage = (event: StorageEvent) => { if (event.key === SESSION_LOCK_KEY && event.newValue === 'true') lock() }
+    lock()
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   return (
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
     <QueryClientProvider client={queryClient}>
       <HydrationGate>
         {children}
@@ -55,5 +62,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {/* DevTools render outside the gate — always accessible */}
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
+    </ThemeProvider>
   )
 }

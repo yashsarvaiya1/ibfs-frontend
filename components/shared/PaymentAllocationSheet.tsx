@@ -1,4 +1,5 @@
 'use client'
+import { LoadingState } from '@/components/shared/common/LoadingState'
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -76,7 +77,7 @@ function AllocationEditor({ payment, onClose }: { payment: FinancialTransaction;
     <div className="space-y-3 border-t pt-4">
       <Label htmlFor="allocation-search">Find a bill or invoice</Label>
       <Input id="allocation-search" placeholder="Search document number or contact" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
-      {isLoading && <p className="text-sm text-muted-foreground">Loading documents…</p>}
+      {isLoading && <LoadingState label="Loading documents…" className="py-4" />}
       {isError && <p className="text-sm text-destructive">Could not load documents. Try searching again.</p>}
       {data?.results.filter(doc => !selected.some(row => row.document === doc.id)).map(doc => <button type="button" key={doc.id}
         className="w-full flex items-center justify-between rounded-lg border p-3 text-left hover:bg-muted transition-colors"

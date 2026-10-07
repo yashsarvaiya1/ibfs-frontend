@@ -159,7 +159,7 @@ export function AddDetailsSheet() {
         <Button
           className="w-full h-12"
           onClick={handleSubmit}
-          disabled={addDetails.isPending}
+          loading={addDetails.isPending}
         >
           {addDetails.isPending ? 'Saving...' : 'Save & Generate Stock Entries'}
         </Button>

@@ -297,7 +297,7 @@ export function DocumentPrintPage({ id }: Props) {
           <div className="flex gap-2 shrink-0">
             {canMarkPaid && (
               <Button size="sm" variant="outline"
-                disabled={markPaidMutation.isPending}
+                loading={markPaidMutation.isPending}
                 onClick={handleToggleMarkPaid}
                 className="h-8 rounded-xl gap-1 border-muted-foreground/30 text-xs font-semibold px-2.5"
               >
@@ -340,7 +340,7 @@ export function DocumentPrintPage({ id }: Props) {
           </div>
           {canMarkPaid && manualPaid && (
             <Button size="sm" variant="ghost"
-              disabled={markPaidMutation.isPending}
+              loading={markPaidMutation.isPending}
               onClick={handleToggleMarkPaid}
               className="h-8 text-xs text-muted-foreground hover:text-destructive rounded-xl shrink-0 ml-2"
             >
@@ -460,7 +460,7 @@ export function DocumentPrintPage({ id }: Props) {
               </Button>
               <Button
                 className="flex-1 h-12 rounded-2xl gap-2 font-bold"
-                disabled={recordPaymentMutation.isPending}
+                loading={recordPaymentMutation.isPending}
                 onClick={handleRecordPayment}
               >
                 <CheckCircle2 className="h-4 w-4" />
