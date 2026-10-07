@@ -67,3 +67,15 @@ Live totals include unfinished item rows, so entering quantities/rates before de
 Contact opening balances can be edited, cleared or switched between “They owe us” and “We owe them.” Payment adjustment forms use **Charge** and **Waiver**: a waiver settles part of the amount due without changing cash paid/received. Document item discounts remain separate from payment waivers.
 
 Contact and account ledgers have date filters and PDF download/print. PDFs include every matching entry, across all pages. Contact print options start with the visible ledger dates; account List/Ledger controls switch the screen and PDF format. Running balances include preceding entries and previous pages. See [ledger signs and edit behavior](../backend/docs/REPORTS.md#ledgers-and-document-edits).
+
+## Income, balances and workspace controls
+
+Quick Actions has Bill, Invoice, Expense and Income first, optional documents next, and Transactions, Accounts, Reports and Offline files last. Settings is available directly in the header. The header theme control supports Light, Dark and System on desktop and mobile.
+
+Income records money received into an account, with optional contact/source and simple description/amount lines. It creates no contact debt, settlement, stock or GST entry. Use an invoice for a taxable sale. Correct an income receipt through its document, including its account, date and amount; deletion can reverse the receipt or retain it using the existing keep-transactions option. FY Other income shows entered receipts separately from sales; Cash received includes each receipt once.
+
+Edit Account includes Opening balance, including zero or a negative opening amount. This rebases current and running balances without creating cash movement or changing settled documents. Contacts retain the same opening-balance editing flow. Self transfer moves money between your accounts; Adjust is for recorded charges, interest and other adjustments. Reconcile balance records a correction to current cash, separately from opening balance.
+
+Document create/edit/view screens are narrower and more compact. Contact/date share a desktop row, notes/attachments are optional expandable controls, and save actions remain visible while scrolling. Session validation, page/data loading and pending actions have animated, accessible feedback. Unreachable-session checks retain saved access for offline files; private server data still requires a valid server session.
+
+Deploy with the existing Compose and environment. Startup applies the additive income migration automatically; no ports or new environment fields are required.
