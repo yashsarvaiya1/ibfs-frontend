@@ -21,7 +21,7 @@ export function AccountLedger({ transactions, openingBalance, page, onEdit }: {
         {transactions.map(txn => <tr key={txn.id}>
           <td className="p-3 whitespace-nowrap">{fmtDate(txn.date)}</td>
           <td className="p-3"><div className="flex flex-wrap items-center gap-2">
-            {txn.document ? <Link href={`/documents/${txn.document}`} className="font-medium text-primary">{txn.doc_id}</Link> : <span>{txn.type === 'contra' ? 'Transfer' : Number(txn.amount) >= 0 ? 'Receipt' : 'Payment'}</span>}
+            {txn.document ? <Link href={`/documents/${txn.document}`} className="font-medium text-primary">{txn.doc_id}</Link> : <span>{txn.type === 'contra' ? 'Self transfer' : Number(txn.amount) >= 0 ? 'Receipt' : 'Payment'}</span>}
             {txn.type === 'actual' && <button onClick={() => onEdit(txn)} className="text-xs text-muted-foreground underline">Edit</button>}
           </div><p className="text-xs text-muted-foreground">{txn.contact_name}{txn.notes && `${txn.contact_name ? ' · ' : ''}${txn.notes}`}</p></td>
           <td className="p-3 text-right tabular-nums">{Number(txn.amount) > 0 ? fmtAmount(txn.amount) : '—'}</td>

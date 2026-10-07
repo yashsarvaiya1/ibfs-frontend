@@ -1,4 +1,5 @@
 'use client'
+import { LoadingState } from '@/components/shared/common/LoadingState'
 
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -113,6 +114,7 @@ export function AccountDetailPage({ id }: Props) {
   const [adjustAmount,   setAdjustAmount]   = useState('')
   const [adjustNotes,    setAdjustNotes]    = useState('')
   const [directBalance,  setDirectBalance]  = useState('')
+  const [editOpening, setEditOpening] = useState('')
   const [editName,       setEditName]       = useState('')
   const [editType,       setEditType]       = useState<AccountType>('bank')
   const [editAccNum,     setEditAccNum]     = useState('')
@@ -134,6 +136,7 @@ export function AccountDetailPage({ id }: Props) {
 
   useEffect(() => {
     if (editAccountOpen && account) {
+      setEditOpening(account.opening_balance)
       setEditName(account.name)
       setEditType(account.type as AccountType)
       setEditAccNum(account.account_number ?? '')
@@ -190,13 +193,14 @@ export function AccountDetailPage({ id }: Props) {
   const handleViewAllTransactions = () => router.push(`/transactions?account=${id}`)
 
   const handleEditTxn = (txn: FinancialTransaction) => {
+    if (txn.document_type === 'income' && txn.document) { router.push(`/documents/${txn.document}/edit`); return }
     if (txn.type === 'record') {
       if (txn.document) router.push(`/documents/${txn.document}`)
       else toast.info('This record transaction has no linked document')
       return
     }
     if (txn.type === 'contra') {
-      toast.info('Transfer transactions are managed via the Transfers page')
+      toast.info('Self transfers can be reversed from their transaction menu')
       return
     }
     setEditTxn(txn)
@@ -209,7 +213,7 @@ export function AccountDetailPage({ id }: Props) {
       toast.error('Record transactions can only be deleted via document deletion'); return
     }
     if (found.type === 'contra') {
-      toast.error('Transfer transactions cannot be deleted individually'); return
+      toast.error('Reverse the self transfer to restore both accounts'); return
     }
     setEditTxn(found)
     setConfirmTxnDel(true)
@@ -254,10 +258,10 @@ export function AccountDetailPage({ id }: Props) {
         to_account:   Number(toAccountId),
         amount:       transferAmount,
       })
-      toast.success('Transfer successful')
+      toast.success('Self transfer successful')
       setTransferOpen(false)
       setTransferAmount(''); setToAccountId('')
-    } catch { toast.error('Transfer failed') }
+    } catch { toast.error('Self transfer failed') }
   }
 
   const handleAdjust = async () => {
@@ -282,9 +286,11 @@ export function AccountDetailPage({ id }: Props) {
   }
 
   const handleUpdateAccount = async () => {
+    if (!editOpening.trim() || !Number.isFinite(Number(editOpening))) { toast.error('Enter a valid opening balance'); return }
     if (!editName.trim()) { toast.error('Account name is required'); return }
     try {
       await updateMutation.mutateAsync({
+        ...(Number(editOpening) !== Number(account.opening_balance) && { opening_balance: editOpening }),
         name:           editName.trim(),
         type:           editType,
         account_number: editType === 'bank' ? (editAccNum || null) : null,
@@ -339,7 +345,7 @@ export function AccountDetailPage({ id }: Props) {
                 )}
               </div>
 
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost" size="icon"
@@ -356,7 +362,7 @@ export function AccountDetailPage({ id }: Props) {
                     setDirectBalance(account.current_balance)
                     setEditBalanceOpen(true)
                   }}>
-                    <SlidersHorizontal className="mr-2 h-4 w-4" /> Set Balance Directly
+                    <SlidersHorizontal className="mr-2 h-4 w-4" /> Reconcile Balance
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleViewAllTransactions}>
                     <ExternalLink className="mr-2 h-4 w-4" /> View All Transactions
@@ -381,7 +387,7 @@ export function AccountDetailPage({ id }: Props) {
           variant="outline" className="h-12 gap-2 rounded-xl"
           onClick={() => { setTransferAmount(''); setToAccountId(''); setTransferOpen(true) }}
         >
-          <ArrowLeftRight className="h-4 w-4" /> Transfer
+          <ArrowLeftRight className="h-4 w-4" /> Self transfer
         </Button>
         <Button
           variant="outline" className="h-12 gap-2 rounded-xl"
@@ -474,7 +480,7 @@ export function AccountDetailPage({ id }: Props) {
 
       {/* ── Transaction list ──────────────────────────────────────────────── */}
       <div className="px-4 space-y-2 pb-4">
-        {transactionsError ? <div className="py-6 text-center space-y-2"><p>Could not load account entries.</p><Button variant="outline" onClick={() => refetchTransactions()}>Retry</Button></div> : loadingTransactions ? <p className="py-8 text-center text-muted-foreground">Loading entries…</p> : printView === 'ledger' ? <AccountLedger transactions={txns} openingBalance={txnsData?.balance_before_period} page={page} onEdit={handleEditTxn} /> : txns.length === 0 ? (
+        {transactionsError ? <div className="py-6 text-center space-y-2"><p>Could not load account entries.</p><Button variant="outline" onClick={() => refetchTransactions()}>Retry</Button></div> : loadingTransactions ? <LoadingState label="Loading entries…" className="py-4" /> : printView === 'ledger' ? <AccountLedger transactions={txns} openingBalance={txnsData?.balance_before_period} page={page} onEdit={handleEditTxn} /> : txns.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm py-8">
             {dateFrom || dateTo ? 'No transactions in this date range' : 'No transactions yet'}
           </p>
@@ -633,7 +639,7 @@ export function AccountDetailPage({ id }: Props) {
                 <Button
                   className="w-full h-12 mt-2 rounded-xl text-md font-bold"
                   onClick={handleUpdateTxn}
-                  disabled={updateTxnMutation.isPending}
+                  loading={updateTxnMutation.isPending}
                 >
                   {updateTxnMutation.isPending ? 'Saving...' : 'Save Changes'}
                 </Button>
@@ -685,7 +691,7 @@ export function AccountDetailPage({ id }: Props) {
       <Sheet open={transferOpen} onOpenChange={setTransferOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
-            <SheetTitle className="text-left">Transfer Funds</SheetTitle>
+            <SheetTitle className="text-left">Self transfer</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border">
@@ -733,9 +739,9 @@ export function AccountDetailPage({ id }: Props) {
             )}
             <Button
               className="w-full h-12 rounded-xl" onClick={handleTransfer}
-              disabled={transferMutation.isPending}
+              loading={transferMutation.isPending}
             >
-              {transferMutation.isPending ? 'Transferring...' : 'Confirm Transfer'}
+              {transferMutation.isPending ? 'Transferring...' : 'Confirm self transfer'}
             </Button>
           </div>
         </SheetContent>
@@ -783,7 +789,7 @@ export function AccountDetailPage({ id }: Props) {
             </div>
             <Button
               className="w-full h-12 rounded-xl" onClick={handleAdjust}
-              disabled={adjustMutation.isPending}
+              loading={adjustMutation.isPending}
             >
               {adjustMutation.isPending ? 'Adjusting...' : 'Confirm Adjustment'}
             </Button>
@@ -795,7 +801,7 @@ export function AccountDetailPage({ id }: Props) {
       <Sheet open={editBalanceOpen} onOpenChange={setEditBalanceOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-10">
           <SheetHeader className="mb-5">
-            <SheetTitle className="text-left">Set Balance Directly</SheetTitle>
+            <SheetTitle className="text-left">Reconcile Balance</SheetTitle>
           </SheetHeader>
           <div className="space-y-4">
             <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3">
@@ -816,7 +822,7 @@ export function AccountDetailPage({ id }: Props) {
             </div>
             <Button
               className="w-full h-12 rounded-xl" onClick={handleSetBalance}
-              disabled={setBalanceMutation.isPending}
+              loading={setBalanceMutation.isPending}
             >
               {setBalanceMutation.isPending ? 'Saving...' : 'Set Balance'}
             </Button>
@@ -856,6 +862,11 @@ export function AccountDetailPage({ id }: Props) {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-opening">Opening balance</Label>
+              <Input id="account-opening" type="number" step="0.01" value={editOpening} onChange={e => setEditOpening(e.target.value)} className="h-11 rounded-xl" />
+              <p className="text-xs text-muted-foreground">Balance before recorded entries. Changing it updates the ledger; existing payments and transfers stay intact.</p>
+            </div>
             {editType === 'bank' && (
               <>
                 <div className="space-y-1.5">
@@ -891,7 +902,7 @@ export function AccountDetailPage({ id }: Props) {
             )}
             <Button
               className="w-full h-12 rounded-xl" onClick={handleUpdateAccount}
-              disabled={updateMutation.isPending}
+              loading={updateMutation.isPending}
             >
               {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
             </Button>
@@ -926,7 +937,7 @@ export function AccountDetailPage({ id }: Props) {
               <Button
                 variant="destructive" className="h-12 rounded-xl"
                 onClick={handleDeleteAccount}
-                disabled={deleteMutation.isPending}
+                loading={deleteMutation.isPending}
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
               </Button>
